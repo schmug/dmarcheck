@@ -1,5 +1,9 @@
 # dmarcheck
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-Deployed-f38020?logo=cloudflare)](https://dmarcheck.cortech.online)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org/)
+
 DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.
 
 **Live at [dmarcheck.cortech.online](https://dmarcheck.cortech.online)**
@@ -61,25 +65,63 @@ Response includes a `summary` with elevated fields and full `protocols` detail:
 }
 ```
 
-## Development
+## Self-Hosting
+
+You can deploy your own instance of dmarcheck to Cloudflare Workers.
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free plan works)
+
+### Setup
 
 ```bash
+git clone https://github.com/schmug/dmarcheck.git
+cd dmarcheck
 npm install
-npm run dev       # starts local dev server on port 8790
+```
+
+### Local Development
+
+```bash
+npm run dev       # starts local dev server on http://localhost:8790
 npm test          # runs unit tests
 ```
 
-## Deploy
+### Deploy to Your Own Cloudflare Account
 
-```bash
-npm run deploy    # deploys to Cloudflare Workers
-```
+1. Authenticate with Cloudflare:
+   ```bash
+   npx wrangler login
+   ```
+
+2. Edit `wrangler.toml` to use your own custom domain (or remove the `routes` block to use the default `*.workers.dev` subdomain):
+   ```toml
+   routes = [
+     { pattern = "yourdomain.com", custom_domain = true },
+   ]
+   ```
+
+3. Deploy:
+   ```bash
+   npm run deploy
+   ```
+
+### Configuration
+
+| Setting | Location | Default |
+|---------|----------|---------|
+| Dev server port | `wrangler.toml` → `[dev].port` | 8790 |
+| Rate limit | `src/rate-limit.ts` → `LIMIT` | 10 req/IP/min |
+| Rate limit window | `src/rate-limit.ts` → `WINDOW_SECONDS` | 60s |
+| DKIM selectors | `src/analyzers/dkim.ts` → `COMMON_SELECTORS` | ~30 common selectors |
 
 ## Stack
 
 - [Hono](https://hono.dev) — lightweight web framework for Cloudflare Workers
 - TypeScript + `node:dns` via `nodejs_compat`
-- Rate limited to 10 requests/IP/minute via Cloudflare Cache API
+- Rate limited via Cloudflare Cache API (no extra bindings needed)
 
 ## License
 
