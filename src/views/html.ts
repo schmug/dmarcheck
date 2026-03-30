@@ -35,7 +35,7 @@ export function renderLandingPage(): string {
     "dmarcheck — DNS Email Security Analyzer",
     `<div class="landing">
   <div class="logo">dmar<span>check</span></div>
-  <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
+  <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS &mdash; open source on <a href="https://github.com/schmug/dmarcheck">GitHub</a></div>
   <form class="search-box" action="/check" method="GET">
     <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" autofocus required>
     <button type="submit">Scan</button>
