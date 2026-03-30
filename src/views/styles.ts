@@ -12,7 +12,15 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 /* Landing */
 .landing {
   display: flex; flex-direction: column; align-items: center;
-  justify-content: center; min-height: 100vh; padding: 2rem;
+  min-height: 100vh; padding: 2rem;
+}
+.landing-main {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center;
+}
+.landing-footer {
+  display: flex; flex-direction: column; align-items: center;
+  padding-bottom: 1rem;
 }
 .logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
 .logo span { color: #f97316; }
@@ -35,7 +43,10 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .search-box button:hover { background: #ea580c; }
 
-.learn-link { margin-top: 2rem; text-align: center; font-size: 0.85rem; color: #71717a; }
+.learn-link { margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: #71717a; }
+.landing-footer .learn-link { margin-top: 0; margin-bottom: 0.75rem; }
+.landing-footer .api-hint { margin-top: 0; margin-bottom: 0.75rem; }
+.landing-footer .foss-callout { margin-top: 0; }
 .examples { margin-top: 2rem; color: #52525b; font-size: 0.85rem; }
 .api-hint {
   margin-top: 1.5rem; padding: 10px 16px; background: #18181b; border: 1px solid #27272a;

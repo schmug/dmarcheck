@@ -38,6 +38,13 @@ Letter grades from A+ to F. DMARC is the gatekeeper — no DMARC record or `p=no
 
 New to DMARC, SPF, and DKIM? Cloudflare has a great primer: [What are DMARC, DKIM, and SPF?](https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/)
 
+### Message header analyzers
+
+Once your DNS records are configured, you can verify authentication results in actual email headers:
+
+- [Google Admin Toolbox — Message Header Analyzer](https://toolbox.googleapps.com/apps/messageheader/)
+- [Microsoft Remote Connectivity Analyzer — Message Header](https://mha.azurewebsites.net/)
+
 ## API
 
 ```bash
