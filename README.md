@@ -34,6 +34,10 @@ Letter grades from A+ to F. DMARC is the gatekeeper — no DMARC record or `p=no
 | **D** | DMARC quarantine but missing SPF or DKIM |
 | **F** | No DMARC record or `p=none` |
 
+## What is email security?
+
+New to DMARC, SPF, and DKIM? Cloudflare has a great primer: [What are DMARC, DKIM, and SPF?](https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/)
+
 ## API
 
 ```bash

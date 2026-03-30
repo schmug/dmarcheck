@@ -35,11 +35,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .search-box button:hover { background: #ea580c; }
 
-.protocols { display: flex; gap: 12px; margin-top: 2rem; flex-wrap: wrap; justify-content: center; }
-.protocol-tag {
-  padding: 6px 14px; background: #18181b; border: 1px solid #27272a;
-  border-radius: 999px; font-size: 0.8rem; color: #a1a1aa; font-weight: 500;
-}
+.learn-link { margin-top: 2rem; text-align: center; font-size: 0.85rem; color: #71717a; }
 .examples { margin-top: 2rem; color: #52525b; font-size: 0.85rem; }
 .api-hint {
   margin-top: 1.5rem; padding: 10px 16px; background: #18181b; border: 1px solid #27272a;

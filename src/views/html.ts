@@ -47,13 +47,7 @@ export function renderLandingPage(): string {
     <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" autofocus required>
     <button type="submit">Scan</button>
   </form>
-  <div class="protocols">
-    <span class="protocol-tag">DMARC</span>
-    <span class="protocol-tag">SPF</span>
-    <span class="protocol-tag">DKIM</span>
-    <span class="protocol-tag">BIMI</span>
-    <span class="protocol-tag">MTA-STS</span>
-  </div>
+  <div class="learn-link"><a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
   <div class="examples">
     Try: <a href="/check?domain=google.com">google.com</a> &middot;
     <a href="/check?domain=github.com">github.com</a> &middot;
