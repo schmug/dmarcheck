@@ -46,6 +46,13 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   border-radius: 8px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: #71717a;
 }
 .api-hint span { color: #f97316; }
+.foss-callout { margin-top: 1.5rem; }
+.foss-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #71717a; font-size: 0.8rem; text-decoration: none;
+}
+.foss-link:hover { color: #a1a1aa; text-decoration: none; }
+.foss-link:hover svg { fill: #a1a1aa; }
 
 /* Report */
 .report { max-width: 800px; margin: 0 auto; padding: 2rem; }
