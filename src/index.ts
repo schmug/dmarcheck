@@ -97,7 +97,7 @@ app.get("/check", async (c) => {
   }
 });
 
-function normalizeDomain(raw: string | undefined): string | null {
+export function normalizeDomain(raw: string | undefined): string | null {
   if (!raw) return null;
   let domain = raw.trim().toLowerCase();
   // Strip protocol if pasted as URL
@@ -111,7 +111,7 @@ function normalizeDomain(raw: string | undefined): string | null {
   return domain;
 }
 
-function parseSelectors(raw: string | undefined): string[] {
+export function parseSelectors(raw: string | undefined): string[] {
   if (!raw) return [];
   return raw
     .split(",")
