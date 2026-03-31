@@ -88,6 +88,10 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .foss-link:hover { color: #a1a1aa; text-decoration: none; }
 .foss-link:hover svg { fill: #a1a1aa; }
+.footer-creature { margin-bottom: 0.75rem; opacity: 0.6; }
+.footer-creature:hover { opacity: 1; transition: opacity 0.3s; }
+.logo-text { display: inline; }
+.creature-loading { display: inline-flex; }
 
 /* Report */
 .report { max-width: 800px; margin: 0 auto; padding: 2rem; }
