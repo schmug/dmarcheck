@@ -23,7 +23,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   padding-bottom: 1rem;
 }
 .logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 12px; justify-content: center; }
-.logo span { color: #f97316; }
+.logo-text span { color: #f97316; }
 .tagline { color: #71717a; font-size: 1.1rem; margin-bottom: 2.5rem; text-align: center; }
 
 .search-box {
@@ -520,6 +520,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 @media (prefers-reduced-motion: reduce) {
   .at-creature { display: none !important; }
+  .creature-loading .creature-leg { animation: none !important; }
 }
 
 /* Responsive */
