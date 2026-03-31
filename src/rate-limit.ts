@@ -1,7 +1,23 @@
 const LIMIT = 10;
 const WINDOW_SECONDS = 60;
 
+// In-memory fallback for local dev where caches.default is unavailable
+const memoryStore = new Map<string, { count: number; expires: number }>();
+
 export async function checkRateLimit(
+  ip: string,
+): Promise<{ allowed: boolean; remaining: number }> {
+  try {
+    if (typeof caches !== "undefined" && caches.default) {
+      return await checkRateLimitCache(ip);
+    }
+  } catch {
+    // Cache API unavailable — fall through to in-memory
+  }
+  return checkRateLimitMemory(ip);
+}
+
+async function checkRateLimitCache(
   ip: string,
 ): Promise<{ allowed: boolean; remaining: number }> {
   const cache = caches.default;
@@ -28,6 +44,26 @@ export async function checkRateLimit(
   return { allowed, remaining };
 }
 
+function checkRateLimitMemory(
+  ip: string,
+): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const entry = memoryStore.get(ip);
+
+  let count: number;
+  if (entry && entry.expires > now) {
+    count = entry.count + 1;
+  } else {
+    count = 1;
+  }
+
+  memoryStore.set(ip, { count, expires: now + WINDOW_SECONDS * 1000 });
+
+  const allowed = count <= LIMIT;
+  const remaining = Math.max(0, LIMIT - count);
+  return { allowed, remaining };
+}
+
 export function rateLimitHeaders(remaining: number): Record<string, string> {
   return {
     "X-RateLimit-Limit": String(LIMIT),
@@ -35,3 +71,6 @@ export function rateLimitHeaders(remaining: number): Record<string, string> {
     "X-RateLimit-Window": `${WINDOW_SECONDS}s`,
   };
 }
+
+// Exported for testing only
+export { memoryStore as _memoryStore, LIMIT as _LIMIT, WINDOW_SECONDS as _WINDOW_SECONDS };
