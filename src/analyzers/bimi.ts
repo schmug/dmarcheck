@@ -1,4 +1,5 @@
 import { queryTxt } from "../dns/client.js";
+import { parseTags } from "../shared/parse-tags.js";
 import type { BimiResult, Validation } from "./types.js";
 
 export async function analyzeBimi(
@@ -96,16 +97,3 @@ export async function analyzeBimi(
   return { status, record: bimiRecord, tags, validations };
 }
 
-function parseTags(record: string): Record<string, string> {
-  const tags: Record<string, string> = {};
-  for (const part of record.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    tags[trimmed.slice(0, eqIdx).trim().toLowerCase()] = trimmed
-      .slice(eqIdx + 1)
-      .trim();
-  }
-  return tags;
-}

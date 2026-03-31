@@ -1,4 +1,5 @@
 import { queryTxt } from "../dns/client.js";
+import { parseTags } from "../shared/parse-tags.js";
 import type { DkimResult, DkimSelectorResult, Validation } from "./types.js";
 
 const COMMON_SELECTORS = [
@@ -123,7 +124,7 @@ async function probeSelector(
   );
   if (!dkimRecord) return { found: false };
 
-  const tags = parseDkimTags(dkimRecord);
+  const tags = parseTags(dkimRecord, { lowercaseKeys: false });
 
   const keyType = tags.k || "rsa";
   const publicKey = tags.p || "";
@@ -151,14 +152,3 @@ function estimateRsaKeyBits(derLength: number): number {
   return 4096;
 }
 
-function parseDkimTags(record: string): Record<string, string> {
-  const tags: Record<string, string> = {};
-  for (const part of record.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    tags[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
-  }
-  return tags;
-}

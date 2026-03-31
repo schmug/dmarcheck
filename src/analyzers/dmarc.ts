@@ -1,4 +1,5 @@
 import { queryTxt } from "../dns/client.js";
+import { parseTags } from "../shared/parse-tags.js";
 import type { DmarcResult, Validation } from "./types.js";
 
 export async function analyzeDmarc(domain: string): Promise<DmarcResult> {
@@ -101,16 +102,3 @@ export async function analyzeDmarc(domain: string): Promise<DmarcResult> {
   return { status, record: dmarcRecord, tags, validations };
 }
 
-function parseTags(record: string): Record<string, string> {
-  const tags: Record<string, string> = {};
-  for (const part of record.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = trimmed.slice(0, eqIdx).trim().toLowerCase();
-    const value = trimmed.slice(eqIdx + 1).trim();
-    tags[key] = value;
-  }
-  return tags;
-}
