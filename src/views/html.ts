@@ -48,7 +48,7 @@ export function renderLandingPage(): string {
     "dmarcheck — DNS Email Security Analyzer",
     `<div class="landing">
   <div class="landing-main">
-    <div class="logo">dmar<span>check</span></div>
+    <div class="logo">dmar<span>check</span><span class="logo-at" aria-hidden="true">@</span></div>
     <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
     <form action="/check" method="GET">
       <div class="search-box">

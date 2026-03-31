@@ -24,6 +24,11 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
 .logo span { color: #f97316; }
+.logo-at {
+  display: inline-block; font-size: 0.5em; color: #52525b;
+  margin-left: 4px; vertical-align: super;
+  transition: opacity 0.3s;
+}
 .tagline { color: #71717a; font-size: 1.1rem; margin-bottom: 2.5rem; text-align: center; }
 
 .search-box {
@@ -389,6 +394,68 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   transition: background 0.2s;
 }
 .rubric-cta:hover { background: #ea580c; text-decoration: none; }
+
+/* @ Creature easter egg */
+.at-creature {
+  position: fixed; z-index: 9998; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  user-select: none; outline: none;
+  will-change: transform, left, top;
+  transition: left 0s linear, top 0s linear;
+}
+.at-creature .creature-body {
+  font-size: 48px; font-family: monospace; color: #f97316; line-height: 1;
+  text-shadow: 0 4px 12px rgba(249,115,22,0.3);
+  position: relative; transition: transform 0.15s;
+}
+.at-creature .creature-eyes {
+  position: absolute; top: 6px; left: 12px;
+  display: flex; gap: 6px; pointer-events: none;
+}
+.at-creature .creature-eye {
+  width: 10px; height: 10px; background: white; border-radius: 50%;
+  position: relative; overflow: hidden;
+}
+.at-creature .creature-pupil {
+  width: 5px; height: 5px; background: #0a0a0f; border-radius: 50%;
+  position: absolute; top: 3px; left: 3px;
+  transition: left 0.15s, top 0.15s;
+}
+.at-creature .creature-legs {
+  display: flex; gap: 6px; margin-top: -4px; pointer-events: none;
+}
+.at-creature .creature-leg {
+  width: 6px; height: 12px; background: #ea580c; border-radius: 0 0 3px 3px;
+}
+.at-creature.walking .creature-leg:nth-child(odd) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate;
+}
+.at-creature.walking .creature-leg:nth-child(even) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate-reverse;
+}
+.at-creature .creature-body.chomping {
+  animation: creature-chomp 0.3s ease-in-out;
+}
+.at-creature.panicking .creature-eye {
+  transform: scale(1.4);
+}
+.at-creature.panicking .creature-pupil {
+  width: 3px; height: 3px; top: 4px; left: 4px;
+}
+.at-creature.panicking .creature-leg {
+  animation-duration: 0.12s !important;
+}
+@keyframes creature-walk {
+  from { height: 12px; }
+  to { height: 6px; }
+}
+@keyframes creature-chomp {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2) rotate(-5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-creature { display: none !important; }
+}
 
 /* Responsive */
 @media (max-width: 640px) {
