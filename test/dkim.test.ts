@@ -26,8 +26,8 @@ describe("analyzeDkim", () => {
     // All common selectors return null except "google"
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com") {
-        // RSA 2048-bit key = 256 bytes decoded = ~344 base64 chars
-        const fakeKey = btoa("x".repeat(256));
+        // RSA 2048-bit key: DER-encoded SubjectPublicKeyInfo is ~294 bytes
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
           raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
@@ -47,8 +47,8 @@ describe("analyzeDkim", () => {
   it("detects weak key under 2048 bits", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com") {
-        // RSA 1024-bit key = 128 bytes decoded
-        const fakeKey = btoa("x".repeat(128));
+        // RSA 1024-bit key: DER-encoded SubjectPublicKeyInfo is ~162 bytes
+        const fakeKey = btoa("x".repeat(162));
         return {
           entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
           raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
@@ -83,7 +83,7 @@ describe("analyzeDkim", () => {
   it("detects testing mode (t=y)", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com") {
-        const fakeKey = btoa("x".repeat(256));
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; k=rsa; t=y; p=${fakeKey}`],
           raw: `v=DKIM1; k=rsa; t=y; p=${fakeKey}`,
@@ -100,7 +100,7 @@ describe("analyzeDkim", () => {
   it("merges custom selectors with common selectors (deduplication)", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "myselector._domainkey.example.com") {
-        const fakeKey = btoa("x".repeat(256));
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; p=${fakeKey}`],
           raw: `v=DKIM1; p=${fakeKey}`,
@@ -119,7 +119,7 @@ describe("analyzeDkim", () => {
   it("reports multiple selectors found with plural message", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com" || name === "selector1._domainkey.example.com") {
-        const fakeKey = btoa("x".repeat(256));
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
           raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
@@ -145,7 +145,7 @@ describe("analyzeDkim", () => {
   it("finds Cloudflare Email Routing selector (cf2024-1)", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "cf2024-1._domainkey.example.com") {
-        const fakeKey = btoa("x".repeat(256));
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
           raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
@@ -163,7 +163,7 @@ describe("analyzeDkim", () => {
   it("defaults key_type to rsa when k= tag is absent", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com") {
-        const fakeKey = btoa("x".repeat(256));
+        const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; p=${fakeKey}`],
           raw: `v=DKIM1; p=${fakeKey}`,
@@ -174,5 +174,53 @@ describe("analyzeDkim", () => {
 
     const result = await analyzeDkim("example.com");
     expect(result.selectors["google"].key_type).toBe("rsa");
+  });
+
+  it("maps DER-encoded 1024-bit RSA key (162 bytes) to 1024 bits", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "google._domainkey.example.com") {
+        const fakeKey = btoa("x".repeat(162));
+        return {
+          entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
+          raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeDkim("example.com");
+    expect(result.selectors["google"].key_bits).toBe(1024);
+  });
+
+  it("maps DER-encoded 2048-bit RSA key (294 bytes) to 2048 bits", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "google._domainkey.example.com") {
+        const fakeKey = btoa("x".repeat(294));
+        return {
+          entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
+          raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeDkim("example.com");
+    expect(result.selectors["google"].key_bits).toBe(2048);
+  });
+
+  it("maps DER-encoded 4096-bit RSA key (550 bytes) to 4096 bits", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "google._domainkey.example.com") {
+        const fakeKey = btoa("x".repeat(550));
+        return {
+          entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
+          raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeDkim("example.com");
+    expect(result.selectors["google"].key_bits).toBe(4096);
   });
 });
