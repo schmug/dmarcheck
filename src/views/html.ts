@@ -44,9 +44,21 @@ export function renderLandingPage(): string {
   <div class="landing-main">
     <div class="logo">dmar<span>check</span></div>
     <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
-    <form class="search-box" action="/check" method="GET">
-      <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" autofocus required>
-      <button type="submit">Scan</button>
+    <form action="/check" method="GET">
+      <div class="search-box">
+        <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" autofocus required>
+        <button type="submit">Scan</button>
+      </div>
+      <details class="advanced-options">
+        <summary>Advanced options</summary>
+        <div class="advanced-body">
+          <label for="selectors">Custom DKIM selectors</label>
+          <input type="text" id="selectors" name="selectors"
+                 placeholder="e.g. myselector, custom2"
+                 autocomplete="off" />
+          <small>Comma-separated. These are checked in addition to the 38 common selectors.</small>
+        </div>
+      </details>
     </form>
     <div class="examples">
       Try: <a href="/check?domain=google.com">google.com</a> &middot;
