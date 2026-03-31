@@ -22,6 +22,11 @@ describe("normalizeDomain", () => {
     expect(normalizeDomain("example .com")).toBeNull();
   });
 
+  it("returns null for domain exceeding 253 characters (RFC 1035)", () => {
+    const longDomain = "a".repeat(250) + ".com";
+    expect(normalizeDomain(longDomain)).toBeNull();
+  });
+
   it("strips https:// prefix", () => {
     expect(normalizeDomain("https://example.com")).toBe("example.com");
   });
