@@ -43,6 +43,34 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .search-box button:hover { background: #ea580c; }
 
+/* Advanced options */
+.advanced-options {
+  width: 100%; max-width: 560px; margin-top: 0.75rem;
+}
+.advanced-options summary {
+  color: #71717a; font-size: 0.8rem; cursor: pointer; text-align: right;
+  list-style: none;
+}
+.advanced-options summary::-webkit-details-marker { display: none; }
+.advanced-options summary::before { content: '\\25B8 '; }
+.advanced-options[open] summary::before { content: '\\25BE '; }
+.advanced-options summary:hover { color: #f97316; }
+.advanced-body {
+  margin-top: 0.5rem; padding: 12px 16px; background: #18181b;
+  border: 1px solid #27272a; border-radius: 8px;
+}
+.advanced-body label {
+  display: block; font-size: 0.8rem; color: #a1a1aa; margin-bottom: 4px;
+}
+.advanced-body input {
+  width: 100%; padding: 10px 12px; background: #0a0a0f; border: 1px solid #27272a;
+  border-radius: 6px; color: #e4e4e7; font-size: 0.9rem; outline: none;
+  transition: border-color 0.2s;
+}
+.advanced-body input:focus { border-color: #f97316; }
+.advanced-body input::placeholder { color: #52525b; }
+.advanced-body small { display: block; margin-top: 6px; color: #52525b; font-size: 0.75rem; }
+
 .learn-link { margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: #71717a; }
 .landing-footer .learn-link { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .api-hint { margin-top: 0; margin-bottom: 0.75rem; }
