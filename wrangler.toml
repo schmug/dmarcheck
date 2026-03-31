@@ -5,7 +5,6 @@ compatibility_flags = ["nodejs_compat"]
 
 routes = [
   { pattern = "dmarcheck.cortech.online", custom_domain = true },
-  { pattern = "mta-sts.cortech.online", custom_domain = true },
 ]
 
 [dev]

@@ -76,7 +76,7 @@ export function renderLandingPage(): string {
     <div class="api-hint">
       <span>curl</span> https://dmarcheck.cortech.online/api/check?domain=cloudflare.com
     </div>
-    <div class="learn-link"><a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+    <div class="learn-link"><a href="/scoring">How is my score calculated?</a></div>
     <div class="foss-callout">
       <a href="https://github.com/schmug/dmarcheck" class="foss-link">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="#71717a" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -158,7 +158,7 @@ export function renderReport(result: ScanResult): string {
   ${protocolCard("BIMI", bimi.status, bimiSubtitle, bimiBody)}
   ${protocolCard("MTA-STS", mta_sts.status, mtaStsSubtitle, mtaStsBody)}
   <div class="learn-link" style="margin-top:2.5rem">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
-  <div class="learn-link" style="margin-top:0.4rem;margin-bottom:1rem"><a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+  <div class="learn-link" style="margin-top:0.4rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a></div>
   <div class="foss-callout">
     <a href="https://github.com/schmug/dmarcheck" class="foss-link">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="#71717a" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -189,10 +189,121 @@ export function renderScoreBreakdown(result: ScanResult): string {
   ${scoringFactorsTable(breakdown.factors, breakdown.modifier, breakdown.modifierLabel)}
   ${protocolContributionGrid(breakdown.protocolSummaries)}
   ${recommendationList(breakdown.recommendations)}
-  <div class="learn-link" style="margin-top:2rem;margin-bottom:1rem"><a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+  <div class="learn-link" style="margin-top:2rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a></div>
 </div>`;
 
   return page(`Scoring breakdown — ${result.domain} — dmarcheck`, body);
+}
+
+export function renderScoringRubric(): string {
+  const body = `<div class="breakdown">
+  <div class="report-nav">
+    <a href="/">&larr; Home</a>
+  </div>
+  <h1 class="rubric-title">Email Security Scoring</h1>
+  <p class="rubric-intro">dmarcheck grades domains on five email authentication protocols. The grade is determined by a tier system based on your DMARC policy strength, then adjusted with modifiers from SPF, DKIM, and extras.</p>
+
+  <div class="bd-card">
+    <div class="bd-card-title">How the grade works</div>
+    <div class="bd-card-body">
+      <p class="tier-text">Your grade has two parts: a <strong>base tier</strong> determined by your DMARC policy and authentication setup, and <strong>modifiers</strong> that adjust the grade up (+) or down (&minus;) based on the quality of your configuration.</p>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">Grade tiers</div>
+    <div class="bd-card-body">
+      <table class="rubric-table">
+        <thead><tr><th>Grade</th><th>Requirements</th></tr></thead>
+        <tbody>
+          <tr class="rubric-row-a">
+            <td><span class="rubric-grade grade-a">A+</span></td>
+            <td>DMARC p=reject + strong SPF + DKIM + <em>both</em> BIMI and MTA-STS configured</td>
+          </tr>
+          <tr class="rubric-row-a">
+            <td><span class="rubric-grade grade-a">A</span></td>
+            <td>DMARC p=reject + strong SPF (-all, within lookup limit) + DKIM + at least one extra (BIMI or MTA-STS)</td>
+          </tr>
+          <tr class="rubric-row-b">
+            <td><span class="rubric-grade grade-a">B</span></td>
+            <td>DMARC p=reject + SPF passing + DKIM passing</td>
+          </tr>
+          <tr class="rubric-row-c">
+            <td><span class="rubric-grade grade-c">C</span></td>
+            <td>DMARC p=quarantine + SPF passing + DKIM passing</td>
+          </tr>
+          <tr class="rubric-row-d">
+            <td><span class="rubric-grade grade-c">D/D+</span></td>
+            <td>DMARC policy set but missing SPF or DKIM (D+ for p=reject, D for p=quarantine)</td>
+          </tr>
+          <tr class="rubric-row-f">
+            <td><span class="rubric-grade grade-f">F</span></td>
+            <td>No DMARC record, DMARC validation failed, or policy set to none</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">Modifiers</div>
+    <div class="bd-card-body">
+      <p class="tier-text" style="margin-bottom:12px">Grades C through A can receive a + or &minus; modifier based on configuration quality. The modifier is the sum of these factors:</p>
+      <table class="rubric-table">
+        <thead><tr><th>Factor</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td>SPF uses ~all (softfail)</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>SPF uses more than 8 DNS lookups</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>SPF uses -all with &le;5 lookups</td><td class="effect-plus">+1</td></tr>
+          <tr><td>Any DKIM key under 2048 bits</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>2 or more DKIM selectors found</td><td class="effect-plus">+1</td></tr>
+          <tr><td>BIMI or MTA-STS configured (B tier)</td><td class="effect-plus">+1</td></tr>
+          <tr><td>MTA-STS in testing mode (A tier)</td><td class="effect-minus">&minus;1</td></tr>
+        </tbody>
+      </table>
+      <p class="tier-text" style="margin-top:12px">If the total is +1 or higher, you get a +. If &minus;1 or lower, you get a &minus;. Zero means no modifier.</p>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">The five protocols</div>
+    <div class="bd-card-body">
+      <div class="rubric-protocol">
+        <h3>DMARC</h3>
+        <p>Domain-based Message Authentication, Reporting &amp; Conformance. The policy layer that ties SPF and DKIM together and tells receivers what to do with unauthenticated mail. This is the most important factor in your grade.</p>
+      </div>
+      <div class="rubric-protocol">
+        <h3>SPF</h3>
+        <p>Sender Policy Framework. A DNS record listing which IP addresses are authorized to send mail for your domain. Receivers check the sending server's IP against this list.</p>
+      </div>
+      <div class="rubric-protocol">
+        <h3>DKIM</h3>
+        <p>DomainKeys Identified Mail. Adds a cryptographic signature to outgoing messages, proving they haven't been tampered with in transit. Key strength (2048+ bits) and multiple selectors improve your score.</p>
+      </div>
+      <div class="rubric-protocol">
+        <h3>BIMI</h3>
+        <p>Brand Indicators for Message Identification. Displays your brand logo next to authenticated messages in supporting email clients. Requires DMARC p=reject.</p>
+      </div>
+      <div class="rubric-protocol">
+        <h3>MTA-STS</h3>
+        <p>Mail Transfer Agent Strict Transport Security. Forces TLS encryption for inbound mail delivery, preventing downgrade attacks. Modes: testing (report only) and enforce (reject unencrypted).</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:2rem;margin-bottom:1rem">
+    <a href="/" class="rubric-cta">Scan a domain &rarr;</a>
+  </div>
+
+  <div class="foss-callout">
+    <a href="https://github.com/schmug/dmarcheck" class="foss-link">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="#71717a" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      Free and open source &mdash; MIT License
+    </a>
+  </div>
+</div>`;
+
+  return page("Email Security Scoring — dmarcheck", body);
 }
 
 export function renderError(message: string): string {

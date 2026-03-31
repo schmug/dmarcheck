@@ -220,10 +220,10 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   position: relative; cursor: help; border-bottom: 1px dotted #f97316;
 }
 .tooltip .tooltip-text {
-  visibility: hidden; opacity: 0; position: absolute; bottom: 125%; left: 50%;
-  transform: translateX(-50%); background: #27272a; color: #e4e4e7;
+  visibility: hidden; opacity: 0; position: absolute; bottom: 125%; left: 0;
+  background: #27272a; color: #e4e4e7;
   padding: 8px 12px; border-radius: 8px; font-size: 0.75rem; font-weight: 400;
-  white-space: nowrap; z-index: 10; transition: opacity 0.15s;
+  width: max-content; max-width: 220px; z-index: 10; transition: opacity 0.15s;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
@@ -344,6 +344,34 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .rec-title { font-size: 0.85rem; font-weight: 500; color: #e4e4e7; margin-bottom: 3px; }
 .rec-desc { font-size: 0.78rem; color: #a1a1aa; line-height: 1.4; }
 .rec-impact { font-size: 0.7rem; color: #f97316; margin-top: 4px; font-weight: 500; }
+
+/* Scoring rubric page */
+.rubric-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+.rubric-intro { color: #a1a1aa; font-size: 0.9rem; line-height: 1.6; margin-bottom: 1.5rem; }
+.rubric-table { width: 100%; border-collapse: collapse; }
+.rubric-table th {
+  text-align: left; padding: 8px 12px; background: #0a0a0f;
+  font-size: 0.75rem; color: #71717a; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.5px; border-bottom: 1px solid #27272a;
+}
+.rubric-table td {
+  padding: 10px 12px; font-size: 0.85rem; border-bottom: 1px solid #27272a40;
+  vertical-align: middle;
+}
+.rubric-grade {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 28px; border-radius: 6px; font-weight: 700; font-size: 0.85rem;
+}
+.rubric-protocol { padding: 10px 0; border-bottom: 1px solid #27272a40; }
+.rubric-protocol:last-child { border-bottom: none; }
+.rubric-protocol h3 { font-size: 0.9rem; font-weight: 600; color: #f97316; margin-bottom: 4px; }
+.rubric-protocol p { font-size: 0.82rem; color: #a1a1aa; line-height: 1.5; }
+.rubric-cta {
+  display: inline-block; padding: 10px 24px; background: #f97316; color: white;
+  border-radius: 8px; font-weight: 600; font-size: 0.9rem; text-decoration: none;
+  transition: background 0.2s;
+}
+.rubric-cta:hover { background: #ea580c; text-decoration: none; }
 
 /* Responsive */
 @media (max-width: 640px) {

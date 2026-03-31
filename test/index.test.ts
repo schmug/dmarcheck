@@ -112,46 +112,6 @@ describe("normalizeDomain — extended edge cases", () => {
   });
 });
 
-describe("GET /.well-known/mta-sts.txt", () => {
-  it("returns policy when host is mta-sts.*", async () => {
-    const res = await app.request("/.well-known/mta-sts.txt", {
-      headers: { host: "mta-sts.cortech.online" },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/plain");
-    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
-    const body = await res.text();
-    expect(body).toContain("version: STSv1");
-    expect(body).toContain("mode: enforce");
-    expect(body).toContain("mx: route1.mx.cloudflare.net");
-    expect(body).toContain("mx: route2.mx.cloudflare.net");
-    expect(body).toContain("mx: route3.mx.cloudflare.net");
-    expect(body).toContain("max_age: 604800");
-  });
-
-  it("uses CRLF line endings per RFC 8461", async () => {
-    const res = await app.request("/.well-known/mta-sts.txt", {
-      headers: { host: "mta-sts.cortech.online" },
-    });
-    const body = await res.text();
-    expect(body).toBe(
-      "version: STSv1\r\nmode: enforce\r\nmx: route1.mx.cloudflare.net\r\nmx: route2.mx.cloudflare.net\r\nmx: route3.mx.cloudflare.net\r\nmax_age: 604800",
-    );
-  });
-
-  it("returns 404 when host is not mta-sts.*", async () => {
-    const res = await app.request("/.well-known/mta-sts.txt", {
-      headers: { host: "dmarcheck.cortech.online" },
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 404 when no host header", async () => {
-    const res = await app.request("/.well-known/mta-sts.txt");
-    expect(res.status).toBe(404);
-  });
-});
-
 describe("GET /health", () => {
   it("returns 200 with status ok and a timestamp", async () => {
     const res = await app.request("/health");
