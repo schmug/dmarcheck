@@ -9,6 +9,19 @@ const app = new Hono();
 // Security headers middleware (HSTS is handled at Cloudflare edge)
 
 app.use("*", async (c, next) => {
+  const host = c.req.header("host") || "";
+  if (host.startsWith("mta-sts.")) {
+    console.log("[mta-sts-edge] incoming request", {
+      method: c.req.method,
+      path: c.req.path,
+      host,
+      ip: c.req.header("cf-connecting-ip"),
+      ua: c.req.header("user-agent"),
+      country: c.req.header("cf-ipcountry"),
+      ray: c.req.header("cf-ray"),
+      tlsVersion: c.req.header("cf-visitor"),
+    });
+  }
   await next();
   c.res.headers.set("X-Content-Type-Options", "nosniff");
   c.res.headers.set("X-Frame-Options", "DENY");
@@ -70,7 +83,15 @@ app.use("/api/check", async (c, next) => {
 
 app.get("/.well-known/mta-sts.txt", (c) => {
   const host = c.req.header("host") || "";
+  console.log("[mta-sts] request", {
+    host,
+    ip: c.req.header("cf-connecting-ip"),
+    ua: c.req.header("user-agent"),
+    country: c.req.header("cf-ipcountry"),
+    ray: c.req.header("cf-ray"),
+  });
   if (!host.startsWith("mta-sts.")) {
+    console.log("[mta-sts] rejected: wrong host");
     return c.notFound();
   }
   const policy = [
@@ -81,6 +102,7 @@ app.get("/.well-known/mta-sts.txt", (c) => {
     "mx: route3.mx.cloudflare.net",
     "max_age: 604800",
   ].join("\r\n");
+  console.log("[mta-sts] serving policy");
   return c.body(policy, 200, {
     "Content-Type": "text/plain",
     "Cache-Control": "public, max-age=86400",
