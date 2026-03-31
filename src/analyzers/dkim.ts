@@ -130,14 +130,25 @@ async function probeSelector(
   const revoked = publicKey === "";
   const testing = tags.t === "y";
 
-  // Estimate key bits from base64 public key length
+  // Estimate key bits from DER-encoded public key byte length
   let keyBits: number | undefined;
   if (publicKey && keyType === "rsa") {
     const decoded = atob(publicKey.replace(/\s/g, ""));
-    keyBits = decoded.length * 8;
+    keyBits = estimateRsaKeyBits(decoded.length);
   }
 
   return { found: true, key_type: keyType, key_bits: keyBits, testing, revoked };
+}
+
+/**
+ * Map DER-encoded SubjectPublicKeyInfo byte length to standard RSA key size.
+ * Known DER sizes: 1024-bit ≈ 162 bytes, 2048-bit ≈ 294 bytes, 4096-bit ≈ 550 bytes.
+ * Uses ranges to account for slight variations in key parameters.
+ */
+function estimateRsaKeyBits(derLength: number): number {
+  if (derLength <= 200) return 1024;
+  if (derLength <= 400) return 2048;
+  return 4096;
 }
 
 function parseDkimTags(record: string): Record<string, string> {
