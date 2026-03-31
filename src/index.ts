@@ -68,6 +68,25 @@ app.use("/api/check", async (c, next) => {
   }
 });
 
+app.get("/.well-known/mta-sts.txt", (c) => {
+  const host = c.req.header("host") || "";
+  if (!host.startsWith("mta-sts.")) {
+    return c.notFound();
+  }
+  const policy = [
+    "version: STSv1",
+    "mode: enforce",
+    "mx: route1.mx.cloudflare.net",
+    "mx: route2.mx.cloudflare.net",
+    "mx: route3.mx.cloudflare.net",
+    "max_age: 604800",
+  ].join("\r\n");
+  return c.body(policy, 200, {
+    "Content-Type": "text/plain",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
 app.get("/logo.svg", (c) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512">
   <title>dmarcheck</title>
