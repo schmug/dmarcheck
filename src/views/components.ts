@@ -35,7 +35,13 @@ export function gradeClass(grade: string): string {
 }
 
 export function statusDot(status: Status): string {
-  return `<div class="status-dot status-${status}"></div>`;
+  const label =
+    status === "pass"
+      ? "Status: passing"
+      : status === "warn"
+        ? "Status: warning"
+        : "Status: failing";
+  return `<div class="status-dot status-${status}" role="img" aria-label="${label}"></div>`;
 }
 
 export function validationList(validations: Validation[]): string {
@@ -43,10 +49,10 @@ export function validationList(validations: Validation[]): string {
     .map((v) => {
       const icon =
         v.status === "pass"
-          ? '<span class="icon-pass">&#10003;</span>'
+          ? '<span class="icon-pass" aria-hidden="true">&#10003;</span>'
           : v.status === "warn"
-            ? '<span class="icon-warn">&#9888;</span>'
-            : '<span class="icon-fail">&#10007;</span>';
+            ? '<span class="icon-warn" aria-hidden="true">&#9888;</span>'
+            : '<span class="icon-fail" aria-hidden="true">&#10007;</span>';
       return `<li>${icon} ${esc(v.message)}</li>`;
     })
     .join("");
@@ -82,11 +88,11 @@ export function protocolCard(
   expanded = false,
 ): string {
   return `<div class="card${expanded ? " expanded" : ""}">
-  <div class="card-header">
+  <div class="card-header" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
     ${statusDot(status)}
     <div class="card-title">${esc(name)}</div>
     <div class="card-subtitle">${esc(subtitle)}</div>
-    <div class="card-chevron">&#9654;</div>
+    <div class="card-chevron" aria-hidden="true">&#9654;</div>
   </div>
   <div class="card-body">${body}</div>
 </div>`;
