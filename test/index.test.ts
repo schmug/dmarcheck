@@ -124,6 +124,24 @@ describe("GET /health", () => {
   });
 });
 
+describe("CSV format routes", () => {
+  it("returns 400 for /check?format=csv without domain", async () => {
+    const res = await app.request("/check?format=csv");
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for /api/check?format=csv without domain", async () => {
+    const res = await app.request("/api/check?format=csv");
+    expect(res.status).toBe(400);
+  });
+
+  it("sets strict CSP on CSV responses (non-HTML)", async () => {
+    const res = await app.request("/api/check?domain=&format=csv");
+    const csp = res.headers.get("Content-Security-Policy");
+    expect(csp).toBe("default-src 'none'");
+  });
+});
+
 describe("security headers", () => {
   it("sets security headers on landing page", async () => {
     const res = await app.request("/");

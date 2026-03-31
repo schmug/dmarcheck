@@ -3,6 +3,8 @@ import { JS } from "./scripts.js";
 import {
   esc,
   gradeClass,
+  generateCreature,
+  gradeToMood,
   protocolCard,
   tagGrid,
   validationList,
@@ -31,8 +33,9 @@ function page(title: string, body: string): string {
 <meta property="og:description" content="Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://dmarcheck.cortech.online">
+<meta property="og:image" content="https://dmarcheck.cortech.online/og-image.svg">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 5 L90 25 L90 55 C90 75 70 92 50 97 C30 92 10 75 10 55 L10 25 Z' fill='none' stroke='%23f97316' stroke-width='8'/><path d='M30 52 L45 67 L72 37' fill='none' stroke='%23f97316' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%230a0a0f'/><text x='50' y='72' font-family='monospace' font-size='72' fill='%23f97316' text-anchor='middle'>@</text><circle cx='38' cy='42' r='8' fill='white'/><circle cx='62' cy='42' r='8' fill='white'/><circle cx='40' cy='44' r='4' fill='%230a0a0f'/><circle cx='64' cy='44' r='4' fill='%230a0a0f'/></svg>">
 <title>${esc(title)}</title>
 <style>${CSS}</style>
 </head>
@@ -48,7 +51,7 @@ export function renderLandingPage(): string {
     "dmarcheck — DNS Email Security Analyzer",
     `<div class="landing">
   <div class="landing-main">
-    <div class="logo">dmar<span>check</span></div>
+    <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
     <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
     <form action="/check" method="GET">
       <div class="search-box">
@@ -146,7 +149,7 @@ function reportBody(result: ScanResult): string {
 
   return `<div class="report">
   <div class="report-nav">
-    <a href="/">&larr; New scan</a>
+    <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
@@ -157,7 +160,8 @@ function reportBody(result: ScanResult): string {
           aria-label="Toggle confetti" aria-pressed="false" title="Toggle confetti">&#127881;</button>
   <div class="report-meta">
     <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time> &middot;
-    <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a>
+    <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a> &middot;
+    <a href="/check?domain=${encodeURIComponent(result.domain)}&format=csv" class="csv-download">Download CSV &darr;</a>
   </div>
   ${protocolCard("DMARC", dmarc.status, dmarcSubtitle, dmarcBody, true)}
   ${protocolCard("SPF", spf.status, spfSubtitle, spfBody, true)}
@@ -187,9 +191,9 @@ export function renderCheckLoading(domain: string, selectors: string): string {
   return page(
     `Scanning ${domain} — dmarcheck`,
     `<div class="scan-loading">
-  <div class="logo">dmar<span>check</span></div>
+  <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
   <div class="loading">
-    <div class="spinner"></div>
+    <div class="creature-loading">${generateCreature("lg")}</div>
     <p>Scanning ${esc(domain)}&hellip;</p>
   </div>
   <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
@@ -217,7 +221,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
 
   const body = `<div class="breakdown">
   <div class="report-nav">
-    <a href="${backUrl}">&larr; Back to results</a>
+    <a href="${backUrl}">${generateCreature("sm")} Back to results</a>
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
@@ -239,7 +243,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
 export function renderScoringRubric(): string {
   const body = `<div class="breakdown">
   <div class="report-nav">
-    <a href="/">&larr; Home</a>
+    <a href="/">${generateCreature("sm")} Home</a>
   </div>
   <h1 class="rubric-title">Email Security Scoring</h1>
   <p class="rubric-intro">dmarcheck grades domains on five email authentication protocols. The grade is determined by a tier system based on your DMARC policy strength, then adjusted with modifiers from SPF, DKIM, and extras.</p>
@@ -351,12 +355,14 @@ export function renderError(message: string): string {
   return page(
     "Error — dmarcheck",
     `<div class="landing">
-  <div class="logo">dmar<span>check</span></div>
-  <div class="error-box">
-    <h3>Error</h3>
-    <p>${esc(message)}</p>
+  <div class="landing-main">
+    <div class="logo">${generateCreature("lg", "worried")}<span class="logo-text">dmar<span>check</span></span></div>
+    <div class="error-box">
+      <h3>Error</h3>
+      <p>${esc(message)}</p>
+    </div>
+    <a href="/">&larr; Try again</a>
   </div>
-  <a href="/">&larr; Try again</a>
 </div>`,
   );
 }

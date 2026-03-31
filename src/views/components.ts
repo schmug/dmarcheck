@@ -37,6 +37,26 @@ export function gradeClass(grade: string): string {
   return "grade-f";
 }
 
+export type CreatureSize = "lg" | "md" | "sm";
+export type CreatureMood = "celebrating" | "content" | "worried" | "scared" | "panicked";
+
+export function generateCreature(size: CreatureSize, mood?: CreatureMood): string {
+  const moodClass = mood ? ` creature-${mood}` : "";
+  return `<div class="creature creature-${size}${moodClass}" aria-hidden="true">
+  <div class="creature-body">@<div class="creature-eyes"><div class="creature-eye"><div class="creature-pupil"></div></div><div class="creature-eye"><div class="creature-pupil"></div></div></div></div>
+  <div class="creature-legs"><div class="creature-leg"></div><div class="creature-leg"></div><div class="creature-leg"></div></div>
+</div>`;
+}
+
+export function gradeToMood(grade: string): CreatureMood {
+  const letter = grade.charAt(0).toUpperCase();
+  if (letter === "A") return "celebrating";
+  if (letter === "B") return "content";
+  if (letter === "C") return "worried";
+  if (letter === "D") return "scared";
+  return "panicked";
+}
+
 export function statusDot(status: Status): string {
   const label =
     status === "pass"

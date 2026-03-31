@@ -22,8 +22,8 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   display: flex; flex-direction: column; align-items: center;
   padding-bottom: 1rem;
 }
-.logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
-.logo span { color: #f97316; }
+.logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 12px; justify-content: center; }
+.logo-text span { color: #f97316; }
 .tagline { color: #71717a; font-size: 1.1rem; margin-bottom: 2.5rem; text-align: center; }
 
 .search-box {
@@ -88,14 +88,19 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .foss-link:hover { color: #a1a1aa; text-decoration: none; }
 .foss-link:hover svg { fill: #a1a1aa; }
+.footer-creature { margin-bottom: 0.75rem; opacity: 0.6; }
+.footer-creature:hover { opacity: 1; transition: opacity 0.3s; }
+.logo-text { display: inline; }
+.creature-loading { display: inline-flex; }
 
 /* Report */
 .report { max-width: 800px; margin: 0 auto; padding: 2rem; }
 .report-nav {
   display: flex; align-items: center; gap: 12px; margin-bottom: 2rem;
 }
-.report-nav a { font-size: 0.85rem; }
+.report-nav a { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
 .report-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+.report-header .creature { margin-left: 8px; }
 .domain-name { font-size: 1.5rem; font-weight: 700; }
 .overall-grade {
   display: inline-flex; align-items: center; justify-content: center;
@@ -117,6 +122,12 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .confetti-toggle:hover { background: #3f3f46; }
 .confetti-toggle.disabled { opacity: 0.4; }
 .report-meta { color: #71717a; font-size: 0.85rem; margin-bottom: 2rem; }
+.csv-download {
+  padding: 2px 8px; background: #27272a; border-radius: 4px;
+  font-size: 0.8rem; text-decoration: none; color: #a1a1aa;
+  transition: background 0.15s, color 0.15s;
+}
+.csv-download:hover { background: #f97316; color: #fff; }
 
 /* Cards */
 .card {
@@ -384,6 +395,134 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .rubric-cta:hover { background: #ea580c; text-decoration: none; }
 
+/* @ Creature easter egg */
+.at-creature {
+  position: fixed; z-index: 9998; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  user-select: none; outline: none;
+  will-change: transform, left, top;
+  transition: left 0s linear, top 0s linear;
+}
+.at-creature .creature-body {
+  font-size: 48px; font-family: monospace; color: #f97316; line-height: 1;
+  text-shadow: 0 4px 12px rgba(249,115,22,0.3);
+  position: relative; transition: transform 0.15s;
+}
+.at-creature .creature-eyes {
+  position: absolute; top: 6px; left: 12px;
+  display: flex; gap: 6px; pointer-events: none;
+}
+.at-creature .creature-eye {
+  width: 10px; height: 10px; background: white; border-radius: 50%;
+  position: relative; overflow: hidden;
+}
+.at-creature .creature-pupil {
+  width: 5px; height: 5px; background: #0a0a0f; border-radius: 50%;
+  position: absolute; top: 3px; left: 3px;
+  transition: left 0.15s, top 0.15s;
+}
+.at-creature .creature-legs {
+  display: flex; gap: 6px; margin-top: -4px; pointer-events: none;
+}
+.at-creature .creature-leg {
+  width: 6px; height: 12px; background: #ea580c; border-radius: 0 0 3px 3px;
+}
+.at-creature.walking .creature-leg:nth-child(odd) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate;
+}
+.at-creature.walking .creature-leg:nth-child(even) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate-reverse;
+}
+.at-creature .creature-body.chomping {
+  animation: creature-chomp 0.3s ease-in-out;
+}
+.at-creature.panicking .creature-eye {
+  transform: scale(1.4);
+}
+.at-creature.panicking .creature-pupil {
+  width: 3px; height: 3px; top: 4px; left: 4px;
+}
+.at-creature.panicking .creature-leg {
+  animation-duration: 0.12s !important;
+}
+@keyframes creature-walk {
+  from { height: 12px; }
+  to { height: 6px; }
+}
+@keyframes creature-chomp {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2) rotate(-5deg); }
+}
+/* Static creature (brand mascot) */
+.creature {
+  display: inline-flex; flex-direction: column; align-items: center;
+  vertical-align: middle;
+}
+.creature .creature-body {
+  font-family: 'SF Mono', 'Fira Code', monospace; color: #f97316; line-height: 1;
+  text-shadow: 0 2px 8px rgba(249,115,22,0.3);
+  position: relative;
+}
+.creature .creature-eyes {
+  position: absolute; display: flex; pointer-events: none;
+}
+.creature .creature-eye {
+  background: white; border-radius: 50%; position: relative; overflow: hidden;
+}
+.creature .creature-pupil {
+  background: #0a0a0f; border-radius: 50%; position: absolute;
+}
+.creature .creature-legs {
+  display: flex; pointer-events: none;
+}
+.creature .creature-leg {
+  background: #ea580c; border-radius: 0 0 3px 3px;
+}
+
+/* Sizes */
+.creature-lg .creature-body { font-size: 48px; }
+.creature-lg .creature-eyes { top: 6px; left: 12px; gap: 6px; }
+.creature-lg .creature-eye { width: 10px; height: 10px; }
+.creature-lg .creature-pupil { width: 5px; height: 5px; top: 3px; left: 3px; }
+.creature-lg .creature-legs { gap: 6px; margin-top: -4px; }
+.creature-lg .creature-leg { width: 6px; height: 12px; }
+
+.creature-md .creature-body { font-size: 30px; }
+.creature-md .creature-eyes { top: 4px; left: 7px; gap: 4px; }
+.creature-md .creature-eye { width: 7px; height: 7px; }
+.creature-md .creature-pupil { width: 3px; height: 3px; top: 2px; left: 2px; }
+.creature-md .creature-legs { gap: 4px; margin-top: -3px; }
+.creature-md .creature-leg { width: 4px; height: 8px; }
+
+.creature-sm .creature-body { font-size: 20px; }
+.creature-sm .creature-eyes { top: 3px; left: 5px; gap: 3px; }
+.creature-sm .creature-eye { width: 5px; height: 5px; }
+.creature-sm .creature-pupil { width: 2px; height: 2px; top: 2px; left: 2px; }
+.creature-sm .creature-legs { gap: 3px; margin-top: -2px; }
+.creature-sm .creature-leg { width: 3px; height: 6px; }
+
+/* Moods — pupil position changes */
+.creature-celebrating .creature-pupil { top: 1px; left: 1px; }
+.creature-content .creature-pupil { /* default centered — no change */ }
+.creature-worried .creature-pupil { top: 4px; }
+.creature-worried .creature-eye:first-child .creature-pupil { left: 1px; }
+.creature-scared .creature-eye { transform: scale(1.2); }
+.creature-scared .creature-pupil { width: 3px; height: 3px; top: 3px; left: 3px; }
+.creature-panicked .creature-eye { transform: scale(1.4); }
+.creature-panicked .creature-pupil { width: 2px; height: 2px; top: 4px; left: 4px; }
+
+/* Loading creature — walking animation */
+.creature-loading .creature-leg:nth-child(odd) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate;
+}
+.creature-loading .creature-leg:nth-child(even) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate-reverse;
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-creature { display: none !important; }
+  .creature-loading .creature-leg { animation: none !important; }
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .logo { font-size: 2rem; }
@@ -394,5 +533,12 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   .selector-grid { grid-template-columns: 1fr; }
   .proto-grid { grid-template-columns: repeat(3, 1fr); }
   .score-snippet { flex-direction: column; align-items: flex-start; }
+  .logo > .creature .creature-body { font-size: 36px; }
+  .logo > .creature .creature-eyes { top: 4px; left: 9px; gap: 4px; }
+  .logo > .creature .creature-eye { width: 8px; height: 8px; }
+  .logo > .creature .creature-pupil { width: 4px; height: 4px; top: 2px; left: 2px; }
+  .logo > .creature .creature-legs { gap: 4px; margin-top: -3px; }
+  .logo > .creature .creature-leg { width: 5px; height: 9px; }
+  .report-header .creature { display: none; }
 }
 `;

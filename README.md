@@ -1,8 +1,14 @@
-# dmarcheck
+<p align="center">
+  <img src="https://dmarcheck.cortech.online/logo.svg" alt="dmarcheck" width="120" height="120">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Deploy to Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-Deployed-f38020?logo=cloudflare)](https://dmarcheck.cortech.online)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org/)
+<h1 align="center">dmarcheck</h1>
+
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://dmarcheck.cortech.online"><img src="https://img.shields.io/badge/Cloudflare%20Workers-Deployed-f38020?logo=cloudflare" alt="Deploy to Cloudflare Workers"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript" alt="TypeScript"></a>
+</p>
 
 DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.
 
