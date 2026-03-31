@@ -153,6 +153,8 @@ export function normalizeDomain(raw: string | undefined): string | null {
     // Fall back to manual parsing for inputs the URL constructor rejects
     domain = domain.split("/")[0].split("?")[0];
   }
+  // RFC 1035: domain names must not exceed 253 characters
+  if (domain.length > 253) return null;
   // Basic validation: must have at least one dot, no spaces
   if (!domain.includes(".") || /\s/.test(domain)) return null;
   // Strip trailing dot
