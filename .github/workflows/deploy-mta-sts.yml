@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "mta-sts-worker/**"
+      - ".github/workflows/deploy-mta-sts.yml"
 
 jobs:
   deploy:
