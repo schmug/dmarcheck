@@ -356,12 +356,14 @@ export function renderError(message: string): string {
   return page(
     "Error — dmarcheck",
     `<div class="landing">
-  <div class="logo">dmar<span>check</span></div>
-  <div class="error-box">
-    <h3>Error</h3>
-    <p>${esc(message)}</p>
+  <div class="landing-main">
+    <div class="logo">${generateCreature("lg", "worried")}<span class="logo-text">dmar<span>check</span></span></div>
+    <div class="error-box">
+      <h3>Error</h3>
+      <p>${esc(message)}</p>
+    </div>
+    <a href="/">&larr; Try again</a>
   </div>
-  <a href="/">&larr; Try again</a>
 </div>`,
   );
 }
