@@ -140,6 +140,8 @@ export function renderReport(result: ScanResult): string {
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
+  <button class="confetti-toggle" data-grade="${esc(result.grade)}"
+          aria-label="Toggle confetti" aria-pressed="false" title="Toggle confetti">&#127881;</button>
   <div class="report-meta">
     <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time> &middot;
     <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a>

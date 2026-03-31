@@ -106,6 +106,16 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .grade-c { background: #451a03; color: #f59e0b; border: 1px solid #92400e; }
 .grade-d { background: #451a03; color: #f59e0b; border: 1px solid #92400e; }
 .grade-f { background: #450a0a; color: #ef4444; border: 1px solid #991b1b; }
+.confetti-toggle {
+  position: fixed; bottom: 1rem; left: 1rem; z-index: 100;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  background: #27272a; border: 1px solid #3f3f46;
+  cursor: pointer; transition: background 0.15s, opacity 0.15s;
+  font-size: 0.8rem; line-height: 1; padding: 0;
+}
+.confetti-toggle:hover { background: #3f3f46; }
+.confetti-toggle.disabled { opacity: 0.4; }
 .report-meta { color: #71717a; font-size: 0.85rem; margin-bottom: 2rem; }
 
 /* Cards */
