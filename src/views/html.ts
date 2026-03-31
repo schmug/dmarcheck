@@ -149,11 +149,12 @@ function reportBody(result: ScanResult): string {
 
   return `<div class="report">
   <div class="report-nav">
-    <a href="/">&larr; New scan</a>
+    <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     <div class="domain-name">${esc(result.domain)}</div>
+    ${generateCreature("md", gradeToMood(result.grade))}
   </div>
   ${scoreSnippet(result)}
   <button class="confetti-toggle" data-grade="${esc(result.grade)}"
@@ -221,7 +222,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
 
   const body = `<div class="breakdown">
   <div class="report-nav">
-    <a href="${backUrl}">&larr; Back to results</a>
+    <a href="${backUrl}">${generateCreature("sm")} Back to results</a>
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
@@ -243,7 +244,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
 export function renderScoringRubric(): string {
   const body = `<div class="breakdown">
   <div class="report-nav">
-    <a href="/">&larr; Home</a>
+    <a href="/">${generateCreature("sm")} Home</a>
   </div>
   <h1 class="rubric-title">Email Security Scoring</h1>
   <p class="rubric-intro">dmarcheck grades domains on five email authentication protocols. The grade is determined by a tier system based on your DMARC policy strength, then adjusted with modifiers from SPF, DKIM, and extras.</p>

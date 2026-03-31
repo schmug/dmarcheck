@@ -98,8 +98,9 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .report-nav {
   display: flex; align-items: center; gap: 12px; margin-bottom: 2rem;
 }
-.report-nav a { font-size: 0.85rem; }
+.report-nav a { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
 .report-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+.report-header .creature { margin-left: 8px; }
 .domain-name { font-size: 1.5rem; font-weight: 700; }
 .overall-grade {
   display: inline-flex; align-items: center; justify-content: center;
