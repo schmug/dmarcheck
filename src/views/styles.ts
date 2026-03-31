@@ -234,6 +234,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   border-top-color: #f97316; border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+.loading p { color: #71717a; margin-top: 1rem; font-size: 0.9rem; }
 
 /* Responsive */
 @media (max-width: 640px) {

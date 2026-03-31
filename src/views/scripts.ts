@@ -39,6 +39,30 @@ document.addEventListener('click', function(e) {
   }
 });
 
+document.addEventListener('submit', function(e) {
+  var form = e.target.closest('form[action="/check"]');
+  if (!form) return;
+  var btn = form.querySelector('button[type="submit"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+  }
+  var landing = document.querySelector('.landing-main');
+  if (landing) {
+    var domain = form.querySelector('input[name="domain"]').value;
+    var wrapper = document.createElement('div');
+    wrapper.className = 'loading';
+    var spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    var msg = document.createElement('p');
+    msg.textContent = 'Scanning ' + domain + '...';
+    wrapper.appendChild(spinner);
+    wrapper.appendChild(msg);
+    landing.textContent = '';
+    landing.appendChild(wrapper);
+  }
+});
+
 (function() {
   var report = document.querySelector('.report');
   if (report) {
