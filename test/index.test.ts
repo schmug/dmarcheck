@@ -133,10 +133,10 @@ describe("security headers", () => {
     expect(res.headers.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
   });
 
-  it("sets CSP with script hash on HTML responses", async () => {
+  it("sets CSP with inline scripts allowed on HTML responses", async () => {
     const res = await app.request("/");
     const csp = res.headers.get("Content-Security-Policy");
-    expect(csp).toContain("script-src 'sha256-");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).toContain("style-src 'unsafe-inline'");
     expect(csp).toContain("frame-ancestors 'none'");
   });

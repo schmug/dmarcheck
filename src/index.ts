@@ -3,20 +3,10 @@ import { cors } from "hono/cors";
 import { scan } from "./orchestrator.js";
 import { renderLandingPage, renderReport, renderError } from "./views/html.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
-import { JS } from "./views/scripts.js";
 
 const app = new Hono();
 
 // Security headers middleware (HSTS is handled at Cloudflare edge)
-let cachedScriptHash: string | null = null;
-
-async function getScriptHash(): Promise<string> {
-  if (cachedScriptHash) return cachedScriptHash;
-  const data = new TextEncoder().encode(JS);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  cachedScriptHash = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
-  return cachedScriptHash;
-}
 
 app.use("*", async (c, next) => {
   await next();
@@ -27,10 +17,9 @@ app.use("*", async (c, next) => {
 
   const isHtml = c.res.headers.get("content-type")?.includes("text/html");
   if (isHtml) {
-    const scriptHash = await getScriptHash();
     c.res.headers.set(
       "Content-Security-Policy",
-      `default-src 'none'; script-src 'sha256-${scriptHash}'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     );
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
