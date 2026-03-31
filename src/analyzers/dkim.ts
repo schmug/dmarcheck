@@ -31,6 +31,10 @@ const COMMON_SELECTORS = [
   "mailo",
   "postmark",
   "turbo-smtp",
+  "cf2024-1",
+  "cf2024-2",
+  "cf2025-1",
+  "cf2025-2",
 ];
 
 export async function analyzeDkim(

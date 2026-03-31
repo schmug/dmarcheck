@@ -142,6 +142,24 @@ describe("analyzeDkim", () => {
     expect(result.status).toBe("fail");
   });
 
+  it("finds Cloudflare Email Routing selector (cf2024-1)", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "cf2024-1._domainkey.example.com") {
+        const fakeKey = btoa("x".repeat(256));
+        return {
+          entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
+          raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeDkim("example.com");
+    expect(result.status).toBe("pass");
+    expect(result.selectors["cf2024-1"].found).toBe(true);
+    expect(result.selectors["cf2024-1"].key_bits).toBe(2048);
+  });
+
   it("defaults key_type to rsa when k= tag is absent", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
       if (name === "google._domainkey.example.com") {

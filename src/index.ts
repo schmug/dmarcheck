@@ -48,6 +48,19 @@ app.use("/api/check", async (c, next) => {
   }
 });
 
+app.get("/logo.svg", (c) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512">
+  <title>dmarcheck</title>
+  <rect width="512" height="512" rx="64" fill="#0a0a0a"/>
+  <path d="M256 80 L420 160 L420 280 Q420 380 256 440 Q92 380 92 280 L92 160 Z" fill="none" stroke="#f97316" stroke-width="28" stroke-linejoin="round"/>
+  <path d="M192 260 L232 300 L320 212" fill="none" stroke="#f97316" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+  return c.body(svg, 200, {
+    "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
 app.get("/", (c) => {
   return c.html(renderLandingPage());
 });
