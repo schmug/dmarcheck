@@ -22,13 +22,8 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   display: flex; flex-direction: column; align-items: center;
   padding-bottom: 1rem;
 }
-.logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; }
+.logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 12px; justify-content: center; }
 .logo span { color: #f97316; }
-.logo-at {
-  display: inline-block; font-size: 0.5em; color: #52525b;
-  margin-left: 4px; vertical-align: super;
-  transition: opacity 0.3s;
-}
 .tagline { color: #71717a; font-size: 1.1rem; margin-bottom: 2.5rem; text-align: center; }
 
 .search-box {
@@ -452,6 +447,71 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 @keyframes creature-chomp {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.2) rotate(-5deg); }
+}
+/* Static creature (brand mascot) */
+.creature {
+  display: inline-flex; flex-direction: column; align-items: center;
+  vertical-align: middle;
+}
+.creature .creature-body {
+  font-family: 'SF Mono', 'Fira Code', monospace; color: #f97316; line-height: 1;
+  text-shadow: 0 2px 8px rgba(249,115,22,0.3);
+  position: relative;
+}
+.creature .creature-eyes {
+  position: absolute; display: flex; pointer-events: none;
+}
+.creature .creature-eye {
+  background: white; border-radius: 50%; position: relative; overflow: hidden;
+}
+.creature .creature-pupil {
+  background: #0a0a0f; border-radius: 50%; position: absolute;
+}
+.creature .creature-legs {
+  display: flex; pointer-events: none;
+}
+.creature .creature-leg {
+  background: #ea580c; border-radius: 0 0 3px 3px;
+}
+
+/* Sizes */
+.creature-lg .creature-body { font-size: 48px; }
+.creature-lg .creature-eyes { top: 6px; left: 12px; gap: 6px; }
+.creature-lg .creature-eye { width: 10px; height: 10px; }
+.creature-lg .creature-pupil { width: 5px; height: 5px; top: 3px; left: 3px; }
+.creature-lg .creature-legs { gap: 6px; margin-top: -4px; }
+.creature-lg .creature-leg { width: 6px; height: 12px; }
+
+.creature-md .creature-body { font-size: 30px; }
+.creature-md .creature-eyes { top: 4px; left: 7px; gap: 4px; }
+.creature-md .creature-eye { width: 7px; height: 7px; }
+.creature-md .creature-pupil { width: 3px; height: 3px; top: 2px; left: 2px; }
+.creature-md .creature-legs { gap: 4px; margin-top: -3px; }
+.creature-md .creature-leg { width: 4px; height: 8px; }
+
+.creature-sm .creature-body { font-size: 20px; }
+.creature-sm .creature-eyes { top: 3px; left: 5px; gap: 3px; }
+.creature-sm .creature-eye { width: 5px; height: 5px; }
+.creature-sm .creature-pupil { width: 2px; height: 2px; top: 2px; left: 2px; }
+.creature-sm .creature-legs { gap: 3px; margin-top: -2px; }
+.creature-sm .creature-leg { width: 3px; height: 6px; }
+
+/* Moods — pupil position changes */
+.creature-celebrating .creature-pupil { top: 1px; left: 1px; }
+.creature-content .creature-pupil { /* default centered — no change */ }
+.creature-worried .creature-pupil { top: 4px; }
+.creature-worried .creature-eye:first-child .creature-pupil { left: 1px; }
+.creature-scared .creature-eye { transform: scale(1.2); }
+.creature-scared .creature-pupil { width: 3px; height: 3px; top: 3px; left: 3px; }
+.creature-panicked .creature-eye { transform: scale(1.4); }
+.creature-panicked .creature-pupil { width: 2px; height: 2px; top: 4px; left: 4px; }
+
+/* Loading creature — walking animation */
+.creature-loading .creature-leg:nth-child(odd) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate;
+}
+.creature-loading .creature-leg:nth-child(even) {
+  animation: creature-walk 0.3s ease-in-out infinite alternate-reverse;
 }
 @media (prefers-reduced-motion: reduce) {
   .at-creature { display: none !important; }
