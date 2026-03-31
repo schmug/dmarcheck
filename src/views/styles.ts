@@ -122,8 +122,17 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   background: #0a0a0f; padding: 12px 16px; border-radius: 8px;
   font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem;
   color: #a1a1aa; margin-top: 12px; overflow-x: auto; white-space: pre-wrap;
-  word-break: break-all;
+  word-break: break-all; display: flex; align-items: flex-start; gap: 12px;
 }
+.record-raw code { flex: 1; min-width: 0; }
+.copy-btn {
+  flex-shrink: 0; padding: 4px 10px; background: #27272a; color: #a1a1aa;
+  border: 1px solid #3f3f46; border-radius: 6px; font-size: 0.75rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.copy-btn:hover { background: #f97316; color: #fff; border-color: #f97316; }
 
 /* SPF tree */
 .spf-tree { margin-top: 12px; }
