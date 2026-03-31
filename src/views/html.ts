@@ -141,7 +141,7 @@ export function renderReport(result: ScanResult): string {
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
   <div class="report-meta">
-    Scanned just now &middot;
+    <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time> &middot;
     <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a>
   </div>
   ${protocolCard("DMARC", dmarc.status, dmarcSubtitle, dmarcBody, true)}

@@ -96,8 +96,6 @@ function applyModifier(
   base: "A" | "B" | "C" | "D",
   modifier: number,
 ): string {
-  if (modifier >= 2) return `${base}+`;
-  if (modifier <= -2) return `${base}-`;
   if (modifier >= 1) return `${base}+`;
   if (modifier <= -1) return `${base}-`;
   return base;

@@ -72,5 +72,18 @@ document.addEventListener('submit', function(e) {
       heading.focus();
     }
   }
+  var timeEl = document.querySelector('.report-meta time[datetime]');
+  if (timeEl) {
+    var iso = timeEl.getAttribute('datetime');
+    function updateRelative() {
+      var diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+      if (diff < 5) timeEl.textContent = 'Scanned just now';
+      else if (diff < 60) timeEl.textContent = 'Scanned ' + diff + 's ago';
+      else if (diff < 3600) timeEl.textContent = 'Scanned ' + Math.floor(diff / 60) + 'm ago';
+      else timeEl.textContent = 'Scanned ' + new Date(iso).toUTCString().replace('GMT', 'UTC');
+    }
+    updateRelative();
+    setInterval(updateRelative, 10000);
+  }
 })();
 `;

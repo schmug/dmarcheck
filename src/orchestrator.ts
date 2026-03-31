@@ -10,7 +10,7 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
-  // Fire DMARC first since BIMI needs its policy, but run SPF/DKIM/MTA-STS in parallel
+  // Run core analyzers in parallel, then BIMI sequentially since it needs the DMARC policy
   const [dmarcResult, spfResult, dkimResult, mtaStsResult] =
     await Promise.all([
       analyzeDmarc(domain),
