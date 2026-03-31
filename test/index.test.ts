@@ -112,6 +112,18 @@ describe("normalizeDomain — extended edge cases", () => {
   });
 });
 
+describe("GET /health", () => {
+  it("returns 200 with status ok and a timestamp", async () => {
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("ok");
+    expect(typeof body.timestamp).toBe("string");
+    // Verify timestamp is a valid ISO 8601 date
+    expect(new Date(body.timestamp).toISOString()).toBe(body.timestamp);
+  });
+});
+
 describe("security headers", () => {
   it("sets security headers on landing page", async () => {
     const res = await app.request("/");

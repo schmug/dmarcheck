@@ -92,6 +92,10 @@ app.get("/logo.svg", (c) => {
   });
 });
 
+app.get("/health", (c) => {
+  return c.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 app.get("/", (c) => {
   return c.html(renderLandingPage());
 });
