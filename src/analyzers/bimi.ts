@@ -36,7 +36,7 @@ export async function analyzeBimi(
       record: txt.raw,
       tags: null,
       validations: [
-        { status: "warn", message: "TXT record exists but is not a valid BIMI record" },
+        { status: "warn", message: "TXT record exists but is not a valid BIMI record (possibly a wildcard DNS entry)" },
       ],
     };
   }

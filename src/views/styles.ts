@@ -171,6 +171,13 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   white-space: nowrap;
 }
 .copy-btn:hover { background: #f97316; color: #fff; border-color: #f97316; }
+.record-expand { margin-top: 12px; }
+.record-expand summary {
+  cursor: pointer; color: #a1a1aa; font-size: 0.8rem;
+  user-select: none; list-style: revert;
+}
+.record-expand summary:hover { color: #d4d4d8; }
+.record-expand .record-raw { margin-top: 8px; }
 
 /* SPF tree */
 .spf-tree { margin-top: 12px; }
@@ -238,6 +245,10 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .error-box p { color: #a1a1aa; font-size: 0.9rem; }
 
 /* Loading */
+.scan-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 60vh;
+}
 .loading { text-align: center; padding: 4rem 2rem; }
 .loading .spinner {
   display: inline-block; width: 32px; height: 32px; border: 3px solid #27272a;

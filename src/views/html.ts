@@ -7,6 +7,7 @@ import {
   tagGrid,
   validationList,
   rawRecord,
+  rawRecordExpand,
   spfTree,
   lookupCounter,
   dkimSelectorGrid,
@@ -88,15 +89,18 @@ export function renderLandingPage(): string {
   );
 }
 
-export function renderReport(result: ScanResult): string {
+function reportBody(result: ScanResult): string {
   const { dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
 
   // DMARC card
   const dmarcSubtitle = dmarc.tags?.p
     ? `Policy: ${dmarc.tags.p}`
     : "No record";
+  const dmarcRaw = dmarc.tags
+    ? rawRecord(dmarc.record)
+    : rawRecordExpand(dmarc.record, "Show TXT records found");
   const dmarcBody =
-    tagGrid(dmarc.tags) + validationList(dmarc.validations) + rawRecord(dmarc.record);
+    tagGrid(dmarc.tags) + validationList(dmarc.validations) + dmarcRaw;
 
   // SPF card
   const spfSubtitle = spf.record
@@ -121,8 +125,11 @@ export function renderReport(result: ScanResult): string {
 
   // BIMI card
   const bimiSubtitle = bimi.record ? "Record found" : "No record found";
+  const bimiRaw = bimi.tags
+    ? rawRecord(bimi.record)
+    : rawRecordExpand(bimi.record, "Show TXT records found");
   const bimiBody =
-    tagGrid(bimi.tags) + validationList(bimi.validations) + rawRecord(bimi.record);
+    tagGrid(bimi.tags) + validationList(bimi.validations) + bimiRaw;
 
   // MTA-STS card
   const mtaStsSubtitle = mta_sts.policy
@@ -137,7 +144,7 @@ export function renderReport(result: ScanResult): string {
     mtaStsBody += rawRecord(mta_sts.dns_record);
   }
 
-  const body = `<div class="report">
+  return `<div class="report">
   <div class="report-nav">
     <a href="/">&larr; New scan</a>
   </div>
@@ -166,8 +173,42 @@ export function renderReport(result: ScanResult): string {
     </a>
   </div>
 </div>`;
+}
 
-  return page(`${result.domain} — dmarcheck`, body);
+export function renderReport(result: ScanResult): string {
+  return page(`${result.domain} — dmarcheck`, reportBody(result));
+}
+
+export function renderCheckLoading(domain: string, selectors: string): string {
+  const qs = selectors
+    ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
+    : `domain=${encodeURIComponent(domain)}`;
+
+  return page(
+    `Scanning ${domain} — dmarcheck`,
+    `<div class="scan-loading">
+  <div class="logo">dmar<span>check</span></div>
+  <div class="loading">
+    <div class="spinner"></div>
+    <p>Scanning ${esc(domain)}&hellip;</p>
+  </div>
+  <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
+</div>
+<script>
+fetch('/check?${qs}', { headers: { 'X-Scan-Fetch': '1' } })
+  .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+  .then(function(html) {
+    var newDoc = new DOMParser().parseFromString(html, 'text/html');
+    document.replaceChild(document.adoptNode(newDoc.documentElement), document.documentElement);
+    Array.from(document.querySelectorAll('script')).forEach(function(old) {
+      var s = document.createElement('script');
+      s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
+    });
+  })
+  .catch(function() { window.location.href = '/check?${qs}&_direct=1'; });
+</script>`,
+  );
 }
 
 export function renderScoreBreakdown(result: ScanResult): string {

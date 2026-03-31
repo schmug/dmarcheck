@@ -67,6 +67,11 @@ export function rawRecord(record: string | null): string {
   return `<div class="record-raw"><code>${esc(record)}</code><button class="copy-btn" data-copy="${esc(record)}" aria-label="Copy DNS record">Copy</button></div>`;
 }
 
+export function rawRecordExpand(record: string | null, label: string): string {
+  if (!record) return "";
+  return `<details class="record-expand"><summary>${esc(label)}</summary><div class="record-raw"><code>${esc(record)}</code></div></details>`;
+}
+
 export function tagGrid(
   tags: Record<string, string> | null,
   tooltips: Record<string, string> = DMARC_TOOLTIPS,

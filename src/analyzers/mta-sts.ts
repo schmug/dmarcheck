@@ -94,6 +94,7 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
     const resp = await fetch(url, {
       headers: { "User-Agent": "dmarcheck/1.0" },
       redirect: "follow",
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!resp.ok) return null;

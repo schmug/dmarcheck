@@ -22,7 +22,7 @@ export async function analyzeDmarc(domain: string): Promise<DmarcResult> {
       record: txt.raw,
       tags: null,
       validations: [
-        { status: "fail", message: "TXT record exists but is not a valid DMARC record" },
+        { status: "fail", message: `TXT record exists at _dmarc.${domain} but is not a valid DMARC record (possibly a wildcard DNS entry)` },
       ],
     };
   }

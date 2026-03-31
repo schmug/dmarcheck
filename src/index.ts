@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { scan } from "./orchestrator.js";
-import { renderLandingPage, renderReport, renderScoreBreakdown, renderScoringRubric, renderError } from "./views/html.js";
+import { renderLandingPage, renderReport, renderScoreBreakdown, renderScoringRubric, renderError, renderCheckLoading } from "./views/html.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
 
 const app = new Hono();
@@ -155,20 +155,29 @@ app.get("/check", async (c) => {
 
   const selectors = parseSelectors(c.req.query("selectors"));
 
-  try {
-    const result = await scan(domain, selectors);
-
-    if (wantsJson) {
+  if (wantsJson) {
+    try {
+      const result = await scan(domain, selectors);
       return c.json(result);
-    }
-    return c.html(renderReport(result));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal error";
-    if (wantsJson) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);
     }
-    return c.html(renderError(message), 500);
   }
+
+  // Fetch from loading page or noscript fallback — do the actual scan
+  if (c.req.header("X-Scan-Fetch") === "1" || c.req.query("_direct") === "1") {
+    try {
+      const result = await scan(domain, selectors);
+      return c.html(renderReport(result));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Internal error";
+      return c.html(renderError(message), 500);
+    }
+  }
+
+  // Default: return loading page immediately, JS fetches results
+  return c.html(renderCheckLoading(domain, c.req.query("selectors") || ""));
 });
 
 export function normalizeDomain(raw: string | undefined): string | null {
