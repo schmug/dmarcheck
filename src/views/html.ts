@@ -33,6 +33,7 @@ function page(title: string, body: string): string {
 <meta property="og:description" content="Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://dmarcheck.cortech.online">
+<meta property="og:image" content="https://dmarcheck.cortech.online/og-image.svg">
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%230a0a0f'/><text x='50' y='72' font-family='monospace' font-size='72' fill='%23f97316' text-anchor='middle'>@</text><circle cx='38' cy='42' r='8' fill='white'/><circle cx='62' cy='42' r='8' fill='white'/><circle cx='40' cy='44' r='4' fill='%230a0a0f'/><circle cx='64' cy='44' r='4' fill='%230a0a0f'/></svg>">
 <title>${esc(title)}</title>

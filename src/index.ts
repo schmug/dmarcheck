@@ -90,8 +90,41 @@ app.get("/logo.svg", (c) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512">
   <title>dmarcheck</title>
   <rect width="512" height="512" rx="64" fill="#0a0a0a"/>
-  <path d="M256 80 L420 160 L420 280 Q420 380 256 440 Q92 380 92 280 L92 160 Z" fill="none" stroke="#f97316" stroke-width="28" stroke-linejoin="round"/>
-  <path d="M192 260 L232 300 L320 212" fill="none" stroke="#f97316" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="256" y="310" font-family="monospace" font-size="220" fill="#f97316" text-anchor="middle">@</text>
+  <circle cx="210" cy="210" r="28" fill="white"/>
+  <circle cx="302" cy="210" r="28" fill="white"/>
+  <circle cx="216" cy="218" r="14" fill="#0a0a0f"/>
+  <circle cx="308" cy="218" r="14" fill="#0a0a0f"/>
+  <rect x="196" y="380" width="20" height="40" rx="8" fill="#ea580c"/>
+  <rect x="246" y="380" width="20" height="32" rx="8" fill="#ea580c"/>
+  <rect x="296" y="380" width="20" height="40" rx="8" fill="#ea580c"/>
+</svg>`;
+  return c.body(svg, 200, {
+    "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/og-image.svg", (c) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0a0a0f"/>
+  <!-- Creature -->
+  <text x="340" y="310" font-family="monospace" font-size="180" fill="#f97316" text-anchor="middle">@</text>
+  <circle cx="300" cy="220" r="22" fill="white"/>
+  <circle cx="375" cy="220" r="22" fill="white"/>
+  <circle cx="305" cy="226" r="11" fill="#0a0a0f"/>
+  <circle cx="380" cy="226" r="11" fill="#0a0a0f"/>
+  <rect x="290" y="370" width="16" height="32" rx="6" fill="#ea580c"/>
+  <rect x="330" y="370" width="16" height="26" rx="6" fill="#ea580c"/>
+  <rect x="370" y="370" width="16" height="32" rx="6" fill="#ea580c"/>
+  <!-- Wordmark -->
+  <text x="500" y="300" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-weight="800" font-size="72">
+    <tspan fill="#e4e4e7">dmar</tspan><tspan fill="#f97316">check</tspan>
+  </text>
+  <!-- Tagline -->
+  <text x="500" y="350" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24" fill="#71717a">DNS Email Security Analyzer</text>
+  <!-- BIMI badge -->
+  <text x="500" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="18" fill="#f97316">BIMI-ready brand identity</text>
 </svg>`;
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",
