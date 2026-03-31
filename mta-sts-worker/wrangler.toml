@@ -1,0 +1,7 @@
+name = "mta-sts-cortech"
+main = "src/index.ts"
+compatibility_date = "2025-03-30"
+
+routes = [
+  { pattern = "mta-sts.cortech.online", custom_domain = true },
+]

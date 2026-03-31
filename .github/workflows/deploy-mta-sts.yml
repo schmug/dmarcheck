@@ -1,0 +1,22 @@
+name: Deploy MTA-STS Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mta-sts-worker/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+        working-directory: mta-sts-worker
+      - run: npx wrangler deploy
+        working-directory: mta-sts-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
