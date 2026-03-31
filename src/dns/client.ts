@@ -6,7 +6,12 @@ const resolver = new dns.promises.Resolver();
 export async function queryTxt(name: string): Promise<TxtRecord | null> {
   try {
     const records = await resolver.resolveTxt(name);
-    const entries = records.map((chunks) => chunks.join(""));
+    // workerd's node:dns polyfill may join multi-part TXT chunks with literal
+    // quote characters (e.g. 'part1" "part2') instead of splitting properly.
+    // Strip these artifacts so downstream parsing sees a clean record.
+    const entries = records.map((chunks) =>
+      chunks.join("").replace(/"\s*"/g, ""),
+    );
     return { entries, raw: entries.join(" ") };
   } catch (err: unknown) {
     if (isDnsNotFound(err)) return null;
