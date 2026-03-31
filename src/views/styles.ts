@@ -532,5 +532,12 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   .selector-grid { grid-template-columns: 1fr; }
   .proto-grid { grid-template-columns: repeat(3, 1fr); }
   .score-snippet { flex-direction: column; align-items: flex-start; }
+  .logo > .creature .creature-body { font-size: 36px; }
+  .logo > .creature .creature-eyes { top: 4px; left: 9px; gap: 4px; }
+  .logo > .creature .creature-eye { width: 8px; height: 8px; }
+  .logo > .creature .creature-pupil { width: 4px; height: 4px; top: 2px; left: 2px; }
+  .logo > .creature .creature-legs { gap: 4px; margin-top: -3px; }
+  .logo > .creature .creature-leg { width: 5px; height: 9px; }
+  .report-header .creature { display: none; }
 }
 `;
