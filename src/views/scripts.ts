@@ -258,7 +258,7 @@ document.addEventListener('submit', function(e) {
     setTimeout(function() { announce.remove(); }, 3000);
 
     /* start from the logo @ if present, otherwise from a random edge */
-    var logoAt = document.querySelector('.logo-at');
+    var logoAt = document.querySelector('.logo .creature');
     var vw = window.innerWidth, vh = window.innerHeight;
     var startX, startY;
 
@@ -501,7 +501,7 @@ document.addEventListener('submit', function(e) {
     });
     eatenElements = [];
     /* restore the logo @ */
-    var logoAt = document.querySelector('.logo-at');
+    var logoAt = document.querySelector('.logo .creature');
     if (logoAt) logoAt.style.opacity = '';
     useCooldown = true;
     resetIdle();
