@@ -61,7 +61,7 @@ export function validationList(validations: Validation[]): string {
 
 export function rawRecord(record: string | null): string {
   if (!record) return "";
-  return `<div class="record-raw">${esc(record)}</div>`;
+  return `<div class="record-raw"><code>${esc(record)}</code><button class="copy-btn" data-copy="${esc(record)}" aria-label="Copy DNS record">Copy</button></div>`;
 }
 
 export function tagGrid(
