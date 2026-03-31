@@ -117,6 +117,12 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .confetti-toggle:hover { background: #3f3f46; }
 .confetti-toggle.disabled { opacity: 0.4; }
 .report-meta { color: #71717a; font-size: 0.85rem; margin-bottom: 2rem; }
+.csv-download {
+  padding: 2px 8px; background: #27272a; border-radius: 4px;
+  font-size: 0.8rem; text-decoration: none; color: #a1a1aa;
+  transition: background 0.15s, color 0.15s;
+}
+.csv-download:hover { background: #f97316; color: #fff; }
 
 /* Cards */
 .card {

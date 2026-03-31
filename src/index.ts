@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { scan } from "./orchestrator.js";
+import { generateCsv } from "./csv.js";
 import { renderLandingPage, renderReport, renderScoreBreakdown, renderScoringRubric, renderError, renderCheckLoading } from "./views/html.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
 
@@ -35,11 +36,12 @@ app.use("/check", async (c, next) => {
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
+    const format = c.req.query("format");
     const wantsJson =
-      c.req.query("format") === "json" ||
+      format === "json" ||
       c.req.header("Accept")?.includes("application/json");
 
-    if (wantsJson) {
+    if (wantsJson || format === "csv") {
       return c.json({ error: "Rate limit exceeded. Try again in 60 seconds." }, { status: 429, headers });
     }
     return c.html(renderError("Rate limit exceeded. Please wait a minute before scanning again."), { status: 429, headers });
@@ -119,6 +121,12 @@ app.get("/api/check", async (c) => {
 
   try {
     const result = await scan(domain, selectors);
+    if (c.req.query("format") === "csv") {
+      return c.body(generateCsv(result), 200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${domain}-email-security.csv"`,
+      });
+    }
     return c.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";
@@ -149,9 +157,11 @@ app.get("/check", async (c) => {
     return c.html(renderError("Please provide a valid domain name."), 400);
   }
 
+  const format = c.req.query("format");
   const wantsJson =
-    c.req.query("format") === "json" ||
+    format === "json" ||
     c.req.header("Accept")?.includes("application/json");
+  const wantsCsv = format === "csv";
 
   const selectors = parseSelectors(c.req.query("selectors"));
 
@@ -159,6 +169,19 @@ app.get("/check", async (c) => {
     try {
       const result = await scan(domain, selectors);
       return c.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Internal error";
+      return c.json({ error: message }, 500);
+    }
+  }
+
+  if (wantsCsv) {
+    try {
+      const result = await scan(domain, selectors);
+      return c.body(generateCsv(result), 200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${domain}-email-security.csv"`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);

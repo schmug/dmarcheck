@@ -157,7 +157,8 @@ function reportBody(result: ScanResult): string {
           aria-label="Toggle confetti" aria-pressed="false" title="Toggle confetti">&#127881;</button>
   <div class="report-meta">
     <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time> &middot;
-    <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a>
+    <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a> &middot;
+    <a href="/check?domain=${encodeURIComponent(result.domain)}&format=csv" class="csv-download">Download CSV &darr;</a>
   </div>
   ${protocolCard("DMARC", dmarc.status, dmarcSubtitle, dmarcBody, true)}
   ${protocolCard("SPF", spf.status, spfSubtitle, spfBody, true)}
