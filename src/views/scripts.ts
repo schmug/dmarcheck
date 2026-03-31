@@ -58,7 +58,7 @@ document.addEventListener('submit', function(e) {
     msg.textContent = 'Scanning ' + domain + '...';
     wrapper.appendChild(spinner);
     wrapper.appendChild(msg);
-    landing.textContent = '';
+    Array.from(landing.children).forEach(function(child) { child.style.display = 'none'; });
     landing.appendChild(wrapper);
   }
 });
