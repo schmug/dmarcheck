@@ -34,7 +34,7 @@ function page(title: string, body: string): string {
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://dmarcheck.cortech.online">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 5 L90 25 L90 55 C90 75 70 92 50 97 C30 92 10 75 10 55 L10 25 Z' fill='none' stroke='%23f97316' stroke-width='8'/><path d='M30 52 L45 67 L72 37' fill='none' stroke='%23f97316' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%230a0a0f'/><text x='50' y='72' font-family='monospace' font-size='72' fill='%23f97316' text-anchor='middle'>@</text><circle cx='38' cy='42' r='8' fill='white'/><circle cx='62' cy='42' r='8' fill='white'/><circle cx='40' cy='44' r='4' fill='%230a0a0f'/><circle cx='64' cy='44' r='4' fill='%230a0a0f'/></svg>">
 <title>${esc(title)}</title>
 <style>${CSS}</style>
 </head>
