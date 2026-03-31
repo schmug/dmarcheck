@@ -15,8 +15,9 @@ Live at dmarcheck.cortech.online | Repo: github.com/schmug/dmarcheck
 
 - `npm run dev` — local dev on port 8790
 - `npm test` — vitest
-- `npm run deploy` — wrangler deploy
-- Deployment is also automatic via Cloudflare Git integration on push to main
+- `npm run deploy` — wrangler deploy (use only if Git integration is disabled)
+- Deployment is automatic via Cloudflare Git integration on push to main
+- **Do NOT run `npm run deploy` after pushing** — it collides with the Git integration auto-deploy and causes intermittent stale deploys
 
 ## Architecture
 
