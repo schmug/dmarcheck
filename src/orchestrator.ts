@@ -3,7 +3,7 @@ import { analyzeSpf } from "./analyzers/spf.js";
 import { analyzeDkim } from "./analyzers/dkim.js";
 import { analyzeBimi } from "./analyzers/bimi.js";
 import { analyzeMtaSts } from "./analyzers/mta-sts.js";
-import { computeGrade } from "./shared/scoring.js";
+import { computeGradeBreakdown } from "./shared/scoring.js";
 import type { ScanResult } from "./analyzers/types.js";
 
 export async function scan(
@@ -31,7 +31,7 @@ export async function scan(
     mta_sts: mtaStsResult,
   };
 
-  const grade = computeGrade(protocols);
+  const breakdown = computeGradeBreakdown(protocols);
 
   const dkimFound = Object.values(dkimResult.selectors).filter(
     (s) => s.found,
@@ -40,7 +40,8 @@ export async function scan(
   return {
     domain,
     timestamp: new Date().toISOString(),
-    grade,
+    grade: breakdown.grade,
+    breakdown,
     summary: {
       dmarc_policy: dmarcPolicy,
       spf_result: spfResult.status,

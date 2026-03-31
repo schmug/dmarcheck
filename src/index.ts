@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { scan } from "./orchestrator.js";
-import { renderLandingPage, renderReport, renderError } from "./views/html.js";
+import { renderLandingPage, renderReport, renderScoreBreakdown, renderError } from "./views/html.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
 
 const app = new Hono();
@@ -55,6 +55,22 @@ app.use("/check", async (c, next) => {
     if (wantsJson) {
       return c.json({ error: "Rate limit exceeded. Try again in 60 seconds." }, { status: 429, headers });
     }
+    return c.html(renderError("Rate limit exceeded. Please wait a minute before scanning again."), { status: 429, headers });
+  }
+
+  const headers = rateLimitHeaders(remaining);
+  await next();
+  for (const [key, value] of Object.entries(headers)) {
+    c.res.headers.set(key, value);
+  }
+});
+
+app.use("/check/score", async (c, next) => {
+  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const { allowed, remaining } = await checkRateLimit(ip);
+
+  if (!allowed) {
+    const headers = rateLimitHeaders(remaining);
     return c.html(renderError("Rate limit exceeded. Please wait a minute before scanning again."), { status: 429, headers });
   }
 
@@ -144,6 +160,23 @@ app.get("/api/check", async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";
     return c.json({ error: message }, 500);
+  }
+});
+
+app.get("/check/score", async (c) => {
+  const domain = normalizeDomain(c.req.query("domain"));
+  if (!domain) {
+    return c.html(renderError("Please provide a valid domain name."), 400);
+  }
+
+  const selectors = parseSelectors(c.req.query("selectors"));
+
+  try {
+    const result = await scan(domain, selectors);
+    return c.html(renderScoreBreakdown(result));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Internal error";
+    return c.html(renderError(message), 500);
   }
 });
 

@@ -76,6 +76,7 @@ export interface ScanResult {
   domain: string;
   timestamp: string;
   grade: string;
+  breakdown: import("../shared/scoring.js").GradeBreakdown;
   summary: ScanSummary;
   protocols: {
     dmarc: DmarcResult;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeGrade } from "../src/shared/scoring.js";
+import { computeGrade, computeGradeBreakdown } from "../src/shared/scoring.js";
 import type {
   DmarcResult,
   SpfResult,
@@ -310,5 +310,144 @@ describe("computeGrade", () => {
     });
     // A tier: SPF +1 + DKIM weak(-1) + no ≥2 selectors(0) + testing MTA-STS(-1) → -1 → A-
     expect(grade).toBe("A-");
+  });
+});
+
+describe("computeGradeBreakdown", () => {
+  it("grade matches computeGrade for every tier", () => {
+    const cases = [
+      // F
+      { dmarc: makeDmarc({ status: "fail", tags: null }), spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts() },
+      // D
+      { dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }), spf: makeSpf({ status: "fail" }), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts() },
+      // D+
+      { dmarc: makeDmarc(), spf: makeSpf({ status: "fail" }), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts() },
+      // C
+      { dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }), spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts() },
+      // B
+      { dmarc: makeDmarc(), spf: makeSpf({ record: "v=spf1 ~all" }), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts() },
+      // A+
+      { dmarc: makeDmarc(), spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi({ status: "pass" }), mta_sts: makeMtaSts({ status: "pass", policy: { version: "STSv1", mode: "enforce", mx: ["mx.example.com"], max_age: 86400 } }) },
+    ];
+    for (const protocols of cases) {
+      const breakdown = computeGradeBreakdown(protocols);
+      expect(breakdown.grade).toBe(computeGrade(protocols));
+    }
+  });
+
+  it("returns correct tier for F grade", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ status: "fail", tags: null }),
+      spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    expect(bd.tier).toBe("F");
+    expect(bd.factors).toHaveLength(0);
+  });
+
+  it("returns correct tier for C grade", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    expect(bd.tier).toBe("C");
+    expect(bd.tierReason).toContain("quarantine");
+  });
+
+  it("returns correct tier for A+ grade", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc(), spf: makeSpf(), dkim: makeDkim(),
+      bimi: makeBimi({ status: "pass" }),
+      mta_sts: makeMtaSts({ status: "pass", policy: { version: "STSv1", mode: "enforce", mx: ["mx.example.com"], max_age: 86400 } }),
+    });
+    expect(bd.tier).toBe("A+");
+    expect(bd.grade).toBe("A+");
+    expect(bd.tierReason).toContain("perfect");
+  });
+
+  it("collects SPF factors", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf({ record: "v=spf1 ~all", lookups_used: 9 }),
+      dkim: makeDkim({ selectors: { s1: { found: true, key_type: "rsa", key_bits: 2048 } } }),
+      bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    const spfFactors = bd.factors.filter((f) => f.protocol === "spf");
+    expect(spfFactors.length).toBe(2); // ~all and >8 lookups
+    expect(spfFactors.every((f) => f.effect === -1)).toBe(true);
+  });
+
+  it("collects DKIM factors", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf({ record: "v=spf1 ip4:10.0.0.0/24", lookups_used: 3 }),
+      dkim: makeDkim({
+        selectors: {
+          google: { found: true, key_type: "rsa", key_bits: 1024 },
+          selector1: { found: true, key_type: "rsa", key_bits: 2048 },
+        },
+      }),
+      bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    const dkimFactors = bd.factors.filter((f) => f.protocol === "dkim");
+    expect(dkimFactors.length).toBe(2); // weak key and ≥2 selectors
+    expect(dkimFactors.find((f) => f.effect === -1)?.label).toContain("2048");
+    expect(dkimFactors.find((f) => f.effect === 1)?.label).toContain("selectors");
+  });
+
+  it("generates P1 recommendation for F grade", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "none" } }),
+      spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    expect(bd.recommendations.length).toBeGreaterThan(0);
+    expect(bd.recommendations[0].priority).toBe(1);
+    expect(bd.recommendations[0].protocol).toBe("dmarc");
+  });
+
+  it("generates upgrade recommendation for C tier", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    const upgradeRec = bd.recommendations.find((r) => r.protocol === "dmarc" && r.priority === 1);
+    expect(upgradeRec).toBeDefined();
+    expect(upgradeRec!.title).toContain("reject");
+  });
+
+  it("generates no recommendations for A+", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc(), spf: makeSpf(), dkim: makeDkim(),
+      bimi: makeBimi({ status: "pass" }),
+      mta_sts: makeMtaSts({ status: "pass", policy: { version: "STSv1", mode: "enforce", mx: ["mx.example.com"], max_age: 86400 } }),
+    });
+    expect(bd.recommendations).toHaveLength(0);
+  });
+
+  it("includes protocol summaries for all 5 protocols", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc(), spf: makeSpf(), dkim: makeDkim(),
+      bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    expect(Object.keys(bd.protocolSummaries)).toEqual(
+      expect.arrayContaining(["dmarc", "spf", "dkim", "bimi", "mta_sts"]),
+    );
+    expect(bd.protocolSummaries.dmarc.summary).toContain("reject");
+  });
+
+  it("sets modifierLabel correctly", () => {
+    const bdPlus = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf(), dkim: makeDkim(), bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    // SPF +1 + DKIM ≥2 selectors +1 → modifier ≥1 → "+"
+    expect(bdPlus.modifierLabel).toBe("+");
+
+    const bdMinus = computeGradeBreakdown({
+      dmarc: makeDmarc({ tags: { v: "DMARC1", p: "quarantine" } }),
+      spf: makeSpf({ record: "v=spf1 ~all" }),
+      dkim: makeDkim({ selectors: { s1: { found: true, key_type: "rsa", key_bits: 1024 } } }),
+      bimi: makeBimi(), mta_sts: makeMtaSts(),
+    });
+    expect(bdMinus.modifierLabel).toBe("−");
   });
 });

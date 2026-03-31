@@ -11,6 +11,11 @@ import {
   lookupCounter,
   dkimSelectorGrid,
   mtaStsPolicyTable,
+  scoreSnippet,
+  tierExplanationCard,
+  scoringFactorsTable,
+  protocolContributionGrid,
+  recommendationList,
 } from "./components.js";
 import type { ScanResult } from "../analyzers/types.js";
 
@@ -140,6 +145,7 @@ export function renderReport(result: ScanResult): string {
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
+  ${scoreSnippet(result)}
   <button class="confetti-toggle" data-grade="${esc(result.grade)}"
           aria-label="Toggle confetti" aria-pressed="false" title="Toggle confetti">&#127881;</button>
   <div class="report-meta">
@@ -162,6 +168,31 @@ export function renderReport(result: ScanResult): string {
 </div>`;
 
   return page(`${result.domain} — dmarcheck`, body);
+}
+
+export function renderScoreBreakdown(result: ScanResult): string {
+  const { breakdown } = result;
+  const backUrl = `/check?domain=${encodeURIComponent(result.domain)}`;
+
+  const body = `<div class="breakdown">
+  <div class="report-nav">
+    <a href="${backUrl}">&larr; Back to results</a>
+  </div>
+  <div class="report-header">
+    <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
+    <div class="domain-name">${esc(result.domain)}</div>
+  </div>
+  <div class="report-meta">
+    <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time>
+  </div>
+  ${tierExplanationCard(breakdown.tier, breakdown.tierReason, breakdown.grade, breakdown.modifierLabel)}
+  ${scoringFactorsTable(breakdown.factors, breakdown.modifier, breakdown.modifierLabel)}
+  ${protocolContributionGrid(breakdown.protocolSummaries)}
+  ${recommendationList(breakdown.recommendations)}
+  <div class="learn-link" style="margin-top:2rem;margin-bottom:1rem"><a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+</div>`;
+
+  return page(`Scoring breakdown — ${result.domain} — dmarcheck`, body);
 }
 
 export function renderError(message: string): string {

@@ -4,7 +4,9 @@ import type {
   SpfIncludeNode,
   DkimSelectorResult,
   MtaStsPolicy,
+  ScanResult,
 } from "../analyzers/types.js";
+import type { ScoringFactor, Recommendation } from "../shared/scoring.js";
 
 const DMARC_TOOLTIPS: Record<string, string> = {
   v: "Version — must be DMARC1",
@@ -190,4 +192,153 @@ export function mtaStsPolicyTable(policy: MtaStsPolicy): string {
   <tr><td>mx</td><td>${policy.mx.map(esc).join(", ") || "—"}</td></tr>
   <tr><td>max_age</td><td>${policy.max_age.toLocaleString()}s</td></tr>
 </table>`;
+}
+
+// ── Scoring breakdown components ───────────────────────────────
+
+const PROTO_LABELS: Record<string, string> = {
+  dmarc: "DMARC",
+  spf: "SPF",
+  dkim: "DKIM",
+  bimi: "BIMI",
+  mta_sts: "MTA-STS",
+};
+
+export function scoreSnippet(result: ScanResult): string {
+  const { breakdown, domain } = result;
+  const selectors = new URL(
+    `https://x/check?domain=${encodeURIComponent(domain)}`,
+  ).search;
+  const scoreUrl = `/check/score${selectors}`;
+
+  const dots = Object.entries(breakdown.protocolSummaries)
+    .map(
+      ([key, { status }]) =>
+        `<span class="snippet-proto"><span class="snippet-dot status-${status}"></span>${PROTO_LABELS[key] ?? key}</span>`,
+    )
+    .join("");
+
+  const tierClass = breakdown.tier === "F" ? "tier-fail" : breakdown.tier === "D" ? "tier-warn" : "tier-pass";
+
+  return `<div class="score-snippet">
+  <div class="snippet-left">
+    <div class="snippet-tier"><span class="${tierClass}">${esc(breakdown.tier)} tier</span> &mdash; ${esc(breakdown.tierReason)}</div>
+    <div class="snippet-protocols">${dots}</div>
+  </div>
+  <a class="snippet-link" href="${scoreUrl}">View scoring breakdown &rarr;</a>
+</div>`;
+}
+
+export function tierExplanationCard(
+  tier: string,
+  tierReason: string,
+  grade: string,
+  modifierLabel: string,
+): string {
+  const tierText =
+    tier === "A+"
+      ? `Your domain achieves a <span class="tier-pass">perfect score</span>. DMARC policy is set to reject, SPF and DKIM are strong, and both BIMI and MTA-STS are configured.`
+      : tier === "F"
+        ? `<span class="tier-fail">${esc(tierReason)}</span>. DMARC is the foundation of email authentication &mdash; without it, receivers have no policy for handling unauthenticated mail from your domain.`
+        : `${esc(tierReason)} &mdash; this earns a <span class="tier-pass">${esc(tier)}-tier</span> base grade.${modifierLabel ? ` Scoring modifiers adjusted the final grade to <span class="tier-pass">${esc(grade)}</span>.` : ""}`;
+
+  return `<div class="bd-card">
+  <div class="bd-card-title">Why you got this grade</div>
+  <div class="bd-card-body">
+    <div class="tier-text">${tierText}</div>
+  </div>
+</div>`;
+}
+
+export function scoringFactorsTable(
+  factors: ScoringFactor[],
+  modifier: number,
+  modifierLabel: string,
+): string {
+  if (factors.length === 0) {
+    return "";
+  }
+
+  const rows = factors
+    .map((f) => {
+      const effectClass =
+        f.effect > 0 ? "effect-plus" : f.effect < 0 ? "effect-minus" : "effect-neutral";
+      const effectText = f.effect > 0 ? "+1" : f.effect < 0 ? "\u22121" : "0";
+      return `<tr>
+      <td class="factor-proto">${esc(PROTO_LABELS[f.protocol] ?? f.protocol)}</td>
+      <td class="factor-label">${esc(f.label)}</td>
+      <td class="factor-effect ${effectClass}">${effectText}</td>
+    </tr>`;
+    })
+    .join("");
+
+  const summary =
+    factors.length > 1
+      ? `<div class="modifier-summary">
+      <span>Net modifier: ${factors.map((f) => (f.effect > 0 ? "+1" : f.effect < 0 ? "\u22121" : "0")).join(" ")} = ${modifier > 0 ? "+" : ""}${modifier}</span>
+      <span class="modifier-result">&rarr; ${modifierLabel ? modifierLabel : "no change"}</span>
+    </div>`
+      : "";
+
+  return `<div class="bd-card">
+  <div class="bd-card-title">Scoring factors</div>
+  <div class="bd-card-body">
+    <table class="factors-table">
+      ${rows}
+    </table>
+    ${summary}
+  </div>
+</div>`;
+}
+
+export function protocolContributionGrid(
+  summaries: Record<string, { status: Status; summary: string }>,
+): string {
+  const cells = Object.entries(summaries)
+    .map(
+      ([key, { status, summary }]) =>
+        `<div class="proto-cell">
+      <div class="snippet-dot status-${status}" style="margin:0 auto 6px"></div>
+      <div class="proto-name">${esc(PROTO_LABELS[key] ?? key)}</div>
+      <div class="proto-summary">${esc(summary)}</div>
+    </div>`,
+    )
+    .join("");
+
+  return `<div class="bd-card">
+  <div class="bd-card-title">Protocol contributions</div>
+  <div class="bd-card-body">
+    <div class="proto-grid">${cells}</div>
+  </div>
+</div>`;
+}
+
+export function recommendationList(recommendations: Recommendation[]): string {
+  if (recommendations.length === 0) {
+    return `<div class="bd-card">
+  <div class="bd-card-title">How to improve</div>
+  <div class="bd-card-body">
+    <div class="tier-text">Nothing to improve &mdash; your email security configuration is fully optimized.</div>
+  </div>
+</div>`;
+  }
+
+  const items = recommendations
+    .map(
+      (r) =>
+        `<div class="rec-item">
+      <div class="rec-priority priority-${r.priority}">P${r.priority}</div>
+      <div class="rec-content">
+        <div class="rec-title">${esc(r.title)}</div>
+        <div class="rec-desc">${esc(r.description)}</div>
+        <div class="rec-impact">${esc(r.impact)}</div>
+      </div>
+    </div>`,
+    )
+    .join("");
+
+  return `<div class="bd-card">
+  <div class="bd-card-title">How to improve</div>
+  <div class="bd-card-body">${items}</div>
+</div>`;
 }

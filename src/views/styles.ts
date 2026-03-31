@@ -246,12 +246,114 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading p { color: #71717a; margin-top: 1rem; font-size: 0.9rem; }
 
+/* Score snippet (inline on results page) */
+.score-snippet {
+  background: #18181b; border: 1px solid #27272a; border-radius: 10px;
+  padding: 14px 18px; margin: 12px 0 20px 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+}
+.snippet-left { display: flex; flex-direction: column; gap: 6px; }
+.snippet-tier { font-size: 0.85rem; color: #e4e4e7; }
+.tier-pass { color: #22c55e; font-weight: 600; }
+.tier-warn { color: #f59e0b; font-weight: 600; }
+.tier-fail { color: #ef4444; font-weight: 600; }
+.snippet-protocols { display: flex; gap: 12px; align-items: center; }
+.snippet-proto {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.7rem; color: #a1a1aa;
+}
+.snippet-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.snippet-link {
+  color: #f97316; font-size: 0.8rem; text-decoration: none; font-weight: 500;
+  white-space: nowrap;
+}
+.snippet-link:hover { text-decoration: underline; }
+
+/* Scoring breakdown page */
+.breakdown { max-width: 700px; margin: 0 auto; padding: 2rem; }
+.breakdown .report-nav { margin-bottom: 1.5rem; }
+.breakdown .report-header { margin-bottom: 0.5rem; }
+.breakdown .report-meta { margin-bottom: 1.5rem; }
+
+.bd-card {
+  background: #18181b; border: 1px solid #27272a; border-radius: 10px;
+  margin-bottom: 16px; overflow: hidden;
+}
+.bd-card-title {
+  font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1px; color: #a1a1aa; padding: 14px 18px 0;
+}
+.bd-card-body { padding: 12px 18px 16px; }
+.tier-text { font-size: 0.9rem; line-height: 1.6; color: #e4e4e7; }
+
+/* Factors table */
+.factors-table { width: 100%; border-collapse: collapse; }
+.factors-table td {
+  padding: 8px 0; font-size: 0.8rem; border-bottom: 1px solid #27272a40;
+  vertical-align: middle;
+}
+.factors-table tr:last-child td { border-bottom: none; }
+.factor-proto {
+  color: #a1a1aa; font-weight: 500; width: 70px;
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.factor-label { color: #e4e4e7; }
+.factor-effect {
+  text-align: right; font-weight: 700; font-size: 0.8rem; width: 40px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.effect-plus { color: #22c55e; }
+.effect-minus { color: #ef4444; }
+.effect-neutral { color: #a1a1aa; }
+.modifier-summary {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid #27272a;
+  font-size: 0.8rem; color: #a1a1aa;
+  display: flex; justify-content: space-between;
+}
+.modifier-result { color: #22c55e; font-weight: 600; }
+
+/* Protocol contribution grid */
+.proto-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+}
+.proto-cell {
+  text-align: center; padding: 12px 6px; border-radius: 8px; background: #0a0a0f;
+}
+.proto-name {
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: #e4e4e7; margin-bottom: 4px;
+}
+.proto-summary { font-size: 0.65rem; color: #a1a1aa; line-height: 1.3; }
+
+/* Recommendations */
+.rec-item {
+  display: flex; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid #27272a40;
+}
+.rec-item:last-child { border-bottom: none; }
+.rec-priority {
+  width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+}
+.priority-1 { background: #052e1680; color: #22c55e; border: 1px solid #22c55e40; }
+.priority-2 { background: #451a0380; color: #f59e0b; border: 1px solid #f59e0b40; }
+.priority-3 { background: #18181b; color: #a1a1aa; border: 1px solid #27272a; }
+.rec-content { flex: 1; }
+.rec-title { font-size: 0.85rem; font-weight: 500; color: #e4e4e7; margin-bottom: 3px; }
+.rec-desc { font-size: 0.78rem; color: #a1a1aa; line-height: 1.4; }
+.rec-impact { font-size: 0.7rem; color: #f97316; margin-top: 4px; font-weight: 500; }
+
 /* Responsive */
 @media (max-width: 640px) {
   .logo { font-size: 2rem; }
   .search-box { flex-direction: column; border-radius: 12px; }
   .search-box button { padding: 14px; }
   .report { padding: 1rem; }
+  .breakdown { padding: 1rem; }
   .selector-grid { grid-template-columns: 1fr; }
+  .proto-grid { grid-template-columns: repeat(3, 1fr); }
+  .score-snippet { flex-direction: column; align-items: flex-start; }
 }
 `;
