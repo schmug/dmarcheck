@@ -5,11 +5,14 @@ import {
   _memoryStore,
   _LIMIT,
   _WINDOW_SECONDS,
+  _SWEEP_INTERVAL,
+  _resetCallCount,
 } from "../src/rate-limit.js";
 
 describe("rate-limit", () => {
   beforeEach(() => {
     _memoryStore.clear();
+    _resetCallCount();
     // Ensure caches.default is not available so we hit the in-memory path
     vi.stubGlobal("caches", undefined);
   });
@@ -65,6 +68,62 @@ describe("rate-limit", () => {
       const afterExpiry = await checkRateLimit("1.2.3.4");
       expect(afterExpiry.allowed).toBe(true);
       expect(afterExpiry.remaining).toBe(_LIMIT - 1);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("expired entry eviction", () => {
+    it("removes expired entries after SWEEP_INTERVAL calls", async () => {
+      vi.useFakeTimers();
+
+      // Seed expired entries from other IPs
+      const past = Date.now() - 1;
+      _memoryStore.set("stale-1", { count: 5, expires: past });
+      _memoryStore.set("stale-2", { count: 3, expires: past });
+
+      // Make SWEEP_INTERVAL calls to trigger the sweep
+      for (let i = 0; i < _SWEEP_INTERVAL; i++) {
+        await checkRateLimit(`10.0.0.${i % 256}`);
+      }
+
+      expect(_memoryStore.has("stale-1")).toBe(false);
+      expect(_memoryStore.has("stale-2")).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("preserves non-expired entries during sweep", async () => {
+      vi.useFakeTimers();
+
+      const past = Date.now() - 1;
+      const future = Date.now() + 60_000;
+      _memoryStore.set("stale", { count: 5, expires: past });
+      _memoryStore.set("active", { count: 2, expires: future });
+
+      for (let i = 0; i < _SWEEP_INTERVAL; i++) {
+        await checkRateLimit(`10.0.0.${i % 256}`);
+      }
+
+      expect(_memoryStore.has("stale")).toBe(false);
+      expect(_memoryStore.has("active")).toBe(true);
+      expect(_memoryStore.get("active")!.count).toBe(2);
+
+      vi.useRealTimers();
+    });
+
+    it("does not sweep before SWEEP_INTERVAL calls", async () => {
+      vi.useFakeTimers();
+
+      const past = Date.now() - 1;
+      _memoryStore.set("stale", { count: 5, expires: past });
+
+      // Make fewer calls than the interval
+      for (let i = 0; i < _SWEEP_INTERVAL - 1; i++) {
+        await checkRateLimit(`10.0.0.${i % 256}`);
+      }
+
+      expect(_memoryStore.has("stale")).toBe(true);
 
       vi.useRealTimers();
     });

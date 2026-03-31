@@ -3,6 +3,8 @@ const WINDOW_SECONDS = 60;
 
 // In-memory fallback for local dev where caches.default is unavailable
 const memoryStore = new Map<string, { count: number; expires: number }>();
+let callCount = 0;
+const SWEEP_INTERVAL = 100;
 
 export async function checkRateLimit(
   ip: string,
@@ -48,6 +50,14 @@ function checkRateLimitMemory(
   ip: string,
 ): { allowed: boolean; remaining: number } {
   const now = Date.now();
+
+  if (++callCount >= SWEEP_INTERVAL) {
+    callCount = 0;
+    for (const [key, val] of memoryStore) {
+      if (val.expires <= now) memoryStore.delete(key);
+    }
+  }
+
   const entry = memoryStore.get(ip);
 
   let count: number;
@@ -73,4 +83,11 @@ export function rateLimitHeaders(remaining: number): Record<string, string> {
 }
 
 // Exported for testing only
-export { memoryStore as _memoryStore, LIMIT as _LIMIT, WINDOW_SECONDS as _WINDOW_SECONDS };
+function _resetCallCount() { callCount = 0; }
+export {
+  memoryStore as _memoryStore,
+  LIMIT as _LIMIT,
+  WINDOW_SECONDS as _WINDOW_SECONDS,
+  SWEEP_INTERVAL as _SWEEP_INTERVAL,
+  _resetCallCount,
+};
