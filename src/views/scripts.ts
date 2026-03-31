@@ -14,4 +14,15 @@ document.addEventListener('click', function(e) {
     if (sub) sub.style.display = sub.style.display === 'none' ? '' : 'none';
   }
 });
+
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.copy-btn');
+  if (btn) {
+    var text = btn.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+  }
+});
 `;
