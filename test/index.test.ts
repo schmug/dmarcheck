@@ -186,4 +186,77 @@ describe("security headers", () => {
     const res = await app.request("/");
     expect(res.headers.get("Strict-Transport-Security")).toBeNull();
   });
+
+  it("allows same-origin images in CSP", async () => {
+    const res = await app.request("/");
+    const csp = res.headers.get("Content-Security-Policy");
+    expect(csp).toContain("img-src 'self' data:");
+  });
+});
+
+describe("favicon and icon routes", () => {
+  it("serves adaptive SVG favicon", async () => {
+    const res = await app.request("/favicon.svg");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/svg+xml");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    const body = await res.text();
+    expect(body).toContain("prefers-color-scheme");
+    expect(body.length).toBeLessThan(5000);
+  });
+
+  it("serves ICO favicon", async () => {
+    const res = await app.request("/favicon.ico");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+  });
+
+  it("serves apple touch icon", async () => {
+    const res = await app.request("/apple-touch-icon.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+  });
+
+  it("serves web manifest with icon entries", async () => {
+    const res = await app.request("/manifest.webmanifest");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/manifest+json");
+    const body = await res.json();
+    expect(body.icons).toHaveLength(2);
+    expect(body.icons[0].src).toBe("/icon-192.png");
+    expect(body.icons[1].src).toBe("/icon-512.png");
+  });
+
+  it("serves 192px icon", async () => {
+    const res = await app.request("/icon-192.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+  });
+
+  it("serves 512px icon", async () => {
+    const res = await app.request("/icon-512.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+  });
+
+  it("still serves existing logo SVG unchanged", async () => {
+    const res = await app.request("/logo.svg");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain('viewBox="0 0 512 512"');
+    expect(body).toContain('fill="#0a0a0a"');
+  });
+});
+
+describe("HTML head tags", () => {
+  it("includes favicon link tags", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('rel="icon" href="/favicon.ico"');
+    expect(html).toContain('rel="icon" href="/favicon.svg"');
+    expect(html).toContain('rel="apple-touch-icon"');
+    expect(html).toContain('rel="manifest"');
+  });
 });

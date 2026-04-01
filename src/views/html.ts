@@ -41,7 +41,10 @@ function page(title: string, body: string): string {
 <meta property="og:url" content="https://dmarc.mx">
 <meta property="og:image" content="https://dmarc.mx/og-image.svg">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%230a0a0f'/><text x='50' y='72' font-family='monospace' font-size='72' fill='%23f97316' text-anchor='middle'>@</text><circle cx='38' cy='42' r='8' fill='white'/><circle cx='62' cy='42' r='8' fill='white'/><circle cx='40' cy='44' r='4' fill='%230a0a0f'/><circle cx='64' cy='44' r='4' fill='%230a0a0f'/></svg>">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <title>${esc(title)}</title>
 <style>${CSS}</style>
 </head>
