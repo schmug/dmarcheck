@@ -3,6 +3,7 @@ import {
   esc,
   generateCreature,
   gradeToMood,
+  statusDot,
   themeToggle,
 } from "../src/views/components";
 import { renderError, renderLandingPage } from "../src/views/html";
@@ -87,6 +88,14 @@ describe("gradeToMood", () => {
 
   it("maps F grades to panicked", () => {
     expect(gradeToMood("F")).toBe("panicked");
+  });
+});
+
+describe("statusDot", () => {
+  it("renders info status with informational label", () => {
+    const html = statusDot("info" as any);
+    expect(html).toContain("status-info");
+    expect(html).toContain("informational");
   });
 });
 

@@ -75,7 +75,9 @@ export function statusDot(status: Status): string {
       ? "Status: passing"
       : status === "warn"
         ? "Status: warning"
-        : "Status: failing";
+        : status === "info"
+          ? "Status: informational"
+          : "Status: failing";
   return `<div class="status-dot status-${status}" role="img" aria-label="${label}"></div>`;
 }
 
@@ -87,7 +89,9 @@ export function validationList(validations: Validation[]): string {
           ? '<span class="icon-pass" aria-hidden="true">&#10003;</span>'
           : v.status === "warn"
             ? '<span class="icon-warn" aria-hidden="true">&#9888;</span>'
-            : '<span class="icon-fail" aria-hidden="true">&#10007;</span>';
+            : v.status === "info"
+              ? '<span class="icon-info" aria-hidden="true">&#9432;</span>'
+              : '<span class="icon-fail" aria-hidden="true">&#10007;</span>';
       return `<li>${icon} ${esc(v.message)}</li>`;
     })
     .join("");
