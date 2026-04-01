@@ -101,6 +101,7 @@ export function renderLandingPage(): string {
         Free and open source &mdash; MIT License
       </a>
     </div>
+    <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
   </div>
 </div>`,
   );
@@ -357,7 +358,7 @@ export function renderCheckLoading(domain: string, selectors: string): string {
   <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
   <div class="loading">
     <div class="creature-loading">${generateCreature("lg")}</div>
-    <p>Scanning ${esc(domain)}&hellip;</p>
+    <p>DMarcus is scanning ${esc(domain)}&hellip;</p>
   </div>
   <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
 </div>

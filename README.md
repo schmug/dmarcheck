@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://dmarc.mx/logo.svg" alt="dmarcheck" width="120" height="120">
+  <img src="https://dmarc.mx/logo.svg" alt="DMarcus — the dmarcheck mascot" width="120" height="120">
 </p>
 
 <h1 align="center">dmarcheck</h1>
@@ -11,6 +11,8 @@
 </p>
 
 DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.
+
+Meet **DMarcus**, the @ creature who guards your inbox.
 
 **Live at [dmarc.mx](https://dmarc.mx)**
 

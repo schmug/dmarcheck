@@ -190,8 +190,19 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--clr-text-dim); font-size: 0.8rem; text-decoration: none;
 }
+<<<<<<< HEAD
 .foss-link:hover { color: var(--clr-text-muted); text-decoration: none; }
 .foss-link:hover svg { fill: var(--clr-text-muted); }
+=======
+.foss-link:hover { color: #a1a1aa; text-decoration: none; }
+.foss-link:hover svg { fill: #a1a1aa; }
+.dmarcus-credit {
+  margin-top: 0.75rem; text-align: center; font-size: 0.75rem;
+  color: #71717a; display: inline-flex; align-items: center; gap: 4px;
+  width: 100%; justify-content: center; opacity: 0.6;
+}
+.dmarcus-credit:hover { opacity: 1; transition: opacity 0.3s; }
+>>>>>>> 352d741 (Add DMarcus branding and update CLAUDE.md for accuracy)
 .footer-creature { margin-bottom: 0.75rem; opacity: 0.6; }
 .footer-creature:hover { opacity: 1; transition: opacity 0.3s; }
 .logo-text { display: inline; }

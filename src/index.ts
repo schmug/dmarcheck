@@ -231,7 +231,7 @@ app.get("/og-image.svg", (c) => {
   <!-- Tagline -->
   <text x="500" y="350" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="24" fill="#71717a">DNS Email Security Analyzer</text>
   <!-- BIMI badge -->
-  <text x="500" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="18" fill="#f97316">BIMI-ready brand identity</text>
+  <text x="500" y="400" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" font-size="18" fill="#f97316">Meet DMarcus — your email security sidekick</text>
 </svg>`;
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",

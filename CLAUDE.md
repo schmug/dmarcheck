@@ -29,7 +29,9 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - `src/analyzers/` — One module per protocol (dmarc, spf, dkim, bimi, mta-sts)
 - `src/orchestrator.ts` — Runs all analyzers in parallel via Promise.allSettled
 - `src/shared/scoring.ts` — Grade computation (F if no DMARC or p=none)
-- `src/views/` — HTML generation via template literals (styles.ts, scripts.ts, components.ts, html.ts)
+- `src/cache.ts` — SSE result caching
+- `src/csv.ts` — CSV export for scan results
+- `src/views/` — HTML generation via template literals (styles.ts, scripts.ts, components.ts, html.ts, favicon.ts)
 - `src/rate-limit.ts` — Cache API-based rate limiter (10 req/IP/60s)
 
 ## Conventions
@@ -39,7 +41,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Status is `"pass"` | `"warn"` | `"fail"` for scored protocols, `"info"` for informational (MX)
 - HTML is generated server-side as template literal strings, no JSX or build step
 - Client-side JS is minimal (expand/collapse, tooltips) — inline script tag
-- Dark theme with orange accent (#f97316)
+- Dark/light theme with OS-aware switching and manual toggle; orange accent (#f97316)
 
 ## Quality Gates
 
@@ -65,6 +67,11 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 
 - After committing or merging work, check open issues (`gh issue list`) to see if any were resolved and should be closed
 - When a commit addresses an issue, close it with a comment referencing the commit hash
+
+## Documentation
+
+- Keep `CLAUDE.md` and `README.md` up to date when adding features, changing architecture, or modifying conventions
+- `CLAUDE.md` is for AI assistants and contributors; `README.md` is for users and self-hosters
 
 ## Cloudflare MCP
 
