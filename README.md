@@ -24,7 +24,7 @@ DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS recor
 
 ### Dual Output
 
-- **JSON API** for developers — `curl https://dmarc.mx/api/check?domain=cloudflare.com`
+- **JSON API** for developers — `curl https://dmarc.mx/api/check?domain=dmarc.mx`
 - **Interactive HTML report** for browsers — expandable protocol cards, SPF include tree, educational tooltips
 
 ### Grading
@@ -55,13 +55,13 @@ Once your DNS records are configured, you can verify authentication results in a
 
 ```bash
 # JSON response
-curl https://dmarc.mx/api/check?domain=example.com
+curl https://dmarc.mx/api/check?domain=dmarc.mx
 
 # With custom DKIM selectors
-curl "https://dmarc.mx/api/check?domain=example.com&selectors=myselector,other"
+curl "https://dmarc.mx/api/check?domain=dmarc.mx&selectors=myselector,other"
 
 # Content negotiation on /check
-curl -H "Accept: application/json" "https://dmarc.mx/check?domain=example.com"
+curl -H "Accept: application/json" "https://dmarc.mx/check?domain=dmarc.mx"
 ```
 
 Response includes a `summary` with elevated fields and full `protocols` detail:

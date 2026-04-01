@@ -90,7 +90,7 @@ export function renderLandingPage(): string {
   </div>
   <div class="landing-footer">
     <div class="api-hint">
-      <span>curl</span> https://dmarc.mx/api/check?domain=cloudflare.com
+      <span>curl</span> https://dmarc.mx/api/check?domain=dmarc.mx
     </div>
     <div class="learn-link"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
     <div class="foss-callout">
