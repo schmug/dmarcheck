@@ -32,8 +32,8 @@ function page(title: string, body: string): string {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://dmarcheck.cortech.online">
-<meta property="og:image" content="https://dmarcheck.cortech.online/og-image.svg">
+<meta property="og:url" content="https://dmarc.mx">
+<meta property="og:image" content="https://dmarc.mx/og-image.svg">
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%230a0a0f'/><text x='50' y='72' font-family='monospace' font-size='72' fill='%23f97316' text-anchor='middle'>@</text><circle cx='38' cy='42' r='8' fill='white'/><circle cx='62' cy='42' r='8' fill='white'/><circle cx='40' cy='44' r='4' fill='%230a0a0f'/><circle cx='64' cy='44' r='4' fill='%230a0a0f'/></svg>">
 <title>${esc(title)}</title>
@@ -78,7 +78,7 @@ export function renderLandingPage(): string {
   </div>
   <div class="landing-footer">
     <div class="api-hint">
-      <span>curl</span> https://dmarcheck.cortech.online/api/check?domain=cloudflare.com
+      <span>curl</span> https://dmarc.mx/api/check?domain=cloudflare.com
     </div>
     <div class="learn-link"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
     <div class="foss-callout">

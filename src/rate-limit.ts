@@ -23,7 +23,7 @@ async function checkRateLimitCache(
   ip: string,
 ): Promise<{ allowed: boolean; remaining: number }> {
   const cache = caches.default;
-  const key = new Request(`https://dmarcheck-ratelimit.internal/${ip}`);
+  const key = new Request(`https://dmarc-mx-ratelimit.internal/${ip}`);
 
   const cached = await cache.match(key);
   let count = 0;

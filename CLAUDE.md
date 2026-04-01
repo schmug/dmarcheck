@@ -2,7 +2,7 @@
 
 DNS email security analyzer (DMARC, SPF, DKIM, BIMI, MTA-STS).
 Cloudflare Worker serving dual output: JSON API + interactive HTML report.
-Live at dmarcheck.cortech.online | Repo: github.com/schmug/dmarcheck
+Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 
 ## Stack
 
@@ -43,3 +43,9 @@ Live at dmarcheck.cortech.online | Repo: github.com/schmug/dmarcheck
 - Tests in `test/` directory
 - Mock DNS client for unit tests (`vi.mock`)
 - Test scoring boundaries and analyzer parsing
+
+## Cloudflare MCP
+
+- Cloudflare MCP server (`@cloudflare/mcp-server-cloudflare`) is configured globally in `~/.claude.json`
+- Provides tools for managing Workers, DNS, KV, D1, R2, and more from Claude Code
+- Account ID: `f0fc4ca5b74274f7ba892e6c9ec411a7`

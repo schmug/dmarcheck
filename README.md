@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="https://dmarcheck.cortech.online/logo.svg" alt="dmarcheck" width="120" height="120">
+  <img src="https://dmarc.mx/logo.svg" alt="dmarcheck" width="120" height="120">
 </p>
 
 <h1 align="center">dmarcheck</h1>
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="https://dmarcheck.cortech.online"><img src="https://img.shields.io/badge/Cloudflare%20Workers-Deployed-f38020?logo=cloudflare" alt="Deploy to Cloudflare Workers"></a>
+  <a href="https://dmarc.mx"><img src="https://img.shields.io/badge/Cloudflare%20Workers-Deployed-f38020?logo=cloudflare" alt="Deploy to Cloudflare Workers"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript" alt="TypeScript"></a>
 </p>
 
 DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.
 
-**Live at [dmarcheck.cortech.online](https://dmarcheck.cortech.online)**
+**Live at [dmarc.mx](https://dmarc.mx)**
 
 ## Features
 
@@ -24,7 +24,7 @@ DNS email security analyzer — checks DMARC, SPF, DKIM, BIMI, and MTA-STS recor
 
 ### Dual Output
 
-- **JSON API** for developers — `curl https://dmarcheck.cortech.online/api/check?domain=cloudflare.com`
+- **JSON API** for developers — `curl https://dmarc.mx/api/check?domain=cloudflare.com`
 - **Interactive HTML report** for browsers — expandable protocol cards, SPF include tree, educational tooltips
 
 ### Grading
@@ -55,13 +55,13 @@ Once your DNS records are configured, you can verify authentication results in a
 
 ```bash
 # JSON response
-curl https://dmarcheck.cortech.online/api/check?domain=example.com
+curl https://dmarc.mx/api/check?domain=example.com
 
 # With custom DKIM selectors
-curl "https://dmarcheck.cortech.online/api/check?domain=example.com&selectors=myselector,other"
+curl "https://dmarc.mx/api/check?domain=example.com&selectors=myselector,other"
 
 # Content negotiation on /check
-curl -H "Accept: application/json" "https://dmarcheck.cortech.online/check?domain=example.com"
+curl -H "Accept: application/json" "https://dmarc.mx/check?domain=example.com"
 ```
 
 Response includes a `summary` with elevated fields and full `protocols` detail:
