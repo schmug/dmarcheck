@@ -3,6 +3,7 @@ import type {
   DkimResult,
   DmarcResult,
   MtaStsResult,
+  MxResult,
   ScanResult,
   SpfResult,
 } from "../analyzers/types.js";
@@ -13,6 +14,7 @@ import {
   gradeClass,
   lookupCounter,
   mtaStsPolicyTable,
+  mxTable,
   protocolCard,
   protocolContributionGrid,
   rawRecord,
@@ -168,8 +170,17 @@ export function renderMtaStsCard(mtaSts: MtaStsResult): string {
   return protocolCard("MTA-STS", mtaSts.status, subtitle, body);
 }
 
+export function renderMxCard(mx: MxResult): string {
+  const subtitle =
+    mx.records.length > 0
+      ? `${mx.records.length} record${mx.records.length !== 1 ? "s" : ""}${mx.providers.length > 0 ? ` \u00b7 ${mx.providers.map((p) => p.name).join(", ")}` : ""}`
+      : "No MX records";
+  const body = mxTable(mx.records) + validationList(mx.validations);
+  return protocolCard("MX", mx.status, subtitle, body);
+}
+
 function reportBody(result: ScanResult): string {
-  const { dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
+  const { mx, dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
 
   return `<div class="report">
   <div class="report-nav">
@@ -187,6 +198,7 @@ function reportBody(result: ScanResult): string {
     <a href="/api/check?domain=${encodeURIComponent(result.domain)}">View JSON &nearr;</a> &middot;
     <a href="/check?domain=${encodeURIComponent(result.domain)}&format=csv" class="csv-download">Download CSV &darr;</a>
   </div>
+  ${renderMxCard(mx)}
   ${renderDmarcCard(dmarc)}
   ${renderSpfCard(spf)}
   ${renderDkimCard(dkim)}
@@ -266,6 +278,7 @@ export function renderStreamingLoading(
     <div class="domain-name">${esc(domain)}</div>
   </div>
   <div id="protocol-cards">
+    ${skeletonCard("MX", false)}
     ${skeletonCard("DMARC", true)}
     ${skeletonCard("SPF", true)}
     ${skeletonCard("DKIM", false)}

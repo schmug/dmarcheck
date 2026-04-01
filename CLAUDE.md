@@ -36,7 +36,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 
 - Each analyzer is a standalone async function returning a typed result
 - DNS errors (NXDOMAIN/NODATA) return null, not exceptions
-- Status is always `"pass"` | `"warn"` | `"fail"`
+- Status is `"pass"` | `"warn"` | `"fail"` for scored protocols, `"info"` for informational (MX)
 - HTML is generated server-side as template literal strings, no JSX or build step
 - Client-side JS is minimal (expand/collapse, tooltips) — inline script tag
 - Dark theme with orange accent (#f97316)

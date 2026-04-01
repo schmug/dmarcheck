@@ -1,6 +1,8 @@
 import type {
   DkimSelectorResult,
+  EmailProvider,
   MtaStsPolicy,
+  MxRecord,
   ScanResult,
   SpfIncludeNode,
   Status,
@@ -75,7 +77,9 @@ export function statusDot(status: Status): string {
       ? "Status: passing"
       : status === "warn"
         ? "Status: warning"
-        : "Status: failing";
+        : status === "info"
+          ? "Status: informational"
+          : "Status: failing";
   return `<div class="status-dot status-${status}" role="img" aria-label="${label}"></div>`;
 }
 
@@ -87,7 +91,9 @@ export function validationList(validations: Validation[]): string {
           ? '<span class="icon-pass" aria-hidden="true">&#10003;</span>'
           : v.status === "warn"
             ? '<span class="icon-warn" aria-hidden="true">&#9888;</span>'
-            : '<span class="icon-fail" aria-hidden="true">&#10007;</span>';
+            : v.status === "info"
+              ? '<span class="icon-info" aria-hidden="true">&#9432;</span>'
+              : '<span class="icon-fail" aria-hidden="true">&#10007;</span>';
       return `<li>${icon} ${esc(v.message)}</li>`;
     })
     .join("");
@@ -225,6 +231,33 @@ export function mtaStsPolicyTable(policy: MtaStsPolicy): string {
   <tr><td>mode</td><td>${esc(policy.mode)}</td></tr>
   <tr><td>mx</td><td>${policy.mx.map(esc).join(", ") || "—"}</td></tr>
   <tr><td>max_age</td><td>${policy.max_age.toLocaleString()}s</td></tr>
+</table>`;
+}
+
+const CATEGORY_LABELS: Record<EmailProvider["category"], string> = {
+  "security-gateway": "Gateway",
+  "email-platform": "Platform",
+  hosting: "Hosting",
+};
+
+export function providerBadge(provider: EmailProvider): string {
+  const label = CATEGORY_LABELS[provider.category];
+  return `<span class="provider-badge">${esc(provider.name)} <span class="badge-category">${label}</span></span>`;
+}
+
+export function mxTable(records: MxRecord[]): string {
+  if (records.length === 0) return "";
+
+  const rows = records
+    .map((r) => {
+      const providerCell = r.provider ? providerBadge(r.provider) : "";
+      return `<tr class="mx-row"><td class="mx-priority">${r.priority}</td><td class="mx-exchange">${esc(r.exchange)}</td><td class="mx-provider">${providerCell}</td></tr>`;
+    })
+    .join("");
+
+  return `<table class="mx-table">
+  <thead><tr><th>Priority</th><th>Exchange</th><th>Provider</th></tr></thead>
+  <tbody>${rows}</tbody>
 </table>`;
 }
 

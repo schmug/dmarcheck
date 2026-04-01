@@ -12,6 +12,7 @@ const HEADERS = [
 ];
 
 const PROTOCOL_NAMES: Record<string, string> = {
+  mx: "MX",
   dmarc: "DMARC",
   spf: "SPF",
   dkim: "DKIM",
@@ -60,7 +61,7 @@ export function generateCsv(result: ScanResult): string {
   // BOM + header
   rows.push(`\uFEFF${HEADERS.map(escapeCsvField).join(",")}`);
 
-  const protocols = ["dmarc", "spf", "dkim", "bimi", "mta_sts"] as const;
+  const protocols = ["mx", "dmarc", "spf", "dkim", "bimi", "mta_sts"] as const;
 
   for (const key of protocols) {
     const proto = result.protocols[key];
@@ -70,7 +71,11 @@ export function generateCsv(result: ScanResult): string {
       .join("; ");
 
     let rawRecord: string;
-    if (key === "dkim") {
+    if (key === "mx") {
+      rawRecord = result.protocols.mx.records
+        .map((r) => `${r.priority} ${r.exchange}`)
+        .join("; ");
+    } else if (key === "dkim") {
       rawRecord = dkimRawSummary(result.protocols.dkim.selectors);
     } else if (key === "mta_sts") {
       rawRecord = result.protocols.mta_sts.dns_record ?? "";

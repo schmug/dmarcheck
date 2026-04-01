@@ -1,4 +1,4 @@
-export type Status = "pass" | "warn" | "fail";
+export type Status = "pass" | "warn" | "fail" | "info";
 
 export interface Validation {
   status: Status;
@@ -63,7 +63,27 @@ export interface MtaStsResult {
   validations: Validation[];
 }
 
+export interface EmailProvider {
+  name: string;
+  category: "security-gateway" | "email-platform" | "hosting";
+}
+
+export interface MxRecord {
+  priority: number;
+  exchange: string;
+  provider?: EmailProvider;
+}
+
+export interface MxResult {
+  status: Status;
+  records: MxRecord[];
+  providers: EmailProvider[];
+  validations: Validation[];
+}
+
 export interface ScanSummary {
+  mx_records: number;
+  mx_providers: string[];
   dmarc_policy: string | null;
   spf_result: Status;
   spf_lookups: string;
@@ -79,6 +99,7 @@ export interface ScanResult {
   breakdown: import("../shared/scoring.js").GradeBreakdown;
   summary: ScanSummary;
   protocols: {
+    mx: MxResult;
     dmarc: DmarcResult;
     spf: SpfResult;
     dkim: DkimResult;

@@ -13,6 +13,7 @@ interface Protocols {
   dkim: DkimResult;
   bimi: BimiResult;
   mta_sts: MtaStsResult;
+  [key: string]: unknown;
 }
 
 export interface ScoringFactor {

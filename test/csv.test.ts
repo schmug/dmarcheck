@@ -34,6 +34,8 @@ function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
       protocolSummaries: {},
     } as GradeBreakdown,
     summary: {
+      mx_records: 2,
+      mx_providers: ["Google Workspace"],
       dmarc_policy: "reject",
       spf_result: "pass",
       spf_lookups: "3/10",
@@ -42,6 +44,20 @@ function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
       mta_sts_mode: null,
     },
     protocols: {
+      mx: {
+        status: "info" as const,
+        records: [
+          { priority: 10, exchange: "aspmx.l.google.com" },
+          { priority: 20, exchange: "alt1.aspmx.l.google.com" },
+        ],
+        providers: [
+          { name: "Google Workspace", category: "email-platform" as const },
+        ],
+        validations: [
+          { status: "info" as const, message: "2 MX records found" },
+          { status: "info" as const, message: "Detected: Google Workspace" },
+        ],
+      },
       dmarc: {
         status: "pass",
         record: "v=DMARC1; p=reject",
@@ -129,11 +145,11 @@ describe("generateCsv", () => {
     );
   });
 
-  it("produces 5 data rows (one per protocol)", () => {
+  it("produces 6 data rows (one per protocol)", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    // header + 5 protocol rows
-    expect(lines).toHaveLength(6);
+    // header + 6 protocol rows
+    expect(lines).toHaveLength(7);
   });
 
   it("uses CRLF line endings per RFC 4180", () => {
@@ -147,14 +163,21 @@ describe("generateCsv", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n").slice(1); // skip header
     const protocols = lines.map((l) => l.split(",")[3]);
-    expect(protocols).toEqual(["DMARC", "SPF", "DKIM", "BIMI", "MTA-STS"]);
+    expect(protocols).toEqual([
+      "MX",
+      "DMARC",
+      "SPF",
+      "DKIM",
+      "BIMI",
+      "MTA-STS",
+    ]);
   });
 
   it("formats findings with status prefix and semicolons", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    // DMARC row (index 1) has 2 validations
-    const dmarcRow = lines[1];
+    // DMARC row (index 2, after MX at index 1) has 2 validations
+    const dmarcRow = lines[2];
     expect(dmarcRow).toContain("[pass] DMARC record found");
     expect(dmarcRow).toContain("[pass] Policy set to reject");
   });
@@ -162,14 +185,14 @@ describe("generateCsv", () => {
   it("filters recommendations by protocol", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    // SPF row (index 2) should have the SPF recommendation
-    const spfRow = lines[2];
+    // SPF row (index 3) should have the SPF recommendation
+    const spfRow = lines[3];
     expect(spfRow).toContain("[P2] Switch SPF from ~all to -all");
-    // BIMI row (index 4) should have the BIMI recommendation
-    const bimiRow = lines[4];
+    // BIMI row (index 5) should have the BIMI recommendation
+    const bimiRow = lines[5];
     expect(bimiRow).toContain("[P3] Add a BIMI record");
-    // DMARC row (index 1) should have no recommendations
-    const dmarcRow = lines[1];
+    // DMARC row (index 2) should have no recommendations
+    const dmarcRow = lines[2];
     // Recommendations field is 7th (index 6), should be empty
     // Parse carefully — just check it doesn't contain [P
     expect(dmarcRow).not.toContain("[P1]");
@@ -180,15 +203,16 @@ describe("generateCsv", () => {
   it("shows DKIM selector summary as raw record", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    const dkimRow = lines[3];
+    // DKIM row (index 4, after MX/DMARC/SPF)
+    const dkimRow = lines[4];
     expect(dkimRow).toContain("google: rsa/2048bit");
   });
 
   it("handles null raw records as empty", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    // BIMI row (index 4) has null record
-    const bimiRow = lines[4];
+    // BIMI row (index 5) has null record
+    const bimiRow = lines[5];
     // Last field should be empty
     const fields = bimiRow.split(",");
     expect(fields[fields.length - 1]).toBe("");
@@ -197,8 +221,8 @@ describe("generateCsv", () => {
   it("handles empty validations", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n");
-    // BIMI row (index 4) has empty validations
-    const bimiFields = lines[4].split(",");
+    // BIMI row (index 5) has empty validations
+    const bimiFields = lines[5].split(",");
     // Findings field (index 5) should be empty
     expect(bimiFields[5]).toBe("");
   });
