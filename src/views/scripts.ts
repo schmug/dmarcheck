@@ -6,62 +6,68 @@ function toggleCard(header) {
   header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
 }
 
-document.addEventListener('click', function(e) {
-  var header = e.target.closest('.card-header');
-  if (header) toggleCard(header);
-});
+/* Guard: document-level listeners persist across document.replaceChild
+   (used by the loading→report transition), so only register them once. */
+if (!window.__dmarcheckBound) {
+  window.__dmarcheckBound = true;
 
-document.addEventListener('keydown', function(e) {
-  var header = e.target.closest('.card-header');
-  if (header && (e.key === 'Enter' || e.key === ' ')) {
-    e.preventDefault();
-    toggleCard(header);
-  }
-});
+  document.addEventListener('click', function(e) {
+    var header = e.target.closest('.card-header');
+    if (header) toggleCard(header);
+  });
 
-document.addEventListener('click', function(e) {
-  var node = e.target.closest('.spf-node.include');
-  if (node) {
-    var li = node.parentElement;
-    var sub = li.querySelector('ul');
-    if (sub) sub.style.display = sub.style.display === 'none' ? '' : 'none';
-  }
-});
+  document.addEventListener('keydown', function(e) {
+    var header = e.target.closest('.card-header');
+    if (header && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      toggleCard(header);
+    }
+  });
 
-document.addEventListener('click', function(e) {
-  var btn = e.target.closest('.copy-btn');
-  if (btn) {
-    var text = btn.getAttribute('data-copy');
-    navigator.clipboard.writeText(text).then(function() {
-      btn.textContent = 'Copied!';
-      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
-    });
-  }
-});
+  document.addEventListener('click', function(e) {
+    var node = e.target.closest('.spf-node.include');
+    if (node) {
+      var li = node.parentElement;
+      var sub = li.querySelector('ul');
+      if (sub) sub.style.display = sub.style.display === 'none' ? '' : 'none';
+    }
+  });
 
-document.addEventListener('submit', function(e) {
-  var form = e.target.closest('form[action="/check"]');
-  if (!form) return;
-  var btn = form.querySelector('button[type="submit"]');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Scanning...';
-  }
-  var landing = document.querySelector('.landing-main');
-  if (landing) {
-    var domain = form.querySelector('input[name="domain"]').value;
-    var wrapper = document.createElement('div');
-    wrapper.className = 'loading';
-    var spinner = document.createElement('div');
-    spinner.className = 'spinner';
-    var msg = document.createElement('p');
-    msg.textContent = 'Scanning ' + domain + '...';
-    wrapper.appendChild(spinner);
-    wrapper.appendChild(msg);
-    Array.from(landing.children).forEach(function(child) { child.style.display = 'none'; });
-    landing.appendChild(wrapper);
-  }
-});
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.copy-btn');
+    if (btn) {
+      var text = btn.getAttribute('data-copy');
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+      });
+    }
+  });
+
+  document.addEventListener('submit', function(e) {
+    var form = e.target.closest('form[action="/check"]');
+    if (!form) return;
+    var btn = form.querySelector('button[type="submit"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+    }
+    var landing = document.querySelector('.landing-main');
+    if (landing) {
+      var domain = form.querySelector('input[name="domain"]').value;
+      var wrapper = document.createElement('div');
+      wrapper.className = 'loading';
+      var spinner = document.createElement('div');
+      spinner.className = 'spinner';
+      var msg = document.createElement('p');
+      msg.textContent = 'Scanning ' + domain + '...';
+      wrapper.appendChild(spinner);
+      wrapper.appendChild(msg);
+      Array.from(landing.children).forEach(function(child) { child.style.display = 'none'; });
+      landing.appendChild(wrapper);
+    }
+  });
+}
 
 (function() {
   var report = document.querySelector('.report');
