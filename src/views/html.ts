@@ -243,7 +243,7 @@ export function renderScoringRubric(): string {
     <a href="/">${generateCreature("sm")} Home</a>
   </div>
   <h1 class="rubric-title">Email Security Scoring</h1>
-  <p class="rubric-intro">dmarcheck grades domains on five email authentication protocols. The grade is determined by a tier system based on your DMARC policy strength, then adjusted with modifiers from SPF, DKIM, and extras.</p>
+  <p class="rubric-intro">dmarcheck grades domains on five email authentication protocols. The grade is determined by a tier system based on your DMARC policy strength, then adjusted with modifiers from DMARC configuration quality, SPF, DKIM, and extras.</p>
 
   <div class="bd-card">
     <div class="bd-card-title">How the grade works</div>
@@ -260,11 +260,11 @@ export function renderScoringRubric(): string {
         <tbody>
           <tr class="rubric-row-a">
             <td><span class="rubric-grade grade-a">A+</span></td>
-            <td>DMARC p=reject + strong SPF + DKIM + <em>both</em> BIMI and MTA-STS configured</td>
+            <td>DMARC p=reject + SPF within lookup limit + DKIM + <em>both</em> BIMI and MTA-STS (enforcing)</td>
           </tr>
           <tr class="rubric-row-a">
             <td><span class="rubric-grade grade-a">A</span></td>
-            <td>DMARC p=reject + strong SPF (-all, within lookup limit) + DKIM + at least one extra (BIMI or MTA-STS)</td>
+            <td>DMARC p=reject + SPF within lookup limit + DKIM + at least one extra (BIMI or MTA-STS)</td>
           </tr>
           <tr class="rubric-row-b">
             <td><span class="rubric-grade grade-a">B</span></td>
@@ -272,11 +272,11 @@ export function renderScoringRubric(): string {
           </tr>
           <tr class="rubric-row-c">
             <td><span class="rubric-grade grade-c">C</span></td>
-            <td>DMARC p=quarantine + SPF passing + DKIM passing</td>
+            <td>DMARC p=quarantine + SPF + DKIM passing (or p=reject with pct &lt; 10%)</td>
           </tr>
           <tr class="rubric-row-d">
-            <td><span class="rubric-grade grade-c">D/D+</span></td>
-            <td>DMARC policy set but missing SPF or DKIM (D+ for p=reject, D for p=quarantine)</td>
+            <td><span class="rubric-grade grade-c">D</span></td>
+            <td>DMARC policy set but missing SPF or DKIM</td>
           </tr>
           <tr class="rubric-row-f">
             <td><span class="rubric-grade grade-f">F</span></td>
@@ -294,16 +294,18 @@ export function renderScoringRubric(): string {
       <table class="rubric-table">
         <thead><tr><th>Factor</th><th>Effect</th></tr></thead>
         <tbody>
-          <tr><td>SPF uses ~all (softfail)</td><td class="effect-minus">&minus;1</td></tr>
-          <tr><td>SPF uses more than 8 DNS lookups</td><td class="effect-minus">&minus;1</td></tr>
-          <tr><td>SPF uses -all with &le;5 lookups</td><td class="effect-plus">+1</td></tr>
+          <tr><td>DMARC aggregate reporting (rua) configured</td><td class="effect-plus">+1</td></tr>
+          <tr><td>No DMARC reporting (rua/ruf) configured</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>DMARC pct &lt; 100% (partial enforcement)</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>SPF uses &le;5 DNS lookups</td><td class="effect-plus">+1</td></tr>
           <tr><td>Any DKIM key under 2048 bits</td><td class="effect-minus">&minus;1</td></tr>
           <tr><td>2 or more DKIM selectors found</td><td class="effect-plus">+1</td></tr>
-          <tr><td>BIMI or MTA-STS configured (B tier)</td><td class="effect-plus">+1</td></tr>
-          <tr><td>MTA-STS in testing mode (A tier)</td><td class="effect-minus">&minus;1</td></tr>
+          <tr><td>BIMI configured (B tier)</td><td class="effect-plus">+1</td></tr>
+          <tr><td>MTA-STS configured (B tier)</td><td class="effect-plus">+1</td></tr>
+          <tr><td>MTA-STS in testing mode</td><td class="effect-minus">&minus;1</td></tr>
         </tbody>
       </table>
-      <p class="tier-text" style="margin-top:12px">If the total is +1 or higher, you get a +. If &minus;1 or lower, you get a &minus;. Zero means no modifier.</p>
+      <p class="tier-text" style="margin-top:12px">If the total is +1 or higher, you get a +. If &minus;1 or lower, you get a &minus;. Zero means no modifier. SPF ~all and -all are treated equally when DMARC is enforced, per M3AAWG best practices.</p>
     </div>
   </div>
 

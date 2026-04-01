@@ -40,83 +40,205 @@ export interface GradeBreakdown {
   protocolSummaries: Record<string, { status: Status; summary: string }>;
 }
 
-export function computeGrade(protocols: Protocols): string {
+// ── Single decision engine ────────────────────────────────────
+
+interface ScoringResult {
+  grade: string;
+  tier: string;
+  tierReason: string;
+  modifier: number;
+  modifierLabel: string;
+  factors: ScoringFactor[];
+}
+
+function resolveScoring(protocols: Protocols): ScoringResult {
   const { dmarc, spf, dkim, bimi, mta_sts } = protocols;
+  const dmarcPolicy = dmarc.tags?.p?.toLowerCase() ?? null;
 
   // Gatekeeper: no DMARC or p=none is automatic F
-  const dmarcPolicy = dmarc.tags?.p?.toLowerCase() ?? null;
   if (dmarc.status === "fail" || !dmarcPolicy || dmarcPolicy === "none") {
-    return "F";
+    const tierReason = !dmarcPolicy
+      ? "No DMARC record found"
+      : dmarcPolicy === "none"
+        ? "DMARC policy is set to none (no enforcement)"
+        : "DMARC record failed validation";
+    return {
+      grade: "F",
+      tier: "F",
+      tierReason,
+      modifier: 0,
+      modifierLabel: "",
+      factors: [],
+    };
   }
 
+  const pct = dmarc.tags?.pct ? Number.parseInt(dmarc.tags.pct, 10) : 100;
   const hasSpf = spf.status !== "fail";
   const hasDkim = dkim.status !== "fail";
   const hasBimi = bimi.status === "pass";
   const hasMtaSts = mta_sts.status === "pass";
 
-  // D: quarantine but missing SPF or DKIM
-  if (dmarcPolicy === "quarantine" && (!hasSpf || !hasDkim)) {
-    return "D";
+  // pct < 10 effectively downgrades the policy one tier
+  // reject with pct < 10 → treated as quarantine-equivalent
+  // quarantine with pct < 10 → treated as near-none (C-tier max)
+  const effectivePolicy =
+    pct < 10
+      ? dmarcPolicy === "reject"
+        ? "quarantine"
+        : "quarantine"
+      : dmarcPolicy;
+
+  // D tier: missing SPF or DKIM
+  if (!hasSpf || !hasDkim) {
+    const missing =
+      !hasSpf && !hasDkim ? "SPF and DKIM are" : !hasSpf ? "SPF is" : "DKIM is";
+    return {
+      grade: "D",
+      tier: "D",
+      tierReason: `p=${dmarcPolicy} but ${missing} missing`,
+      modifier: 0,
+      modifierLabel: "",
+      factors: [],
+    };
   }
 
-  // reject but missing SPF or DKIM
-  if (dmarcPolicy === "reject" && (!hasSpf || !hasDkim)) {
-    return "D+";
+  // C tier: quarantine (or reject downgraded by low pct) with SPF + DKIM
+  if (effectivePolicy === "quarantine") {
+    const factors = [
+      ...spfFactors(spf),
+      ...dkimFactors(dkim),
+      ...dmarcFactors(dmarc),
+    ];
+    const modifier = factors.reduce((sum, f) => sum + f.effect, 0);
+    const pctNote = pct < 10 ? ` (pct=${pct}% — effectively quarantine)` : "";
+    return {
+      grade: applyModifier("C", modifier),
+      tier: "C",
+      tierReason: `p=${dmarcPolicy}${pctNote} with SPF and DKIM passing`,
+      modifier,
+      modifierLabel: modifierToLabel(modifier),
+      factors,
+    };
   }
 
-  // C: quarantine with SPF + DKIM
-  if (dmarcPolicy === "quarantine" && hasSpf && hasDkim) {
-    let modifier = 0;
-    modifier += spfModifier(spf);
-    modifier += dkimModifier(dkim);
-    return applyModifier("C", modifier);
-  }
-
-  // B: reject with SPF + DKIM
-  if (dmarcPolicy === "reject" && hasSpf && hasDkim) {
-    // Check if we should upgrade to A
-    const spfStrong =
-      spf.record?.includes("-all") && spf.lookups_used <= spf.lookup_limit;
+  // B/A tiers: reject with SPF + DKIM
+  if (effectivePolicy === "reject") {
+    const spfStrong = spf.lookups_used <= spf.lookup_limit;
     const hasExtras = hasBimi || hasMtaSts;
 
-    if (spfStrong && hasDkim && hasExtras) {
-      // A tier
-      if (hasBimi && hasMtaSts) {
-        return "A+";
-      }
-      let modifier = 0;
-      modifier += spfModifier(spf);
-      modifier += dkimModifier(dkim);
-      if (mta_sts.policy?.mode === "testing") modifier -= 1;
-      return applyModifier("A", modifier);
+    // A+ tier: strong SPF + both BIMI and MTA-STS (enforcing)
+    if (
+      spfStrong &&
+      hasBimi &&
+      hasMtaSts &&
+      mta_sts.policy?.mode !== "testing"
+    ) {
+      const factors = [
+        ...spfFactors(spf),
+        ...dkimFactors(dkim),
+        ...dmarcFactors(dmarc),
+      ];
+      const modifier = factors.reduce((sum, f) => sum + f.effect, 0);
+      return {
+        grade: "A+",
+        tier: "A+",
+        tierReason:
+          "p=reject with strong SPF, DKIM, BIMI, and MTA-STS — perfect score",
+        modifier,
+        modifierLabel: modifierToLabel(modifier),
+        factors,
+      };
+    }
+
+    // A tier: strong SPF + at least one extra
+    if (spfStrong && hasExtras) {
+      const factors = [
+        ...spfFactors(spf),
+        ...dkimFactors(dkim),
+        ...dmarcFactors(dmarc),
+        ...mtaStsFactors(mta_sts),
+      ];
+      const modifier = factors.reduce((sum, f) => sum + f.effect, 0);
+      return {
+        grade: applyModifier("A", modifier),
+        tier: "A",
+        tierReason:
+          "p=reject with strong SPF, DKIM, and " +
+          (hasBimi ? "BIMI" : "MTA-STS"),
+        modifier,
+        modifierLabel: modifierToLabel(modifier),
+        factors,
+      };
     }
 
     // B tier
-    let modifier = 0;
-    modifier += spfModifier(spf);
-    modifier += dkimModifier(dkim);
-    if (hasExtras) modifier += 1;
-    return applyModifier("B", modifier);
+    const factors = [
+      ...spfFactors(spf),
+      ...dkimFactors(dkim),
+      ...dmarcFactors(dmarc),
+      ...mtaStsFactors(mta_sts),
+    ];
+    if (hasBimi) {
+      factors.push({
+        protocol: "bimi",
+        label: "BIMI configured",
+        effect: +1,
+      });
+    }
+    if (hasMtaSts) {
+      factors.push({
+        protocol: "mta_sts",
+        label: "MTA-STS configured",
+        effect: +1,
+      });
+    }
+    const modifier = factors.reduce((sum, f) => sum + f.effect, 0);
+    return {
+      grade: applyModifier("B", modifier),
+      tier: "B",
+      tierReason: "p=reject with SPF and DKIM passing",
+      modifier,
+      modifierLabel: modifierToLabel(modifier),
+      factors,
+    };
   }
 
-  return "C";
+  // Fallback (shouldn't normally reach here)
+  const factors = [
+    ...spfFactors(spf),
+    ...dkimFactors(dkim),
+    ...dmarcFactors(dmarc),
+  ];
+  const modifier = factors.reduce((sum, f) => sum + f.effect, 0);
+  return {
+    grade: applyModifier("C", modifier),
+    tier: "C",
+    tierReason: "Fallback — quarantine-level enforcement",
+    modifier,
+    modifierLabel: modifierToLabel(modifier),
+    factors,
+  };
 }
 
-function spfModifier(spf: SpfResult): number {
-  let mod = 0;
-  if (spf.record?.includes("~all")) mod -= 1;
-  if (spf.lookups_used > 8) mod -= 1;
-  if (spf.record?.includes("-all") && spf.lookups_used <= 5) mod += 1;
-  return mod;
+// ── Public API (thin wrappers) ────────────────────────────────
+
+export function computeGrade(protocols: Protocols): string {
+  return resolveScoring(protocols).grade;
 }
 
-function dkimModifier(dkim: DkimResult): number {
-  let mod = 0;
-  const found = Object.values(dkim.selectors).filter((s) => s.found);
-  if (found.some((s) => s.key_bits && s.key_bits < 2048)) mod -= 1;
-  if (found.length >= 2) mod += 1;
-  return mod;
+export function computeGradeBreakdown(protocols: Protocols): GradeBreakdown {
+  const scoring = resolveScoring(protocols);
+  const recommendations = generateRecommendations(scoring.tier, protocols);
+  const protocolSummaries = buildProtocolSummaries(protocols);
+
+  return {
+    ...scoring,
+    recommendations,
+    protocolSummaries,
+  };
 }
+
+// ── Modifier helpers ──────────────────────────────────────────
 
 function applyModifier(base: "A" | "B" | "C" | "D", modifier: number): string {
   if (modifier >= 1) return `${base}+`;
@@ -124,29 +246,61 @@ function applyModifier(base: "A" | "B" | "C" | "D", modifier: number): string {
   return base;
 }
 
-// ── Breakdown helpers ──────────────────────────────────────────
+function modifierToLabel(modifier: number): string {
+  if (modifier > 1) return `+${modifier}`;
+  if (modifier === 1) return "+";
+  if (modifier < -1) return `−${Math.abs(modifier)}`;
+  if (modifier === -1) return "−";
+  return "";
+}
+
+// ── Factor helpers ────────────────────────────────────────────
 
 function spfFactors(spf: SpfResult): ScoringFactor[] {
   const factors: ScoringFactor[] = [];
-  if (spf.record?.includes("~all")) {
+  if (spf.lookups_used <= 5) {
     factors.push({
       protocol: "spf",
-      label: "Uses ~all (softfail) — permissive policy",
-      effect: -1,
-    });
-  }
-  if (spf.lookups_used > 8) {
-    factors.push({
-      protocol: "spf",
-      label: `${spf.lookups_used} DNS lookups (>8 is inefficient)`,
-      effect: -1,
-    });
-  }
-  if (spf.record?.includes("-all") && spf.lookups_used <= 5) {
-    factors.push({
-      protocol: "spf",
-      label: "Uses -all with ≤5 lookups (efficient hardfail)",
+      label: `${spf.lookups_used} DNS lookups (≤5, efficient)`,
       effect: +1,
+    });
+  }
+  return factors;
+}
+
+function dmarcFactors(dmarc: DmarcResult): ScoringFactor[] {
+  const factors: ScoringFactor[] = [];
+  const pct = dmarc.tags?.pct ? Number.parseInt(dmarc.tags.pct, 10) : 100;
+  if (pct >= 10 && pct < 100) {
+    factors.push({
+      protocol: "dmarc",
+      label: `Policy applied to only ${pct}% of messages (pct=${pct})`,
+      effect: -1,
+    });
+  }
+  if (dmarc.tags?.rua) {
+    factors.push({
+      protocol: "dmarc",
+      label: "Aggregate reporting (rua) configured",
+      effect: +1,
+    });
+  } else if (!dmarc.tags?.rua && !dmarc.tags?.ruf) {
+    factors.push({
+      protocol: "dmarc",
+      label: "No DMARC reporting configured — cannot monitor authentication",
+      effect: -1,
+    });
+  }
+  return factors;
+}
+
+function mtaStsFactors(mta_sts: MtaStsResult): ScoringFactor[] {
+  const factors: ScoringFactor[] = [];
+  if (mta_sts.status === "pass" && mta_sts.policy?.mode === "testing") {
+    factors.push({
+      protocol: "mta_sts",
+      label: "MTA-STS in testing mode (not enforcing)",
+      effect: -1,
     });
   }
   return factors;
@@ -173,6 +327,8 @@ function dkimFactors(dkim: DkimResult): ScoringFactor[] {
   }
   return factors;
 }
+
+// ── Protocol summaries ────────────────────────────────────────
 
 function buildProtocolSummaries(
   protocols: Protocols,
@@ -214,6 +370,8 @@ function buildProtocolSummaries(
   };
 }
 
+// ── Recommendations ───────────────────────────────────────────
+
 function generateRecommendations(
   tier: string,
   protocols: Protocols,
@@ -240,7 +398,7 @@ function generateRecommendations(
     return recs;
   }
 
-  // D/D+ tier: missing SPF or DKIM
+  // D tier: missing SPF or DKIM
   if (tier === "D") {
     if (!hasSpf) {
       recs.push({
@@ -268,7 +426,7 @@ function generateRecommendations(
   }
 
   // C tier: upgrade policy
-  if (tier === "C") {
+  if (tier === "C" && dmarcPolicy === "quarantine") {
     recs.push({
       priority: 1,
       protocol: "dmarc",
@@ -279,24 +437,39 @@ function generateRecommendations(
     });
   }
 
-  // SPF improvements (B tier and above)
-  if (hasSpf && spf.record?.includes("~all")) {
+  // DMARC improvements
+  const pct = dmarc.tags?.pct ? Number.parseInt(dmarc.tags.pct, 10) : 100;
+  if (pct < 100) {
     recs.push({
-      priority: 2,
-      protocol: "spf",
-      title: "Switch SPF from ~all to -all",
-      description:
-        "Softfail (~all) asks receivers to accept but flag unauthenticated mail. Hardfail (-all) tells them to reject it.",
-      impact: "Removes a scoring penalty",
+      priority: pct < 10 ? 1 : 2,
+      protocol: "dmarc",
+      title: "Increase DMARC pct to 100%",
+      description: `Only ${pct}% of failing messages are subject to your policy. Gradually increase pct to 100 for full enforcement.`,
+      impact:
+        pct < 10
+          ? "Would raise effective enforcement tier"
+          : "Removes a scoring penalty",
     });
   }
-  if (hasSpf && spf.lookups_used > 8) {
+  if (!dmarc.tags?.rua) {
     recs.push({
       priority: 2,
+      protocol: "dmarc",
+      title: "Add aggregate reporting (rua)",
+      description:
+        "Without rua, you have no visibility into who is sending mail as your domain or whether authentication is working.",
+      impact: "Removes a scoring penalty and enables monitoring",
+    });
+  }
+
+  // SPF improvements
+  if (hasSpf && spf.lookups_used > 5) {
+    recs.push({
+      priority: 3,
       protocol: "spf",
       title: "Reduce SPF DNS lookups",
-      description: `Your SPF record uses ${spf.lookups_used} DNS lookups. Flatten includes or remove unused entries to reduce lookup count.`,
-      impact: "Removes a scoring penalty",
+      description: `Your SPF record uses ${spf.lookups_used} DNS lookups. Flatten includes or remove unused entries to get to ≤5 for a scoring bonus.`,
+      impact: "Adds a scoring bonus",
     });
   }
 
@@ -371,99 +544,4 @@ function generateRecommendations(
   }
 
   return recs;
-}
-
-export function computeGradeBreakdown(protocols: Protocols): GradeBreakdown {
-  const grade = computeGrade(protocols);
-  const { dmarc, spf, dkim, bimi, mta_sts } = protocols;
-  const dmarcPolicy = dmarc.tags?.p?.toLowerCase() ?? null;
-  const hasSpf = spf.status !== "fail";
-  const hasDkim = dkim.status !== "fail";
-  const hasBimi = bimi.status === "pass";
-  const hasMtaSts = mta_sts.status === "pass";
-
-  let tier: string;
-  let tierReason: string;
-  let modifier = 0;
-  let factors: ScoringFactor[] = [];
-
-  if (dmarc.status === "fail" || !dmarcPolicy || dmarcPolicy === "none") {
-    tier = "F";
-    tierReason = !dmarcPolicy
-      ? "No DMARC record found"
-      : dmarcPolicy === "none"
-        ? "DMARC policy is set to none (no enforcement)"
-        : "DMARC record failed validation";
-  } else if (dmarcPolicy === "quarantine" && (!hasSpf || !hasDkim)) {
-    tier = "D";
-    tierReason = `p=quarantine but ${!hasSpf && !hasDkim ? "SPF and DKIM are" : !hasSpf ? "SPF is" : "DKIM is"} missing`;
-  } else if (dmarcPolicy === "reject" && (!hasSpf || !hasDkim)) {
-    tier = "D";
-    tierReason = `p=reject but ${!hasSpf && !hasDkim ? "SPF and DKIM are" : !hasSpf ? "SPF is" : "DKIM is"} missing`;
-  } else if (dmarcPolicy === "quarantine" && hasSpf && hasDkim) {
-    tier = "C";
-    tierReason = "p=quarantine with SPF and DKIM passing";
-    factors = [...spfFactors(spf), ...dkimFactors(dkim)];
-    modifier = factors.reduce((sum, f) => sum + f.effect, 0);
-  } else if (dmarcPolicy === "reject" && hasSpf && hasDkim) {
-    const spfStrong =
-      spf.record?.includes("-all") && spf.lookups_used <= spf.lookup_limit;
-    const hasExtras = hasBimi || hasMtaSts;
-
-    if (spfStrong && hasDkim && hasExtras) {
-      if (hasBimi && hasMtaSts) {
-        tier = "A+";
-        tierReason =
-          "p=reject with strong SPF, DKIM, BIMI, and MTA-STS — perfect score";
-        factors = [...spfFactors(spf), ...dkimFactors(dkim)];
-        modifier = 0;
-      } else {
-        tier = "A";
-        tierReason =
-          "p=reject with strong SPF, DKIM, and " +
-          (hasBimi ? "BIMI" : "MTA-STS");
-        factors = [...spfFactors(spf), ...dkimFactors(dkim)];
-        if (mta_sts.policy?.mode === "testing") {
-          factors.push({
-            protocol: "mta_sts",
-            label: "MTA-STS in testing mode (not enforcing)",
-            effect: -1,
-          });
-        }
-        modifier = factors.reduce((sum, f) => sum + f.effect, 0);
-      }
-    } else {
-      tier = "B";
-      tierReason = "p=reject with SPF and DKIM passing";
-      factors = [...spfFactors(spf), ...dkimFactors(dkim)];
-      if (hasExtras) {
-        factors.push({
-          protocol: hasBimi ? "bimi" : "mta_sts",
-          label: `${hasBimi ? "BIMI" : "MTA-STS"} configured`,
-          effect: +1,
-        });
-      }
-      modifier = factors.reduce((sum, f) => sum + f.effect, 0);
-    }
-  } else {
-    tier = "C";
-    tierReason = "Fallback — quarantine-level enforcement";
-    factors = [...spfFactors(spf), ...dkimFactors(dkim)];
-    modifier = factors.reduce((sum, f) => sum + f.effect, 0);
-  }
-
-  const modifierLabel = modifier >= 1 ? "+" : modifier <= -1 ? "−" : "";
-  const recommendations = generateRecommendations(tier, protocols);
-  const protocolSummaries = buildProtocolSummaries(protocols);
-
-  return {
-    grade,
-    tier,
-    tierReason,
-    modifier,
-    modifierLabel,
-    factors,
-    recommendations,
-    protocolSummaries,
-  };
 }
