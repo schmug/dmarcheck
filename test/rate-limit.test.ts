@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  _LIMIT,
+  _memoryStore,
+  _resetCallCount,
+  _SWEEP_INTERVAL,
+  _WINDOW_SECONDS,
   checkRateLimit,
   rateLimitHeaders,
-  _memoryStore,
-  _LIMIT,
-  _WINDOW_SECONDS,
-  _SWEEP_INTERVAL,
-  _resetCallCount,
 } from "../src/rate-limit.js";
 
 describe("rate-limit", () => {
@@ -107,7 +107,7 @@ describe("rate-limit", () => {
 
       expect(_memoryStore.has("stale")).toBe(false);
       expect(_memoryStore.has("active")).toBe(true);
-      expect(_memoryStore.get("active")!.count).toBe(2);
+      expect(_memoryStore.get("active")?.count).toBe(2);
 
       vi.useRealTimers();
     });

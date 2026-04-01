@@ -1,5 +1,5 @@
 import { queryTxt } from "../dns/client.js";
-import type { MtaStsResult, MtaStsPolicy, Validation } from "./types.js";
+import type { MtaStsPolicy, MtaStsResult, Validation } from "./types.js";
 
 export async function analyzeMtaSts(domain: string): Promise<MtaStsResult> {
   const [dnsResult, policyResult] = await Promise.allSettled([
@@ -7,8 +7,7 @@ export async function analyzeMtaSts(domain: string): Promise<MtaStsResult> {
     fetchPolicy(domain),
   ]);
 
-  const txt =
-    dnsResult.status === "fulfilled" ? dnsResult.value : null;
+  const txt = dnsResult.status === "fulfilled" ? dnsResult.value : null;
   const policy =
     policyResult.status === "fulfilled" ? policyResult.value : null;
 
@@ -107,7 +106,10 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
 }
 
 function parsePolicy(text: string): MtaStsPolicy {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   let version = "";
   let mode = "";
   const mx: string[] = [];

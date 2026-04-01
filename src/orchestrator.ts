@@ -1,23 +1,22 @@
-import { analyzeDmarc } from "./analyzers/dmarc.js";
-import { analyzeSpf } from "./analyzers/spf.js";
-import { analyzeDkim } from "./analyzers/dkim.js";
 import { analyzeBimi } from "./analyzers/bimi.js";
+import { analyzeDkim } from "./analyzers/dkim.js";
+import { analyzeDmarc } from "./analyzers/dmarc.js";
 import { analyzeMtaSts } from "./analyzers/mta-sts.js";
-import { computeGradeBreakdown } from "./shared/scoring.js";
+import { analyzeSpf } from "./analyzers/spf.js";
 import type { ScanResult } from "./analyzers/types.js";
+import { computeGradeBreakdown } from "./shared/scoring.js";
 
 export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
   // Run core analyzers in parallel, then BIMI sequentially since it needs the DMARC policy
-  const [dmarcResult, spfResult, dkimResult, mtaStsResult] =
-    await Promise.all([
-      analyzeDmarc(domain),
-      analyzeSpf(domain),
-      analyzeDkim(domain, customSelectors),
-      analyzeMtaSts(domain),
-    ]);
+  const [dmarcResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
+    analyzeDmarc(domain),
+    analyzeSpf(domain),
+    analyzeDkim(domain, customSelectors),
+    analyzeMtaSts(domain),
+  ]);
 
   // BIMI needs the DMARC policy for cross-checking
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { esc, generateCreature, gradeToMood } from "../src/views/components";
 
 describe("esc", () => {

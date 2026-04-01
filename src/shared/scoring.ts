@@ -1,9 +1,9 @@
 import type {
-  DmarcResult,
-  SpfResult,
-  DkimResult,
   BimiResult,
+  DkimResult,
+  DmarcResult,
   MtaStsResult,
+  SpfResult,
   Status,
 } from "../analyzers/types.js";
 
@@ -37,10 +37,7 @@ export interface GradeBreakdown {
   modifierLabel: string;
   factors: ScoringFactor[];
   recommendations: Recommendation[];
-  protocolSummaries: Record<
-    string,
-    { status: Status; summary: string }
-  >;
+  protocolSummaries: Record<string, { status: Status; summary: string }>;
 }
 
 export function computeGrade(protocols: Protocols): string {
@@ -121,10 +118,7 @@ function dkimModifier(dkim: DkimResult): number {
   return mod;
 }
 
-function applyModifier(
-  base: "A" | "B" | "C" | "D",
-  modifier: number,
-): string {
+function applyModifier(base: "A" | "B" | "C" | "D", modifier: number): string {
   if (modifier >= 1) return `${base}+`;
   if (modifier <= -1) return `${base}-`;
   return base;
@@ -345,7 +339,9 @@ function generateRecommendations(
       description:
         "BIMI displays your brand logo in supporting email clients. Requires DMARC p=reject.",
       impact:
-        tier === "A" ? "Required for A+" : "Adds a scoring bonus, path to A tier",
+        tier === "A"
+          ? "Required for A+"
+          : "Adds a scoring bonus, path to A tier",
     });
   }
   if (!hasMtaSts && (tier === "B" || tier === "A")) {
@@ -356,7 +352,9 @@ function generateRecommendations(
       description:
         "MTA-STS enforces TLS encryption for inbound mail delivery, preventing downgrade attacks.",
       impact:
-        tier === "A" ? "Required for A+" : "Adds a scoring bonus, path to A tier",
+        tier === "A"
+          ? "Required for A+"
+          : "Adds a scoring bonus, path to A tier",
     });
   }
 

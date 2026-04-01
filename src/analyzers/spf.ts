@@ -1,5 +1,5 @@
 import { queryTxt } from "../dns/client.js";
-import type { SpfResult, SpfIncludeNode, Validation } from "./types.js";
+import type { SpfIncludeNode, SpfResult, Validation } from "./types.js";
 
 const MAX_LOOKUPS = 10;
 
@@ -7,7 +7,7 @@ export async function analyzeSpf(domain: string): Promise<SpfResult> {
   const ctx: ResolutionContext = { lookups: 0 };
   const tree = await resolveSpfTree(domain, ctx, 0);
 
-  if (!tree || !tree.record) {
+  if (!tree?.record) {
     return {
       status: "fail",
       record: null,

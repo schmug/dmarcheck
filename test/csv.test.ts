@@ -1,11 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { escapeCsvField, generateCsv } from "../src/csv.js";
+import { describe, expect, it } from "vitest";
 import type { ScanResult } from "../src/analyzers/types.js";
+import { escapeCsvField, generateCsv } from "../src/csv.js";
 import type { GradeBreakdown } from "../src/shared/scoring.js";
 
-function makeScanResult(
-  overrides: Partial<ScanResult> = {},
-): ScanResult {
+function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
   return {
     domain: "example.com",
     timestamp: "2026-03-31T12:00:00.000Z",
@@ -149,13 +147,7 @@ describe("generateCsv", () => {
     const csv = generateCsv(makeScanResult());
     const lines = csv.trim().split("\r\n").slice(1); // skip header
     const protocols = lines.map((l) => l.split(",")[3]);
-    expect(protocols).toEqual([
-      "DMARC",
-      "SPF",
-      "DKIM",
-      "BIMI",
-      "MTA-STS",
-    ]);
+    expect(protocols).toEqual(["DMARC", "SPF", "DKIM", "BIMI", "MTA-STS"]);
   });
 
   it("formats findings with status prefix and semicolons", () => {
@@ -213,7 +205,8 @@ describe("generateCsv", () => {
 
   it("escapes fields containing commas", () => {
     const result = makeScanResult();
-    result.protocols.dmarc.record = "v=DMARC1; p=reject; rua=mailto:dmarc@example.com,mailto:admin@example.com";
+    result.protocols.dmarc.record =
+      "v=DMARC1; p=reject; rua=mailto:dmarc@example.com,mailto:admin@example.com";
     const csv = generateCsv(result);
     // The raw record field should be quoted
     expect(csv).toContain(

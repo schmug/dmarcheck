@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/dns/client.js", () => ({
   queryTxt: vi.fn(),
   queryMx: vi.fn(),
 }));
 
-import { queryTxt } from "../src/dns/client.js";
 import { analyzeDkim } from "../src/analyzers/dkim.js";
+import { queryTxt } from "../src/dns/client.js";
 
 const mockQueryTxt = vi.mocked(queryTxt);
 
@@ -19,7 +19,12 @@ describe("analyzeDkim", () => {
     mockQueryTxt.mockResolvedValue(null);
     const result = await analyzeDkim("example.com");
     expect(result.status).toBe("fail");
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("No DKIM selectors found"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" && v.message.includes("No DKIM selectors found"),
+      ),
+    ).toBe(true);
   });
 
   it("finds a single DKIM selector with RSA 2048 key", async () => {
@@ -38,10 +43,14 @@ describe("analyzeDkim", () => {
 
     const result = await analyzeDkim("example.com");
     expect(result.status).toBe("pass");
-    expect(result.selectors["google"].found).toBe(true);
-    expect(result.selectors["google"].key_type).toBe("rsa");
-    expect(result.selectors["google"].key_bits).toBe(2048);
-    expect(result.validations.some((v) => v.message.includes("1 DKIM selector found"))).toBe(true);
+    expect(result.selectors.google.found).toBe(true);
+    expect(result.selectors.google.key_type).toBe("rsa");
+    expect(result.selectors.google.key_bits).toBe(2048);
+    expect(
+      result.validations.some((v) =>
+        v.message.includes("1 DKIM selector found"),
+      ),
+    ).toBe(true);
   });
 
   it("detects weak key under 2048 bits", async () => {
@@ -59,8 +68,12 @@ describe("analyzeDkim", () => {
 
     const result = await analyzeDkim("example.com");
     expect(result.status).toBe("warn");
-    expect(result.selectors["google"].key_bits).toBe(1024);
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("under 2048 bits"))).toBe(true);
+    expect(result.selectors.google.key_bits).toBe(1024);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("under 2048 bits"),
+      ),
+    ).toBe(true);
   });
 
   it("detects revoked key (empty p= tag)", async () => {
@@ -75,9 +88,13 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].found).toBe(true);
-    expect(result.selectors["google"].revoked).toBe(true);
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("revoked"))).toBe(true);
+    expect(result.selectors.google.found).toBe(true);
+    expect(result.selectors.google.revoked).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("revoked"),
+      ),
+    ).toBe(true);
   });
 
   it("detects testing mode (t=y)", async () => {
@@ -93,8 +110,12 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].testing).toBe(true);
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("testing mode"))).toBe(true);
+    expect(result.selectors.google.testing).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("testing mode"),
+      ),
+    ).toBe(true);
   });
 
   it("merges custom selectors with common selectors (deduplication)", async () => {
@@ -111,14 +132,17 @@ describe("analyzeDkim", () => {
 
     const result = await analyzeDkim("example.com", ["myselector", "google"]);
     // "google" is in common selectors, should be deduplicated
-    expect(result.selectors["myselector"]).toBeDefined();
-    expect(result.selectors["myselector"].found).toBe(true);
-    expect(result.selectors["google"]).toBeDefined();
+    expect(result.selectors.myselector).toBeDefined();
+    expect(result.selectors.myselector.found).toBe(true);
+    expect(result.selectors.google).toBeDefined();
   });
 
   it("reports multiple selectors found with plural message", async () => {
     mockQueryTxt.mockImplementation(async (name: string) => {
-      if (name === "google._domainkey.example.com" || name === "selector1._domainkey.example.com") {
+      if (
+        name === "google._domainkey.example.com" ||
+        name === "selector1._domainkey.example.com"
+      ) {
         const fakeKey = btoa("x".repeat(294));
         return {
           entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
@@ -130,7 +154,11 @@ describe("analyzeDkim", () => {
 
     const result = await analyzeDkim("example.com");
     expect(result.status).toBe("pass");
-    expect(result.validations.some((v) => v.message.includes("2 DKIM selectors found"))).toBe(true);
+    expect(
+      result.validations.some((v) =>
+        v.message.includes("2 DKIM selectors found"),
+      ),
+    ).toBe(true);
   });
 
   it("handles rejected promise from queryTxt gracefully", async () => {
@@ -173,7 +201,7 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].key_type).toBe("rsa");
+    expect(result.selectors.google.key_type).toBe("rsa");
   });
 
   it("maps DER-encoded 1024-bit RSA key (162 bytes) to 1024 bits", async () => {
@@ -189,7 +217,7 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].key_bits).toBe(1024);
+    expect(result.selectors.google.key_bits).toBe(1024);
   });
 
   it("maps DER-encoded 2048-bit RSA key (294 bytes) to 2048 bits", async () => {
@@ -205,7 +233,7 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].key_bits).toBe(2048);
+    expect(result.selectors.google.key_bits).toBe(2048);
   });
 
   it("maps DER-encoded 4096-bit RSA key (550 bytes) to 4096 bits", async () => {
@@ -221,6 +249,6 @@ describe("analyzeDkim", () => {
     });
 
     const result = await analyzeDkim("example.com");
-    expect(result.selectors["google"].key_bits).toBe(4096);
+    expect(result.selectors.google.key_bits).toBe(4096);
   });
 });

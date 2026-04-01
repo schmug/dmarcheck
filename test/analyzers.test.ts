@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the DNS client before importing analyzers
 vi.mock("../src/dns/client.js", () => ({
@@ -6,9 +6,9 @@ vi.mock("../src/dns/client.js", () => ({
   queryMx: vi.fn(),
 }));
 
-import { queryTxt } from "../src/dns/client.js";
 import { analyzeDmarc } from "../src/analyzers/dmarc.js";
 import { analyzeSpf } from "../src/analyzers/spf.js";
+import { queryTxt } from "../src/dns/client.js";
 
 const mockQueryTxt = vi.mocked(queryTxt);
 
@@ -35,7 +35,9 @@ describe("analyzeDmarc", () => {
     expect(result.status).toBe("pass");
     expect(result.tags?.p).toBe("reject");
     expect(result.tags?.rua).toBe("mailto:d@example.com");
-    expect(result.validations.some((v) => v.message.includes("reject"))).toBe(true);
+    expect(result.validations.some((v) => v.message.includes("reject"))).toBe(
+      true,
+    );
   });
 
   it("warns on p=none", async () => {
@@ -45,7 +47,11 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("none"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("none"),
+      ),
+    ).toBe(true);
   });
 
   it("warns when no rua configured", async () => {
@@ -55,7 +61,11 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("rua"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("rua"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on partial pct", async () => {
@@ -65,7 +75,9 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.message.includes("50%"))).toBe(true);
+    expect(result.validations.some((v) => v.message.includes("50%"))).toBe(
+      true,
+    );
   });
 
   it("fails when TXT record exists but is not a valid DMARC record", async () => {
@@ -76,7 +88,11 @@ describe("analyzeDmarc", () => {
 
     const result = await analyzeDmarc("example.com");
     expect(result.status).toBe("fail");
-    expect(result.validations.some((v) => v.message.includes("not a valid DMARC record"))).toBe(true);
+    expect(
+      result.validations.some((v) =>
+        v.message.includes("not a valid DMARC record"),
+      ),
+    ).toBe(true);
   });
 
   it("fails when policy tag is missing", async () => {
@@ -86,7 +102,11 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("Missing policy tag"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("Missing policy tag"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on quarantine policy", async () => {
@@ -97,7 +117,11 @@ describe("analyzeDmarc", () => {
 
     const result = await analyzeDmarc("example.com");
     expect(result.status).toBe("warn");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("quarantine"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("quarantine"),
+      ),
+    ).toBe(true);
   });
 
   it("passes when subdomain policy (sp=) is present", async () => {
@@ -107,7 +131,11 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.status === "pass" && v.message.includes("Subdomain policy"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "pass" && v.message.includes("Subdomain policy"),
+      ),
+    ).toBe(true);
   });
 
   it("passes when forensic reporting (ruf=) is configured", async () => {
@@ -117,7 +145,11 @@ describe("analyzeDmarc", () => {
     });
 
     const result = await analyzeDmarc("example.com");
-    expect(result.validations.some((v) => v.status === "pass" && v.message.includes("Forensic reporting"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "pass" && v.message.includes("Forensic reporting"),
+      ),
+    ).toBe(true);
   });
 
   it("returns pass status when all validations pass", async () => {
@@ -148,7 +180,9 @@ describe("analyzeSpf", () => {
     const result = await analyzeSpf("example.com");
     expect(result.status).toBe("pass");
     expect(result.lookups_used).toBe(0);
-    expect(result.validations.some((v) => v.message.includes("hardfail"))).toBe(true);
+    expect(result.validations.some((v) => v.message.includes("hardfail"))).toBe(
+      true,
+    );
   });
 
   it("counts DNS lookup mechanisms", async () => {
@@ -175,7 +209,9 @@ describe("analyzeSpf", () => {
     });
 
     const result = await analyzeSpf("example.com");
-    expect(result.validations.some((v) => v.message.includes("softfail"))).toBe(true);
+    expect(result.validations.some((v) => v.message.includes("softfail"))).toBe(
+      true,
+    );
   });
 
   it("fails on +all mechanism", async () => {
@@ -185,7 +221,11 @@ describe("analyzeSpf", () => {
     });
 
     const result = await analyzeSpf("example.com");
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("allows any sender"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("allows any sender"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on ?all (neutral) mechanism", async () => {
@@ -195,7 +235,11 @@ describe("analyzeSpf", () => {
     });
 
     const result = await analyzeSpf("example.com");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("neutral"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("neutral"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on deprecated ptr mechanism", async () => {
@@ -205,7 +249,11 @@ describe("analyzeSpf", () => {
     });
 
     const result = await analyzeSpf("example.com");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("deprecated ptr"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("deprecated ptr"),
+      ),
+    ).toBe(true);
   });
 
   it("reports no deprecated ptr when not present", async () => {
@@ -215,12 +263,19 @@ describe("analyzeSpf", () => {
     });
 
     const result = await analyzeSpf("example.com");
-    expect(result.validations.some((v) => v.status === "pass" && v.message.includes("No deprecated ptr"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "pass" && v.message.includes("No deprecated ptr"),
+      ),
+    ).toBe(true);
   });
 
   it("fails when exceeding 10-lookup limit", async () => {
     // Create an SPF record with many include mechanisms
-    const includes = Array.from({ length: 11 }, (_, i) => `include:spf${i}.example.com`).join(" ");
+    const includes = Array.from(
+      { length: 11 },
+      (_, i) => `include:spf${i}.example.com`,
+    ).join(" ");
     mockQueryTxt.mockResolvedValueOnce({
       entries: [`v=spf1 ${includes} -all`],
       raw: `v=spf1 ${includes} -all`,
@@ -235,7 +290,12 @@ describe("analyzeSpf", () => {
 
     const result = await analyzeSpf("example.com");
     expect(result.lookups_used).toBeGreaterThan(10);
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("Exceeds 10-lookup limit"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" && v.message.includes("Exceeds 10-lookup limit"),
+      ),
+    ).toBe(true);
   });
 
   it("handles redirect modifier", async () => {

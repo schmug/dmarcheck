@@ -1,9 +1,16 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { scan } from "./orchestrator.js";
 import { generateCsv } from "./csv.js";
-import { renderLandingPage, renderReport, renderScoreBreakdown, renderScoringRubric, renderError, renderCheckLoading } from "./views/html.js";
+import { scan } from "./orchestrator.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
+import {
+  renderCheckLoading,
+  renderError,
+  renderLandingPage,
+  renderReport,
+  renderScoreBreakdown,
+  renderScoringRubric,
+} from "./views/html.js";
 
 const app = new Hono();
 
@@ -14,7 +21,10 @@ app.use("*", async (c, next) => {
   c.res.headers.set("X-Content-Type-Options", "nosniff");
   c.res.headers.set("X-Frame-Options", "DENY");
   c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  c.res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  c.res.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=()",
+  );
 
   const isHtml = c.res.headers.get("content-type")?.includes("text/html");
   if (isHtml) {
@@ -31,20 +41,30 @@ app.use("/api/*", cors());
 
 // Rate limit scan endpoints (not the landing page)
 app.use("/check", async (c, next) => {
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const ip =
+    c.req.header("CF-Connecting-IP") ||
+    c.req.header("X-Forwarded-For") ||
+    "unknown";
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
     const format = c.req.query("format");
     const wantsJson =
-      format === "json" ||
-      c.req.header("Accept")?.includes("application/json");
+      format === "json" || c.req.header("Accept")?.includes("application/json");
 
     if (wantsJson || format === "csv") {
-      return c.json({ error: "Rate limit exceeded. Try again in 60 seconds." }, { status: 429, headers });
+      return c.json(
+        { error: "Rate limit exceeded. Try again in 60 seconds." },
+        { status: 429, headers },
+      );
     }
-    return c.html(renderError("Rate limit exceeded. Please wait a minute before scanning again."), { status: 429, headers });
+    return c.html(
+      renderError(
+        "Rate limit exceeded. Please wait a minute before scanning again.",
+      ),
+      { status: 429, headers },
+    );
   }
 
   const headers = rateLimitHeaders(remaining);
@@ -55,12 +75,20 @@ app.use("/check", async (c, next) => {
 });
 
 app.use("/check/score", async (c, next) => {
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const ip =
+    c.req.header("CF-Connecting-IP") ||
+    c.req.header("X-Forwarded-For") ||
+    "unknown";
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
-    return c.html(renderError("Rate limit exceeded. Please wait a minute before scanning again."), { status: 429, headers });
+    return c.html(
+      renderError(
+        "Rate limit exceeded. Please wait a minute before scanning again.",
+      ),
+      { status: 429, headers },
+    );
   }
 
   const headers = rateLimitHeaders(remaining);
@@ -71,12 +99,18 @@ app.use("/check/score", async (c, next) => {
 });
 
 app.use("/api/check", async (c, next) => {
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const ip =
+    c.req.header("CF-Connecting-IP") ||
+    c.req.header("X-Forwarded-For") ||
+    "unknown";
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
-    return c.json({ error: "Rate limit exceeded. Try again in 60 seconds." }, { status: 429, headers });
+    return c.json(
+      { error: "Rate limit exceeded. Try again in 60 seconds." },
+      { status: 429, headers },
+    );
   }
 
   const headers = rateLimitHeaders(remaining);
@@ -192,8 +226,7 @@ app.get("/check", async (c) => {
 
   const format = c.req.query("format");
   const wantsJson =
-    format === "json" ||
-    c.req.header("Accept")?.includes("application/json");
+    format === "json" || c.req.header("Accept")?.includes("application/json");
   const wantsCsv = format === "csv";
 
   const selectors = parseSelectors(c.req.query("selectors"));
@@ -243,7 +276,7 @@ export function normalizeDomain(raw: string | undefined): string | null {
   domain = domain.replace(/^https?:\/\//, "");
   // Use URL constructor to normalize (handles ports, userinfo, Punycode/IDN)
   try {
-    domain = new URL("http://" + domain).hostname;
+    domain = new URL(`http://${domain}`).hostname;
   } catch {
     // Fall back to manual parsing for inputs the URL constructor rejects
     domain = domain.split("/")[0].split("?")[0];

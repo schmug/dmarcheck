@@ -42,9 +42,7 @@ export async function analyzeDkim(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<DkimResult> {
-  const allSelectors = [
-    ...new Set([...COMMON_SELECTORS, ...customSelectors]),
-  ];
+  const allSelectors = [...new Set([...COMMON_SELECTORS, ...customSelectors])];
 
   const results = await Promise.allSettled(
     allSelectors.map((sel) => probeSelector(domain, sel)),
@@ -77,9 +75,7 @@ export async function analyzeDkim(
   }
 
   // Check for weak keys
-  const weakKeys = found.filter(
-    ([, v]) => v.key_bits && v.key_bits < 2048,
-  );
+  const weakKeys = found.filter(([, v]) => v.key_bits && v.key_bits < 2048);
   if (weakKeys.length > 0) {
     validations.push({
       status: "warn",
@@ -138,7 +134,13 @@ async function probeSelector(
     keyBits = estimateRsaKeyBits(decoded.length);
   }
 
-  return { found: true, key_type: keyType, key_bits: keyBits, testing, revoked };
+  return {
+    found: true,
+    key_type: keyType,
+    key_bits: keyBits,
+    testing,
+    revoked,
+  };
 }
 
 /**
@@ -151,4 +153,3 @@ function estimateRsaKeyBits(derLength: number): number {
   if (derLength <= 400) return 2048;
   return 4096;
 }
-

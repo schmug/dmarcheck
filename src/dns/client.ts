@@ -1,5 +1,5 @@
 import dns from "node:dns";
-import type { TxtRecord, MxRecord } from "./types.js";
+import type { MxRecord, TxtRecord } from "./types.js";
 
 const resolver = new dns.promises.Resolver();
 

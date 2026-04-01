@@ -1,26 +1,25 @@
-import { CSS } from "./styles.js";
-import { JS } from "./scripts.js";
+import type { ScanResult } from "../analyzers/types.js";
 import {
+  dkimSelectorGrid,
   esc,
-  gradeClass,
   generateCreature,
-  gradeToMood,
+  gradeClass,
+  lookupCounter,
+  mtaStsPolicyTable,
   protocolCard,
-  tagGrid,
-  validationList,
+  protocolContributionGrid,
   rawRecord,
   rawRecordExpand,
-  spfTree,
-  lookupCounter,
-  dkimSelectorGrid,
-  mtaStsPolicyTable,
-  scoreSnippet,
-  tierExplanationCard,
-  scoringFactorsTable,
-  protocolContributionGrid,
   recommendationList,
+  scoreSnippet,
+  scoringFactorsTable,
+  spfTree,
+  tagGrid,
+  tierExplanationCard,
+  validationList,
 } from "./components.js";
-import type { ScanResult } from "../analyzers/types.js";
+import { JS } from "./scripts.js";
+import { CSS } from "./styles.js";
 
 function page(title: string, body: string): string {
   return `<!DOCTYPE html>
@@ -96,9 +95,7 @@ function reportBody(result: ScanResult): string {
   const { dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
 
   // DMARC card
-  const dmarcSubtitle = dmarc.tags?.p
-    ? `Policy: ${dmarc.tags.p}`
-    : "No record";
+  const dmarcSubtitle = dmarc.tags?.p ? `Policy: ${dmarc.tags.p}` : "No record";
   const dmarcRaw = dmarc.tags
     ? rawRecord(dmarc.record)
     : rawRecordExpand(dmarc.record, "Show TXT records found");

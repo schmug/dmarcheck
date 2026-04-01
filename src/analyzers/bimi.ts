@@ -20,8 +20,7 @@ export async function analyzeBimi(
     } else {
       validations.push({
         status: "warn",
-        message:
-          "BIMI requires a DMARC policy of quarantine or reject",
+        message: "BIMI requires a DMARC policy of quarantine or reject",
       });
     }
     return { status: "warn", record: null, tags: null, validations };
@@ -36,7 +35,11 @@ export async function analyzeBimi(
       record: txt.raw,
       tags: null,
       validations: [
-        { status: "warn", message: "TXT record exists but is not a valid BIMI record (possibly a wildcard DNS entry)" },
+        {
+          status: "warn",
+          message:
+            "TXT record exists but is not a valid BIMI record (possibly a wildcard DNS entry)",
+        },
       ],
     };
   }
@@ -54,7 +57,10 @@ export async function analyzeBimi(
   // l= check (logo URL)
   if (tags.l) {
     if (tags.l.startsWith("https://")) {
-      validations.push({ status: "pass", message: "Logo URL (l=) is present and uses HTTPS" });
+      validations.push({
+        status: "pass",
+        message: "Logo URL (l=) is present and uses HTTPS",
+      });
     } else {
       validations.push({
         status: "warn",
@@ -96,4 +102,3 @@ export async function analyzeBimi(
 
   return { status, record: bimiRecord, tags, validations };
 }
-

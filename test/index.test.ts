@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import app, { normalizeDomain, parseSelectors } from "../src/index.js";
 
 describe("normalizeDomain", () => {
@@ -23,7 +23,7 @@ describe("normalizeDomain", () => {
   });
 
   it("returns null for domain exceeding 253 characters (RFC 1035)", () => {
-    const longDomain = "a".repeat(250) + ".com";
+    const longDomain = `${"a".repeat(250)}.com`;
     expect(normalizeDomain(longDomain)).toBeNull();
   });
 
@@ -70,15 +70,26 @@ describe("parseSelectors", () => {
   });
 
   it("splits comma-separated values", () => {
-    expect(parseSelectors("google,selector1,s2")).toEqual(["google", "selector1", "s2"]);
+    expect(parseSelectors("google,selector1,s2")).toEqual([
+      "google",
+      "selector1",
+      "s2",
+    ]);
   });
 
   it("trims whitespace from selectors", () => {
-    expect(parseSelectors("google , selector1 , s2")).toEqual(["google", "selector1", "s2"]);
+    expect(parseSelectors("google , selector1 , s2")).toEqual([
+      "google",
+      "selector1",
+      "s2",
+    ]);
   });
 
   it("filters out empty strings from extra commas", () => {
-    expect(parseSelectors("google,,selector1,")).toEqual(["google", "selector1"]);
+    expect(parseSelectors("google,,selector1,")).toEqual([
+      "google",
+      "selector1",
+    ]);
   });
 
   it("returns single selector", () => {
@@ -108,7 +119,9 @@ describe("normalizeDomain — extended edge cases", () => {
   });
 
   it("handles IDN with protocol and path", () => {
-    expect(normalizeDomain("https://münchen.de/path")).toBe("xn--mnchen-3ya.de");
+    expect(normalizeDomain("https://münchen.de/path")).toBe(
+      "xn--mnchen-3ya.de",
+    );
   });
 });
 
@@ -147,8 +160,12 @@ describe("security headers", () => {
     const res = await app.request("/");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
-    expect(res.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
-    expect(res.headers.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=()");
+    expect(res.headers.get("Referrer-Policy")).toBe(
+      "strict-origin-when-cross-origin",
+    );
+    expect(res.headers.get("Permissions-Policy")).toBe(
+      "camera=(), microphone=(), geolocation=()",
+    );
   });
 
   it("sets CSP with inline scripts allowed on HTML responses", async () => {

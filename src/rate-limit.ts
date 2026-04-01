@@ -46,9 +46,10 @@ async function checkRateLimitCache(
   return { allowed, remaining };
 }
 
-function checkRateLimitMemory(
-  ip: string,
-): { allowed: boolean; remaining: number } {
+function checkRateLimitMemory(ip: string): {
+  allowed: boolean;
+  remaining: number;
+} {
   const now = Date.now();
 
   if (++callCount >= SWEEP_INTERVAL) {
@@ -83,11 +84,14 @@ export function rateLimitHeaders(remaining: number): Record<string, string> {
 }
 
 // Exported for testing only
-function _resetCallCount() { callCount = 0; }
+function _resetCallCount() {
+  callCount = 0;
+}
+
 export {
-  memoryStore as _memoryStore,
-  LIMIT as _LIMIT,
-  WINDOW_SECONDS as _WINDOW_SECONDS,
-  SWEEP_INTERVAL as _SWEEP_INTERVAL,
   _resetCallCount,
+  LIMIT as _LIMIT,
+  memoryStore as _memoryStore,
+  SWEEP_INTERVAL as _SWEEP_INTERVAL,
+  WINDOW_SECONDS as _WINDOW_SECONDS,
 };

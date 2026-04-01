@@ -26,7 +26,7 @@ export function escapeCsvField(value: string): string {
     value.includes("\n") ||
     value.includes("\r")
   ) {
-    return '"' + value.replace(/"/g, '""') + '"';
+    return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
 }
@@ -35,9 +35,7 @@ function formatFindings(
   validations: Array<{ status: string; message: string }>,
 ): string {
   if (validations.length === 0) return "";
-  return validations
-    .map((v) => `[${v.status}] ${v.message}`)
-    .join("; ");
+  return validations.map((v) => `[${v.status}] ${v.message}`).join("; ");
 }
 
 function dkimRawSummary(
@@ -60,15 +58,9 @@ export function generateCsv(result: ScanResult): string {
   const rows: string[] = [];
 
   // BOM + header
-  rows.push("\uFEFF" + HEADERS.map(escapeCsvField).join(","));
+  rows.push(`\uFEFF${HEADERS.map(escapeCsvField).join(",")}`);
 
-  const protocols = [
-    "dmarc",
-    "spf",
-    "dkim",
-    "bimi",
-    "mta_sts",
-  ] as const;
+  const protocols = ["dmarc", "spf", "dkim", "bimi", "mta_sts"] as const;
 
   for (const key of protocols) {
     const proto = result.protocols[key];
@@ -83,8 +75,7 @@ export function generateCsv(result: ScanResult): string {
     } else if (key === "mta_sts") {
       rawRecord = result.protocols.mta_sts.dns_record ?? "";
     } else {
-      rawRecord =
-        (proto as { record?: string | null }).record ?? "";
+      rawRecord = (proto as { record?: string | null }).record ?? "";
     }
 
     const fields = [
@@ -101,5 +92,5 @@ export function generateCsv(result: ScanResult): string {
     rows.push(fields.map(escapeCsvField).join(","));
   }
 
-  return rows.join("\r\n") + "\r\n";
+  return `${rows.join("\r\n")}\r\n`;
 }

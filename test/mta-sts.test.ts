@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/dns/client.js", () => ({
   queryTxt: vi.fn(),
   queryMx: vi.fn(),
 }));
 
-import { queryTxt } from "../src/dns/client.js";
 import { analyzeMtaSts } from "../src/analyzers/mta-sts.js";
+import { queryTxt } from "../src/dns/client.js";
 
 const mockQueryTxt = vi.mocked(queryTxt);
 
@@ -42,8 +42,19 @@ describe("analyzeMtaSts", () => {
     expect(result.status).toBe("fail");
     expect(result.dns_record).toBeNull();
     expect(result.policy).toBeNull();
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("No _mta-sts TXT record"))).toBe(true);
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("Policy file not accessible"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" && v.message.includes("No _mta-sts TXT record"),
+      ),
+    ).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" &&
+          v.message.includes("Policy file not accessible"),
+      ),
+    ).toBe(true);
   });
 
   it("passes when DNS record found with v=STSv1", async () => {
@@ -55,7 +66,12 @@ describe("analyzeMtaSts", () => {
 
     const result = await analyzeMtaSts("example.com");
     expect(result.dns_record).toBe("v=STSv1; id=20240101");
-    expect(result.validations.some((v) => v.status === "pass" && v.message.includes("MTA-STS DNS record found"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "pass" && v.message.includes("MTA-STS DNS record found"),
+      ),
+    ).toBe(true);
   });
 
   it("fails when TXT record exists but missing v=STSv1", async () => {
@@ -67,7 +83,11 @@ describe("analyzeMtaSts", () => {
 
     const result = await analyzeMtaSts("example.com");
     expect(result.dns_record).toBeNull();
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("missing v=STSv1"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("missing v=STSv1"),
+      ),
+    ).toBe(true);
   });
 
   it("detects enforce mode as pass", async () => {
@@ -79,7 +99,11 @@ describe("analyzeMtaSts", () => {
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy?.mode).toBe("enforce");
-    expect(result.validations.some((v) => v.status === "pass" && v.message.includes("enforce"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "pass" && v.message.includes("enforce"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on testing mode", async () => {
@@ -87,11 +111,17 @@ describe("analyzeMtaSts", () => {
       entries: ["v=STSv1; id=20240101"],
       raw: "v=STSv1; id=20240101",
     });
-    mockFetchPolicy(`version: STSv1\nmode: testing\nmx: *.example.com\nmax_age: 86400`);
+    mockFetchPolicy(
+      `version: STSv1\nmode: testing\nmx: *.example.com\nmax_age: 86400`,
+    );
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy?.mode).toBe("testing");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("testing"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("testing"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on none mode", async () => {
@@ -99,11 +129,17 @@ describe("analyzeMtaSts", () => {
       entries: ["v=STSv1; id=20240101"],
       raw: "v=STSv1; id=20240101",
     });
-    mockFetchPolicy(`version: STSv1\nmode: none\nmx: *.example.com\nmax_age: 86400`);
+    mockFetchPolicy(
+      `version: STSv1\nmode: none\nmx: *.example.com\nmax_age: 86400`,
+    );
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy?.mode).toBe("none");
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("none"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("none"),
+      ),
+    ).toBe(true);
   });
 
   it("warns on low max_age (less than 1 day)", async () => {
@@ -111,11 +147,17 @@ describe("analyzeMtaSts", () => {
       entries: ["v=STSv1; id=20240101"],
       raw: "v=STSv1; id=20240101",
     });
-    mockFetchPolicy(`version: STSv1\nmode: enforce\nmx: *.example.com\nmax_age: 3600`);
+    mockFetchPolicy(
+      `version: STSv1\nmode: enforce\nmx: *.example.com\nmax_age: 3600`,
+    );
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy?.max_age).toBe(3600);
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("max_age"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("max_age"),
+      ),
+    ).toBe(true);
   });
 
   it("warns when no MX patterns in policy", async () => {
@@ -127,7 +169,11 @@ describe("analyzeMtaSts", () => {
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy?.mx).toEqual([]);
-    expect(result.validations.some((v) => v.status === "warn" && v.message.includes("No MX patterns"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) => v.status === "warn" && v.message.includes("No MX patterns"),
+      ),
+    ).toBe(true);
   });
 
   it("handles fetch failure gracefully", async () => {
@@ -139,7 +185,13 @@ describe("analyzeMtaSts", () => {
 
     const result = await analyzeMtaSts("example.com");
     expect(result.policy).toBeNull();
-    expect(result.validations.some((v) => v.status === "fail" && v.message.includes("Policy file not accessible"))).toBe(true);
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" &&
+          v.message.includes("Policy file not accessible"),
+      ),
+    ).toBe(true);
   });
 
   it("handles non-ok HTTP response gracefully", async () => {

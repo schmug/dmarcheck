@@ -15,6 +15,9 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 
 - `npm run dev` — local dev on port 8790
 - `npm test` — vitest
+- `npm run lint` — biome check (lint + format check)
+- `npm run lint:fix` — biome auto-fix
+- `npm run typecheck` — tsc --noEmit
 - `npm run deploy` — wrangler deploy (use only if Git integration is disabled)
 - Deployment is automatic via Cloudflare Git integration on push to main
 - **Do NOT run `npm run deploy` after pushing** — it collides with the Git integration auto-deploy and causes intermittent stale deploys
@@ -37,6 +40,12 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - HTML is generated server-side as template literal strings, no JSX or build step
 - Client-side JS is minimal (expand/collapse, tooltips) — inline script tag
 - Dark theme with orange accent (#f97316)
+
+## Quality Gates
+
+- Biome handles linting and formatting (`biome.json`)
+- Claude Code hooks auto-format on edit and run tests + typecheck before commits
+- Run `npm run lint` to check, `npm run lint:fix` to auto-fix
 
 ## Testing
 

@@ -1,12 +1,12 @@
 import type {
-  Status,
-  Validation,
-  SpfIncludeNode,
   DkimSelectorResult,
   MtaStsPolicy,
   ScanResult,
+  SpfIncludeNode,
+  Status,
+  Validation,
 } from "../analyzers/types.js";
-import type { ScoringFactor, Recommendation } from "../shared/scoring.js";
+import type { Recommendation, ScoringFactor } from "../shared/scoring.js";
 
 const DMARC_TOOLTIPS: Record<string, string> = {
   v: "Version — must be DMARC1",
@@ -38,9 +38,17 @@ export function gradeClass(grade: string): string {
 }
 
 export type CreatureSize = "lg" | "md" | "sm";
-export type CreatureMood = "celebrating" | "content" | "worried" | "scared" | "panicked";
+export type CreatureMood =
+  | "celebrating"
+  | "content"
+  | "worried"
+  | "scared"
+  | "panicked";
 
-export function generateCreature(size: CreatureSize, mood?: CreatureMood): string {
+export function generateCreature(
+  size: CreatureSize,
+  mood?: CreatureMood,
+): string {
   const moodClass = mood ? ` creature-${mood}` : "";
   return `<div class="creature creature-${size}${moodClass}" aria-hidden="true">
   <div class="creature-body">@<div class="creature-eyes"><div class="creature-eye"><div class="creature-pupil"></div></div><div class="creature-eye"><div class="creature-pupil"></div></div></div></div>
@@ -130,10 +138,7 @@ export function spfTree(node: SpfIncludeNode): string {
   const items = node.mechanisms
     .map((m) => {
       const bare = m.replace(/^[+\-~?]/, "");
-      if (
-        bare.startsWith("include:") ||
-        bare.startsWith("redirect=")
-      ) {
+      if (bare.startsWith("include:") || bare.startsWith("redirect=")) {
         return "";
       }
       return `<li><span class="spf-node mechanism">${esc(m)}</span></li>`;
@@ -243,7 +248,12 @@ export function scoreSnippet(result: ScanResult): string {
     )
     .join("");
 
-  const tierClass = breakdown.tier === "F" ? "tier-fail" : breakdown.tier === "D" ? "tier-warn" : "tier-pass";
+  const tierClass =
+    breakdown.tier === "F"
+      ? "tier-fail"
+      : breakdown.tier === "D"
+        ? "tier-warn"
+        : "tier-pass";
 
   return `<div class="score-snippet">
   <div class="snippet-left">
@@ -287,7 +297,11 @@ export function scoringFactorsTable(
   const rows = factors
     .map((f) => {
       const effectClass =
-        f.effect > 0 ? "effect-plus" : f.effect < 0 ? "effect-minus" : "effect-neutral";
+        f.effect > 0
+          ? "effect-plus"
+          : f.effect < 0
+            ? "effect-minus"
+            : "effect-neutral";
       const effectText = f.effect > 0 ? "+1" : f.effect < 0 ? "\u22121" : "0";
       return `<tr>
       <td class="factor-proto">${esc(PROTO_LABELS[f.protocol] ?? f.protocol)}</td>
