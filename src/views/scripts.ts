@@ -436,6 +436,7 @@ if (!window.__dmarcheckBound) {
       });
 
       setTimeout(function() {
+        if (!isActive) return;
         el.style.visibility = 'hidden';
         el.style.position = original.position || '';
         el.style.left = original.left || '';
@@ -500,6 +501,14 @@ if (!window.__dmarcheckBound) {
     eatenElements.forEach(function(item, i) {
       var el = item.el;
       setTimeout(function() {
+        el.style.position = item.position || '';
+        el.style.left = item.left || '';
+        el.style.top = item.top || '';
+        el.style.width = item.width || '';
+        el.style.height = item.height || '';
+        el.style.margin = item.margin || '';
+        el.style.zIndex = item.zIndex || '';
+        el.style.transition = item.transition || '';
         el.style.visibility = item.visibility || '';
         el.style.transform = item.transform || '';
         delete el.dataset.eaten;
