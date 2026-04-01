@@ -6,6 +6,7 @@ import type {
   DkimResult,
   DmarcResult,
   MtaStsResult,
+  MxResult,
   SpfResult,
 } from "./analyzers/types.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
@@ -28,6 +29,7 @@ import {
   renderError,
   renderLandingPage,
   renderMtaStsCard,
+  renderMxCard,
   renderReport,
   renderReportFooter,
   renderReportHeader,
@@ -149,6 +151,7 @@ const protocolRenderers: Record<
   ProtocolId,
   (result: ProtocolResult) => string
 > = {
+  mx: (r) => renderMxCard(r as MxResult),
   dmarc: (r) => renderDmarcCard(r as DmarcResult),
   spf: (r) => renderSpfCard(r as SpfResult),
   dkim: (r) => renderDkimCard(r as DkimResult),
