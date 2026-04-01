@@ -3,6 +3,7 @@ import {
   esc,
   generateCreature,
   gradeToMood,
+  mxTable,
   statusDot,
   themeToggle,
 } from "../src/views/components";
@@ -108,6 +109,49 @@ describe("themeToggle", () => {
   it("includes aria-label", () => {
     const html = themeToggle();
     expect(html).toContain("aria-label=");
+  });
+});
+
+describe("mxTable", () => {
+  it("returns empty string for no records", () => {
+    expect(mxTable([])).toBe("");
+  });
+
+  it("renders table with priority and exchange", () => {
+    const html = mxTable([{ priority: 10, exchange: "mail.example.com" }]);
+    expect(html).toContain("<table");
+    expect(html).toContain("10");
+    expect(html).toContain("mail.example.com");
+  });
+
+  it("renders provider badge inline when record has provider", () => {
+    const html = mxTable([
+      {
+        priority: 10,
+        exchange: "aspmx.l.google.com",
+        provider: { name: "Google Workspace", category: "email-platform" },
+      },
+    ]);
+    expect(html).toContain("Google Workspace");
+    expect(html).toContain("provider-badge");
+  });
+
+  it("renders no badge when record has no provider", () => {
+    const html = mxTable([{ priority: 10, exchange: "mail.custom.org" }]);
+    expect(html).not.toContain("provider-badge");
+  });
+
+  it("escapes exchange hostnames", () => {
+    const html = mxTable([
+      { priority: 10, exchange: "<script>alert(1)</script>" },
+    ]);
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script>");
+  });
+
+  it("shows provider column header", () => {
+    const html = mxTable([{ priority: 10, exchange: "mail.example.com" }]);
+    expect(html).toContain("Provider");
   });
 });
 

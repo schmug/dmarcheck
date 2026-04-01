@@ -281,6 +281,23 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .icon-fail { color: var(--clr-fail); flex-shrink: 0; }
 .icon-info { color: var(--clr-info); flex-shrink: 0; }
 
+/* MX table */
+.mx-table { width: 100%; margin-top: 12px; border-collapse: collapse; }
+.mx-table th {
+  text-align: left; padding: 8px 12px; font-size: 0.75rem; text-transform: uppercase;
+  color: var(--clr-text-dim); border-bottom: 1px solid var(--clr-border); font-weight: 500;
+}
+.mx-table th:first-child { text-align: center; width: 60px; }
+.mx-table td { padding: 8px 12px; font-size: 0.85rem; border-bottom: 1px solid var(--clr-border); }
+.mx-priority { font-family: monospace; color: var(--clr-accent); text-align: center; }
+.mx-exchange { font-family: monospace; }
+.provider-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; background: var(--clr-bg); border: 1px solid var(--clr-border);
+  border-radius: 16px; font-size: 0.78rem; white-space: nowrap;
+}
+.badge-category { color: var(--clr-text-faint); font-size: 0.7rem; }
+
 /* Raw record */
 .record-raw {
   background: var(--clr-bg); padding: 12px 16px; border-radius: 8px;
@@ -703,5 +720,13 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   .logo > .creature .creature-legs { gap: 4px; margin-top: -3px; }
   .logo > .creature .creature-leg { width: 5px; height: 9px; }
   .report-header .creature { display: none; }
+  .mx-table thead { display: none; }
+  .mx-table, .mx-table tbody { display: block; }
+  .mx-row { display: block; padding: 8px 0; border-bottom: 1px solid var(--clr-border); }
+  .mx-row:last-child { border-bottom: none; }
+  .mx-priority { display: inline; text-align: left; padding: 0; border: none; }
+  .mx-priority::after { content: " "; }
+  .mx-exchange { display: inline; padding: 0; border: none; }
+  .mx-provider { display: block; padding: 4px 0 0; border: none; }
 }
 `;
