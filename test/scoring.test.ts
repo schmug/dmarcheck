@@ -43,13 +43,19 @@ function makeDkim(overrides: Partial<DkimResult> = {}): DkimResult {
 }
 
 function makeBimi(overrides: Partial<BimiResult> = {}): BimiResult {
-  return {
-    status: "warn",
-    record: null,
-    tags: null,
-    validations: [],
-    ...overrides,
+  const base = {
+    status: "warn" as const,
+    record: null as string | null,
+    tags: null as Record<string, string> | null,
+    validations: [] as BimiResult["validations"],
   };
+  const merged = { ...base, ...overrides };
+  // If status is pass but no record provided, add a default record
+  if (merged.status === "pass" && merged.record === null) {
+    merged.record = "v=BIMI1; l=https://example.com/logo.svg";
+    merged.tags = { v: "BIMI1", l: "https://example.com/logo.svg" };
+  }
+  return merged;
 }
 
 function makeMtaSts(overrides: Partial<MtaStsResult> = {}): MtaStsResult {
@@ -755,7 +761,16 @@ describe("computeGradeBreakdown", () => {
       dmarc: makeDmarc(),
       spf: makeSpf(),
       dkim: makeDkim(),
-      bimi: makeBimi({ status: "pass" }),
+      bimi: makeBimi({
+        status: "pass",
+        record:
+          "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+        tags: {
+          v: "BIMI1",
+          l: "https://example.com/logo.svg",
+          a: "https://example.com/vmc.pem",
+        },
+      }),
       mta_sts: makeMtaSts({
         status: "pass",
         policy: {
@@ -822,6 +837,120 @@ describe("computeGradeBreakdown", () => {
     // SPF +1 (≤5) + DKIM +1 (≥2 selectors) + rua +1 → modifier 3 → "+3"
     expect(bd.modifier).toBe(3);
     expect(bd.modifierLabel).toBe("+3");
+  });
+
+  it("BIMI with record but warn status (no cert) still counts for A tier", () => {
+    const grade = computeGrade({
+      dmarc: makeDmarc(),
+      spf: makeSpf({ record: "v=spf1 -all", lookups_used: 3 }),
+      dkim: makeDkim(),
+      bimi: makeBimi({
+        status: "warn",
+        record: "v=BIMI1; l=https://example.com/logo.svg",
+        tags: { v: "BIMI1", l: "https://example.com/logo.svg" },
+      }),
+      mta_sts: makeMtaSts(),
+    });
+    expect(grade.charAt(0)).toBe("A");
+  });
+
+  it("generates VMC/CMC recommendation when BIMI record has no certificate", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc(),
+      spf: makeSpf({ lookups_used: 7 }),
+      dkim: makeDkim({
+        selectors: { google: { found: true, key_type: "rsa", key_bits: 2048 } },
+      }),
+      bimi: makeBimi({
+        status: "warn",
+        record: "v=BIMI1; l=https://example.com/logo.svg",
+        tags: { v: "BIMI1", l: "https://example.com/logo.svg" },
+      }),
+      mta_sts: makeMtaSts(),
+    });
+    const certRec = bd.recommendations.find(
+      (r) => r.protocol === "bimi" && r.title.includes("VMC"),
+    );
+    expect(certRec).toBeDefined();
+    expect(certRec?.description).toContain("Gmail");
+  });
+
+  it("does not generate VMC/CMC recommendation when certificate present", () => {
+    const bd = computeGradeBreakdown({
+      dmarc: makeDmarc(),
+      spf: makeSpf(),
+      dkim: makeDkim(),
+      bimi: makeBimi({
+        status: "pass",
+        record:
+          "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+        tags: {
+          v: "BIMI1",
+          l: "https://example.com/logo.svg",
+          a: "https://example.com/vmc.pem",
+        },
+      }),
+      mta_sts: makeMtaSts({
+        status: "pass",
+        policy: {
+          version: "STSv1",
+          mode: "enforce",
+          mx: ["mx.example.com"],
+          max_age: 86400,
+        },
+      }),
+    });
+    const certRec = bd.recommendations.find(
+      (r) => r.protocol === "bimi" && r.title.includes("VMC"),
+    );
+    expect(certRec).toBeUndefined();
+  });
+
+  it("BIMI summary shows certificate status", () => {
+    const withCert = computeGradeBreakdown({
+      dmarc: makeDmarc(),
+      spf: makeSpf(),
+      dkim: makeDkim(),
+      bimi: makeBimi({
+        status: "pass",
+        record:
+          "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+        tags: {
+          v: "BIMI1",
+          l: "https://example.com/logo.svg",
+          a: "https://example.com/vmc.pem",
+        },
+      }),
+      mta_sts: makeMtaSts({
+        status: "pass",
+        policy: {
+          version: "STSv1",
+          mode: "enforce",
+          mx: ["mx.example.com"],
+          max_age: 86400,
+        },
+      }),
+    });
+    expect(withCert.protocolSummaries.bimi.summary).toBe(
+      "Record + certificate",
+    );
+
+    const withoutCert = computeGradeBreakdown({
+      dmarc: makeDmarc(),
+      spf: makeSpf({ lookups_used: 7 }),
+      dkim: makeDkim({
+        selectors: { google: { found: true, key_type: "rsa", key_bits: 2048 } },
+      }),
+      bimi: makeBimi({
+        status: "warn",
+        record: "v=BIMI1; l=https://example.com/logo.svg",
+        tags: { v: "BIMI1", l: "https://example.com/logo.svg" },
+      }),
+      mta_sts: makeMtaSts(),
+    });
+    expect(withoutCert.protocolSummaries.bimi.summary).toBe(
+      "Record found (no certificate)",
+    );
   });
 
   it("pct < 10 shows downgrade in tierReason", () => {

@@ -137,7 +137,13 @@ export function renderBimiCard(bimi: BimiResult): string {
   const raw = bimi.tags
     ? rawRecord(bimi.record)
     : rawRecordExpand(bimi.record, "Show TXT records found");
-  const body = tagGrid(bimi.tags) + validationList(bimi.validations) + raw;
+  const logo = bimi.tags?.l?.startsWith("https://")
+    ? `<div style="text-align:center;margin:1rem 0">
+           <img src="${esc(bimi.tags.l)}" alt="BIMI logo" style="max-width:96px;max-height:96px;border-radius:8px;background:#1a1a2e;padding:8px" onerror="this.style.display='none'">
+         </div>`
+    : "";
+  const body =
+    logo + tagGrid(bimi.tags) + validationList(bimi.validations) + raw;
   return protocolCard("BIMI", bimi.status, subtitle, body);
 }
 
