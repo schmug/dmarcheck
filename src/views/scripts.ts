@@ -194,6 +194,8 @@ if (!window.__dmarcheckBound) {
 
 /* @ Creature easter egg */
 (function() {
+  if (window.__dmarcheckCreature) return;
+  window.__dmarcheckCreature = true;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   var IDLE_MS = 60000;
@@ -463,7 +465,6 @@ if (!window.__dmarcheckBound) {
 
   function panicAndRestore() {
     if (!creature) { isActive = false; return; }
-    isActive = false;
 
     /* panic animation */
     creature.classList.add('panicking', 'walking');
