@@ -138,7 +138,7 @@ describe("analyzeMx", () => {
       v.message.includes("Detected"),
     );
     expect(providerValidation).toBeDefined();
-    expect(providerValidation!.message).toContain("Google Workspace");
+    expect(providerValidation?.message).toContain("Google Workspace");
   });
 
   it("always returns status info", async () => {

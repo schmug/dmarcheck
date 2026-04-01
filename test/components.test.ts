@@ -94,7 +94,7 @@ describe("gradeToMood", () => {
 
 describe("statusDot", () => {
   it("renders info status with informational label", () => {
-    const html = statusDot("info" as any);
+    const html = statusDot("info");
     expect(html).toContain("status-info");
     expect(html).toContain("informational");
   });
