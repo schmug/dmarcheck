@@ -217,6 +217,15 @@ if (!window.__dmarcheckBound) {
     document.addEventListener(evt, resetIdle, { passive: true });
   });
 
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      clearTimeout(idleTimer);
+      if (isActive) { panicAndRestore(); }
+    } else {
+      resetIdle();
+    }
+  });
+
   resetIdle();
 
   function spawnCreature() {
