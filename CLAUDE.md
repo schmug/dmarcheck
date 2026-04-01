@@ -44,6 +44,11 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Mock DNS client for unit tests (`vi.mock`)
 - Test scoring boundaries and analyzer parsing
 
+## GitHub Issues
+
+- After committing or merging work, check open issues (`gh issue list`) to see if any were resolved and should be closed
+- When a commit addresses an issue, close it with a comment referencing the commit hash
+
 ## Cloudflare MCP
 
 - Cloudflare MCP server (`@cloudflare/mcp-server-cloudflare`) is configured globally in `~/.claude.json`
