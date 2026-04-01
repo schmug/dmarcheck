@@ -74,11 +74,17 @@ export async function analyzeBimi(
     });
   }
 
-  // a= check (authority / VMC)
+  // a= check (authority / VMC/CMC)
   if (tags.a) {
     validations.push({
       status: "pass",
-      message: "Authority evidence (a=) VMC certificate URL present",
+      message: "Authority evidence (a=) VMC/CMC certificate URL present",
+    });
+  } else {
+    validations.push({
+      status: "warn",
+      message:
+        "No authority certificate (a=) — add a VMC or CMC to display your logo in Gmail and Apple Mail",
     });
   }
 

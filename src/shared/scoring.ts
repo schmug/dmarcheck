@@ -75,7 +75,7 @@ function resolveScoring(protocols: Protocols): ScoringResult {
   const pct = dmarc.tags?.pct ? Number.parseInt(dmarc.tags.pct, 10) : 100;
   const hasSpf = spf.status !== "fail";
   const hasDkim = dkim.status !== "fail";
-  const hasBimi = bimi.status === "pass";
+  const hasBimi = bimi.record !== null;
   const hasMtaSts = mta_sts.status === "pass";
 
   // pct < 10 effectively downgrades the policy one tier
@@ -358,7 +358,11 @@ function buildProtocolSummaries(
     },
     bimi: {
       status: bimi.status,
-      summary: bimi.status === "pass" ? "Record found" : "Not configured",
+      summary: bimi.record
+        ? bimi.tags?.a
+          ? "Record + certificate"
+          : "Record found (no certificate)"
+        : "Not configured",
     },
     mta_sts: {
       status: mta_sts.status,
@@ -381,7 +385,7 @@ function generateRecommendations(
   const dmarcPolicy = dmarc.tags?.p?.toLowerCase() ?? null;
   const hasSpf = spf.status !== "fail";
   const hasDkim = dkim.status !== "fail";
-  const hasBimi = bimi.status === "pass";
+  const hasBimi = bimi.record !== null;
   const hasMtaSts = mta_sts.status === "pass";
 
   if (tier === "F") {
@@ -500,6 +504,18 @@ function generateRecommendations(
       description:
         "Testing mode reports TLS failures but doesn't enforce them. Switch to enforce for full protection.",
       impact: "Removes a scoring penalty",
+    });
+  }
+
+  // BIMI certificate — suggest if BIMI configured but no VMC/CMC
+  if (hasBimi && !bimi.tags?.a) {
+    recs.push({
+      priority: 3,
+      protocol: "bimi",
+      title: "Add a VMC or CMC certificate",
+      description:
+        "Gmail and Apple Mail require a Verified Mark Certificate (VMC) or Common Mark Certificate (CMC) to display your BIMI logo. Without one, your logo won't appear in most inboxes.",
+      impact: "Enables logo display in major email clients",
     });
   }
 

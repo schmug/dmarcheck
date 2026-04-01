@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate CalVer
+        id: version
+        run: |
+          YEAR=$(date -u +%Y)
+          MONTH=$(date -u +%-m)
+          PREFIX="v${YEAR}.${MONTH}."
+          EXISTING=$(git tag -l "${PREFIX}*" | wc -l | tr -d ' ')
+          SERIAL=$((EXISTING + 1))
+          echo "version=${PREFIX}${SERIAL}" >> "$GITHUB_OUTPUT"
+
+      - name: Install git-cliff
+        run: |
+          if ! command -v git-cliff &> /dev/null; then
+            brew install git-cliff
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          NOTES=$(git-cliff --config cliff.toml --latest --strip header 2>/dev/null || echo "No notable changes.")
+          {
+            echo "content<<CLIFF_EOF"
+            echo "$NOTES"
+            echo "CLIFF_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NOTES: ${{ steps.changelog.outputs.content }}
+        run: |
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" --title "$VERSION" --notes "$NOTES"

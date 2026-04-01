@@ -168,6 +168,40 @@ describe("analyzeBimi", () => {
     ).toBe(true);
   });
 
+  it("warns when no authority certificate specified", async () => {
+    mockQueryTxt.mockResolvedValue({
+      entries: ["v=BIMI1; l=https://example.com/logo.svg"],
+      raw: "v=BIMI1; l=https://example.com/logo.svg",
+    });
+
+    const result = await analyzeBimi("example.com", "reject");
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "warn" &&
+          v.message.includes("No authority certificate") &&
+          v.message.includes("VMC or CMC"),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows VMC/CMC message when authority certificate present", async () => {
+    mockQueryTxt.mockResolvedValue({
+      entries: [
+        "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+      ],
+      raw: "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+    });
+
+    const result = await analyzeBimi("example.com", "reject");
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "pass" && v.message.includes("VMC/CMC certificate URL"),
+      ),
+    ).toBe(true);
+  });
+
   it("returns pass status when all checks pass", async () => {
     mockQueryTxt.mockResolvedValue({
       entries: [

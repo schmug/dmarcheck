@@ -53,6 +53,14 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Mock DNS client for unit tests (`vi.mock`)
 - Test scoring boundaries and analyzer parsing
 
+## Releases
+
+- Automated via GitHub Actions on push to main (after CI passes)
+- CalVer versioning: vYYYY.M.serial (e.g., v2026.4.1)
+- Changelog generated from commit history by git-cliff (`cliff.toml`)
+- GitHub Releases page is the project changelog
+- Tags are created automatically; do not create manual tags
+
 ## GitHub Issues
 
 - After committing or merging work, check open issues (`gh issue list`) to see if any were resolved and should be closed

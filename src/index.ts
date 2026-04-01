@@ -14,6 +14,14 @@ import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
 import {
+  APPLE_TOUCH_ICON_BASE64,
+  FAVICON_ICO_BASE64,
+  FAVICON_SVG,
+  ICON_192_BASE64,
+  ICON_512_BASE64,
+  webManifest,
+} from "./views/favicon.js";
+import {
   renderBimiCard,
   renderDkimCard,
   renderDmarcCard,
@@ -47,7 +55,7 @@ app.use("*", async (c, next) => {
   if (isHtml) {
     c.res.headers.set(
       "Content-Security-Policy",
-      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     );
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
@@ -224,6 +232,56 @@ app.get("/og-image.svg", (c) => {
 </svg>`;
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/favicon.svg", (c) => {
+  return c.body(FAVICON_SVG, 200, {
+    "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/manifest.webmanifest", (c) => {
+  return c.body(webManifest(), 200, {
+    "Content-Type": "application/manifest+json",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/favicon.ico", (c) => {
+  const buf = Uint8Array.from(atob(FAVICON_ICO_BASE64), (ch) =>
+    ch.charCodeAt(0),
+  );
+  return c.body(buf, 200, {
+    "Content-Type": "image/x-icon",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/apple-touch-icon.png", (c) => {
+  const buf = Uint8Array.from(atob(APPLE_TOUCH_ICON_BASE64), (ch) =>
+    ch.charCodeAt(0),
+  );
+  return c.body(buf, 200, {
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/icon-192.png", (c) => {
+  const buf = Uint8Array.from(atob(ICON_192_BASE64), (ch) => ch.charCodeAt(0));
+  return c.body(buf, 200, {
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/icon-512.png", (c) => {
+  const buf = Uint8Array.from(atob(ICON_512_BASE64), (ch) => ch.charCodeAt(0));
+  return c.body(buf, 200, {
+    "Content-Type": "image/png",
     "Cache-Control": "public, max-age=86400",
   });
 });
