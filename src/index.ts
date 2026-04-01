@@ -1,15 +1,32 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
+import type {
+  BimiResult,
+  DkimResult,
+  DmarcResult,
+  MtaStsResult,
+  SpfResult,
+} from "./analyzers/types.js";
+import { getCachedScan, setCachedScan } from "./cache.js";
 import { generateCsv } from "./csv.js";
-import { scan } from "./orchestrator.js";
+import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
+import { scan, scanStreaming } from "./orchestrator.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
 import {
-  renderCheckLoading,
+  renderBimiCard,
+  renderDkimCard,
+  renderDmarcCard,
   renderError,
   renderLandingPage,
+  renderMtaStsCard,
   renderReport,
+  renderReportFooter,
+  renderReportHeader,
   renderScoreBreakdown,
   renderScoringRubric,
+  renderSpfCard,
+  renderStreamingLoading,
 } from "./views/html.js";
 
 const app = new Hono();
@@ -120,6 +137,51 @@ app.use("/api/check", async (c, next) => {
   }
 });
 
+const protocolRenderers: Record<
+  ProtocolId,
+  (result: ProtocolResult) => string
+> = {
+  dmarc: (r) => renderDmarcCard(r as DmarcResult),
+  spf: (r) => renderSpfCard(r as SpfResult),
+  dkim: (r) => renderDkimCard(r as DkimResult),
+  bimi: (r) => renderBimiCard(r as BimiResult),
+  mta_sts: (r) => renderMtaStsCard(r as MtaStsResult),
+};
+
+app.get("/api/check/stream", async (c) => {
+  const domain = normalizeDomain(c.req.query("domain"));
+  if (!domain) {
+    return c.json({ error: "Missing or invalid domain parameter" }, 400);
+  }
+
+  const selectors = parseSelectors(c.req.query("selectors"));
+
+  return streamSSE(c, async (stream) => {
+    const result = await scanStreaming(
+      domain,
+      selectors,
+      (id: ProtocolId, protocolResult: ProtocolResult) => {
+        const html = protocolRenderers[id](protocolResult);
+        stream.writeSSE({
+          event: "protocol",
+          data: JSON.stringify({ id, html }),
+        });
+      },
+    );
+
+    setCachedScan(domain, selectors, result);
+
+    stream.writeSSE({
+      event: "done",
+      data: JSON.stringify({
+        grade: result.grade,
+        headerHtml: renderReportHeader(result),
+        footerHtml: renderReportFooter(),
+      }),
+    });
+  });
+});
+
 app.get("/logo.svg", (c) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512">
   <title>dmarcheck</title>
@@ -187,12 +249,19 @@ app.get("/api/check", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   try {
-    const result = await scan(domain, selectors);
+    const cached = await getCachedScan(domain, selectors);
+    const result = cached ?? (await scan(domain, selectors));
+    if (!cached) setCachedScan(domain, selectors, result);
+
     if (c.req.query("format") === "csv") {
       return c.body(generateCsv(result), 200, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${domain}-email-security.csv"`,
+        ...(cached ? { "X-Cache": "HIT" } : {}),
       });
+    }
+    if (cached) {
+      return c.json(result, { headers: { "X-Cache": "HIT" } });
     }
     return c.json(result);
   } catch (err) {
@@ -257,7 +326,9 @@ app.get("/check", async (c) => {
   // Fetch from loading page or noscript fallback — do the actual scan
   if (c.req.header("X-Scan-Fetch") === "1" || c.req.query("_direct") === "1") {
     try {
-      const result = await scan(domain, selectors);
+      const cached = await getCachedScan(domain, selectors);
+      const result = cached ?? (await scan(domain, selectors));
+      if (!cached) setCachedScan(domain, selectors, result);
       return c.html(renderReport(result));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Internal error";
@@ -265,8 +336,8 @@ app.get("/check", async (c) => {
     }
   }
 
-  // Default: return loading page immediately, JS fetches results
-  return c.html(renderCheckLoading(domain, c.req.query("selectors") || ""));
+  // Default: return streaming loading page with skeleton cards, JS opens SSE
+  return c.html(renderStreamingLoading(domain, c.req.query("selectors") || ""));
 });
 
 export function normalizeDomain(raw: string | undefined): string | null {

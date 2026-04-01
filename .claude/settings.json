@@ -14,8 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
-        "if": "Bash(git commit*)",
+        "matcher": "Bash(git commit*)",
         "hooks": [
           {
             "type": "command",

@@ -523,6 +523,54 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   .creature-loading .creature-leg { animation: none !important; }
 }
 
+/* Skeleton loading cards */
+.card-skeleton {
+  background: #18181b; border: 1px solid #27272a; border-radius: 12px;
+  margin-bottom: 12px; overflow: hidden;
+}
+.card-skeleton .card-header {
+  display: flex; align-items: center; padding: 16px 20px; gap: 14px;
+  cursor: default;
+}
+.card-skeleton .skel-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: #27272a;
+}
+.card-skeleton .card-title { font-weight: 600; flex: 1; }
+.card-skeleton .card-subtitle { color: transparent; font-size: 0.85rem; }
+.card-skeleton .skel-bar {
+  height: 12px; border-radius: 6px; background: #27272a;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.card-skeleton .skel-body {
+  padding: 16px 20px; border-top: 1px solid #27272a;
+  display: flex; flex-direction: column; gap: 10px;
+}
+@keyframes shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.card-skeleton .skel-bar:nth-child(1) { width: 80%; }
+.card-skeleton .skel-bar:nth-child(2) { width: 60%; }
+.card-skeleton .skel-bar:nth-child(3) { width: 45%; }
+.grade-skeleton {
+  width: 80px; height: 80px; border-radius: 50%; background: #27272a;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.stream-header { text-align: center; margin-bottom: 1.5rem; }
+.stream-header .domain-name { margin-top: 0.5rem; }
+[data-protocol] { transition: opacity 0.3s ease; }
+[data-protocol].loaded { animation: fadeSlideIn 0.3s ease; }
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-skeleton .skel-bar { animation: none; opacity: 0.6; }
+  .grade-skeleton { animation: none; opacity: 0.6; }
+  [data-protocol].loaded { animation: none; }
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .logo { font-size: 2rem; }
