@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { esc, generateCreature, gradeToMood } from "../src/views/components";
+import {
+  esc,
+  generateCreature,
+  gradeToMood,
+  themeToggle,
+} from "../src/views/components";
+import { renderError, renderLandingPage } from "../src/views/html";
+import { CSS } from "../src/views/styles";
 
 describe("esc", () => {
   it("escapes ampersands", () => {
@@ -80,5 +87,69 @@ describe("gradeToMood", () => {
 
   it("maps F grades to panicked", () => {
     expect(gradeToMood("F")).toBe("panicked");
+  });
+});
+
+describe("themeToggle", () => {
+  it("returns a button with theme-toggle class", () => {
+    const html = themeToggle();
+    expect(html).toContain('class="theme-toggle"');
+  });
+
+  it("includes aria-label", () => {
+    const html = themeToggle();
+    expect(html).toContain("aria-label=");
+  });
+});
+
+describe("CSS theme variables", () => {
+  it("defines light palette in :root", () => {
+    expect(CSS).toContain(":root");
+    expect(CSS).toContain("--clr-bg:");
+    expect(CSS).toContain("--clr-text:");
+    expect(CSS).toContain("--clr-accent:");
+    expect(CSS).toContain("color-scheme: light dark");
+  });
+
+  it("defines dark palette for prefers-color-scheme", () => {
+    expect(CSS).toContain("prefers-color-scheme: dark");
+    expect(CSS).toContain(':root:not([data-theme="light"])');
+  });
+
+  it("defines dark palette for manual override", () => {
+    expect(CSS).toContain('[data-theme="dark"]');
+  });
+
+  it("uses CSS variables instead of hardcoded colors in body", () => {
+    expect(CSS).toContain("background: var(--clr-bg)");
+    expect(CSS).toContain("color: var(--clr-text)");
+  });
+
+  it("includes theme toggle styles", () => {
+    expect(CSS).toContain(".theme-toggle");
+  });
+});
+
+describe("page HTML theme integration", () => {
+  it("includes flash-prevention script in head", () => {
+    const html = renderLandingPage();
+    expect(html).toContain("localStorage.getItem('theme')");
+    expect(html).toContain("data-theme");
+  });
+
+  it("includes theme toggle button", () => {
+    const html = renderLandingPage();
+    expect(html).toContain('class="theme-toggle"');
+  });
+
+  it("includes theme toggle in error page", () => {
+    const html = renderError("test");
+    expect(html).toContain('class="theme-toggle"');
+  });
+
+  it("uses currentColor for GitHub SVG fill", () => {
+    const html = renderLandingPage();
+    expect(html).toContain('fill="currentColor"');
+    expect(html).not.toContain('fill="#71717a"');
   });
 });

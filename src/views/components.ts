@@ -56,6 +56,10 @@ export function generateCreature(
 </div>`;
 }
 
+export function themeToggle(): string {
+  return '<button class="theme-toggle" aria-label="Toggle theme" title="Toggle theme"></button>';
+}
+
 export function gradeToMood(grade: string): CreatureMood {
   const letter = grade.charAt(0).toUpperCase();
   if (letter === "A") return "celebrating";
@@ -193,7 +197,7 @@ export function dkimSelectorGrid(
   const foundItems = found
     .map(
       ([name, info]) =>
-        `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:#71717a;font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`,
+        `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:var(--clr-text-dim);font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`,
     )
     .join("");
 
@@ -202,13 +206,13 @@ export function dkimSelectorGrid(
     .slice(0, 6)
     .map(
       ([name]) =>
-        `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:#52525b">&#10007;</span> ${esc(name)}</div>`,
+        `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:var(--clr-text-faint)">&#10007;</span> ${esc(name)}</div>`,
     )
     .join("");
 
   const extra =
     notFound.length > 6
-      ? `<div class="selector-item selector-not-found" style="color:#52525b">+${notFound.length - 6} more not found</div>`
+      ? `<div class="selector-item selector-not-found" style="color:var(--clr-text-faint)">+${notFound.length - 6} more not found</div>`
       : "";
 
   return `<div class="selector-grid">${foundItems}${notFoundItems}${extra}</div>`;
