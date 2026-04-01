@@ -135,7 +135,14 @@ export async function analyzeMx(domain: string): Promise<MxResult> {
       };
     });
 
-  const providers = detectProviders(records);
+  const seen = new Set<string>();
+  const providers: EmailProvider[] = [];
+  for (const r of records) {
+    if (r.provider && !seen.has(r.provider.name)) {
+      seen.add(r.provider.name);
+      providers.push(r.provider);
+    }
+  }
   const validations: Validation[] = [];
 
   validations.push({
