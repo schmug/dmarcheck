@@ -286,7 +286,7 @@ if (!window.__dmarcheckBound) {
     creature.className = 'at-creature';
     creature.setAttribute('tabindex', '0');
     creature.setAttribute('role', 'button');
-    creature.setAttribute('aria-label', 'Stop the email creature');
+    creature.setAttribute('aria-label', 'Stop DMarcus');
 
     var body = document.createElement('div');
     body.className = 'creature-body';
@@ -320,7 +320,7 @@ if (!window.__dmarcheckBound) {
     var announce = document.createElement('div');
     announce.setAttribute('aria-live', 'polite');
     announce.setAttribute('style', 'position:absolute;left:-9999px;');
-    announce.textContent = 'An email creature appeared!';
+    announce.textContent = 'DMarcus appeared!';
     document.body.appendChild(announce);
     setTimeout(function() { announce.remove(); }, 3000);
 
