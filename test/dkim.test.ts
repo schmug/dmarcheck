@@ -306,7 +306,7 @@ describe("analyzeDkim", () => {
     const result = await analyzeDkim("example.com", [], ["Unknown Provider"]);
 
     // Should behave like no providers — all selectors present
-    expect(Object.keys(result.selectors).length).toBeGreaterThanOrEqual(33);
+    expect(Object.keys(result.selectors).length).toBeGreaterThanOrEqual(36);
   });
 
   it("behaves identically with empty providerNames", async () => {
