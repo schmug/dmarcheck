@@ -1,5 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import app, { normalizeDomain, parseSelectors } from "../src/index.js";
+
+vi.mock("../src/cache.js", () => ({
+  getCachedScan: vi.fn().mockResolvedValue(null),
+  setCachedScan: vi.fn(),
+}));
+
+vi.mock("../src/orchestrator.js", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../src/orchestrator.js")>();
+  return {
+    ...original,
+    scanStreaming: vi.fn(original.scanStreaming),
+  };
+});
+
+vi.mock("../src/dns/client.js", () => ({
+  queryTxt: vi.fn().mockResolvedValue(null),
+  queryMx: vi.fn().mockResolvedValue(null),
+}));
 
 describe("normalizeDomain", () => {
   it("returns null for undefined input", () => {
@@ -258,5 +277,75 @@ describe("HTML head tags", () => {
     expect(html).toContain('rel="icon" href="/favicon.svg"');
     expect(html).toContain('rel="apple-touch-icon"');
     expect(html).toContain('rel="manifest"');
+  });
+});
+
+describe("SSE streaming cache", () => {
+  it("replays cached result as SSE events on cache hit", async () => {
+    const { getCachedScan } = await import("../src/cache.js");
+    const { scanStreaming } = await import("../src/orchestrator.js");
+    vi.mocked(getCachedScan).mockResolvedValueOnce({
+      domain: "example.com",
+      timestamp: "2026-04-02T00:00:00.000Z",
+      grade: "A+",
+      breakdown: {
+        grade: "A+",
+        score: 100,
+        maxScore: 100,
+        protocols: {},
+      } as any,
+      summary: {
+        mx_records: 1,
+        mx_providers: ["Google Workspace"],
+        dmarc_policy: "reject",
+        spf_result: "pass",
+        spf_lookups: "3/10",
+        dkim_selectors_found: 1,
+        bimi_enabled: false,
+        mta_sts_mode: null,
+      },
+      protocols: {
+        mx: { status: "info", records: [], providers: [], validations: [] },
+        dmarc: {
+          status: "pass",
+          record: "v=DMARC1; p=reject",
+          tags: { p: "reject" },
+          validations: [],
+        },
+        spf: {
+          status: "pass",
+          record: "v=spf1 -all",
+          lookups_used: 0,
+          lookup_limit: 10,
+          include_tree: null,
+          validations: [],
+        },
+        dkim: { status: "pass", selectors: {}, validations: [] },
+        bimi: { status: "fail", record: null, tags: null, validations: [] },
+        mta_sts: {
+          status: "fail",
+          dns_record: null,
+          policy: null,
+          validations: [],
+        },
+      },
+    });
+
+    const res = await app.request("/api/check/stream?domain=example.com");
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    // Should contain all 6 protocol events
+    expect(text).toContain('event: protocol\ndata: {"id":"mx"');
+    expect(text).toContain('event: protocol\ndata: {"id":"dmarc"');
+    expect(text).toContain('event: protocol\ndata: {"id":"spf"');
+    expect(text).toContain('event: protocol\ndata: {"id":"dkim"');
+    expect(text).toContain('event: protocol\ndata: {"id":"bimi"');
+    expect(text).toContain('event: protocol\ndata: {"id":"mta_sts"');
+    // Should contain done event with grade
+    expect(text).toContain("event: done");
+    expect(text).toContain('"grade":"A+"');
+    // scanStreaming should NOT have been called
+    expect(scanStreaming).not.toHaveBeenCalled();
   });
 });
