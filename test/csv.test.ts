@@ -106,6 +106,34 @@ function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
 }
 
 describe("escapeCsvField", () => {
+  it("prepends a single quote for fields starting with =", () => {
+    expect(escapeCsvField("=cmd|' /C calc'!A0")).toBe("'=cmd|' /C calc'!A0");
+  });
+
+  it("prepends a single quote for fields starting with +", () => {
+    expect(escapeCsvField("+1+1")).toBe("'+1+1");
+  });
+
+  it("prepends a single quote for fields starting with -", () => {
+    expect(escapeCsvField("-1+1")).toBe("'-1+1");
+  });
+
+  it("prepends a single quote for fields starting with @", () => {
+    expect(escapeCsvField("@SUM(1+1)")).toBe("'@SUM(1+1)");
+  });
+
+  it("prepends a single quote for fields starting with tab", () => {
+    expect(escapeCsvField("\t=1+1")).toBe("'\t=1+1");
+  });
+
+  it("prepends a single quote for fields starting with carriage return", () => {
+    expect(escapeCsvField("\r=1+1")).toBe('"\'\r=1+1"');
+  });
+
+  it("prepends a single quote for fields starting with newline", () => {
+    expect(escapeCsvField("\n=1+1")).toBe('"\'\n=1+1"');
+  });
+
   it("returns plain string unchanged", () => {
     expect(escapeCsvField("hello")).toBe("hello");
   });

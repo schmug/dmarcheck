@@ -21,15 +21,21 @@ const PROTOCOL_NAMES: Record<string, string> = {
 };
 
 export function escapeCsvField(value: string): string {
-  if (
-    value.includes(",") ||
-    value.includes('"') ||
-    value.includes("\n") ||
-    value.includes("\r")
-  ) {
-    return `"${value.replace(/"/g, '""')}"`;
+  // Prevent CSV Formula Injection
+  let safeValue = value;
+  if (/^[=+\-@\t\r\n]/.test(safeValue)) {
+    safeValue = `'${safeValue}`;
   }
-  return value;
+
+  if (
+    safeValue.includes(",") ||
+    safeValue.includes('"') ||
+    safeValue.includes("\n") ||
+    safeValue.includes("\r")
+  ) {
+    return `"${safeValue.replace(/"/g, '""')}"`;
+  }
+  return safeValue;
 }
 
 function formatFindings(
