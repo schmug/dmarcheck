@@ -251,4 +251,69 @@ describe("analyzeDkim", () => {
     const result = await analyzeDkim("example.com");
     expect(result.selectors.google.key_bits).toBe(4096);
   });
+
+  it("probes provider-relevant selectors first when providerNames given", async () => {
+    const callOrder: string[] = [];
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      callOrder.push(name);
+      if (name === "google._domainkey.example.com") {
+        const fakeKey = btoa("x".repeat(294));
+        return {
+          entries: [`v=DKIM1; k=rsa; p=${fakeKey}`],
+          raw: `v=DKIM1; k=rsa; p=${fakeKey}`,
+        };
+      }
+      return null;
+    });
+
+    await analyzeDkim("example.com", [], ["Google Workspace"]);
+
+    // "google" selector should be probed first
+    expect(callOrder[0]).toBe("google._domainkey.example.com");
+  });
+
+  it("probes Microsoft selectors first when Microsoft 365 detected", async () => {
+    const callOrder: string[] = [];
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      callOrder.push(name);
+      return null;
+    });
+
+    await analyzeDkim("example.com", [], ["Microsoft 365"]);
+
+    // selector1 and selector2 should be first two probes
+    expect(callOrder[0]).toBe("selector1._domainkey.example.com");
+    expect(callOrder[1]).toBe("selector2._domainkey.example.com");
+  });
+
+  it("still probes all selectors when providerNames given", async () => {
+    mockQueryTxt.mockResolvedValue(null);
+
+    const result = await analyzeDkim("example.com", [], ["Google Workspace"]);
+
+    // All common selectors should still be present in results
+    expect(Object.keys(result.selectors)).toContain("google");
+    expect(Object.keys(result.selectors)).toContain("selector1");
+    expect(Object.keys(result.selectors)).toContain("default");
+  });
+
+  it("ignores unknown provider names gracefully", async () => {
+    mockQueryTxt.mockResolvedValue(null);
+
+    const result = await analyzeDkim("example.com", [], ["Unknown Provider"]);
+
+    // Should behave like no providers — all selectors present
+    expect(Object.keys(result.selectors).length).toBeGreaterThanOrEqual(38);
+  });
+
+  it("behaves identically with empty providerNames", async () => {
+    mockQueryTxt.mockResolvedValue(null);
+
+    const resultDefault = await analyzeDkim("example.com");
+    const resultEmpty = await analyzeDkim("example.com", [], []);
+
+    expect(Object.keys(resultDefault.selectors)).toEqual(
+      Object.keys(resultEmpty.selectors),
+    );
+  });
 });
