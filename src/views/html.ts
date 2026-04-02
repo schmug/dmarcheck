@@ -84,9 +84,9 @@ export function renderLandingPage(): string {
       </details>
     </form>
     <div class="examples">
-      Try: <a href="/check?domain=google.com">google.com</a> &middot;
-      <a href="/check?domain=github.com">github.com</a> &middot;
-      <a href="/check?domain=cloudflare.com">cloudflare.com</a>
+      Try: <a href="/check?domain=dmarc.mx">dmarc.mx</a> &middot;
+      <a href="/check?domain=google.com">google.com</a> &middot;
+      <a href="/check?domain=github.com">github.com</a>
     </div>
     <div class="learn-link">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
   </div>
