@@ -281,6 +281,10 @@ describe("HTML head tags", () => {
 });
 
 describe("SSE streaming cache", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("replays cached result as SSE events on cache hit", async () => {
     const { getCachedScan } = await import("../src/cache.js");
     const { scanStreaming } = await import("../src/orchestrator.js");
