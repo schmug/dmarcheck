@@ -9,7 +9,7 @@ import type {
   MxResult,
   SpfResult,
 } from "./analyzers/types.js";
-import { getCachedScan, setCachedScan } from "./cache.js";
+import { getAllGradeExamples, getCachedScan, setCachedScan } from "./cache.js";
 import { generateCsv } from "./csv.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
@@ -329,6 +329,11 @@ app.get("/api/check", async (c) => {
     const message = err instanceof Error ? err.message : "Internal error";
     return c.json({ error: message }, 500);
   }
+});
+
+app.get("/api/grades/latest", async (c) => {
+  const grades = await getAllGradeExamples();
+  return c.json({ grades });
 });
 
 app.get("/check/score", async (c) => {

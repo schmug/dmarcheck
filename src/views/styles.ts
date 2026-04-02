@@ -180,6 +180,9 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .landing-footer .api-hint { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .foss-callout { margin-top: 0; }
 .examples { margin-top: 2rem; color: var(--clr-text-faint); font-size: 0.85rem; }
+.recent-grades { margin-top: 0.75rem; color: var(--clr-text-faint); font-size: 0.85rem; }
+.recent-grades:empty { display: none; }
+.grade-pill { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; vertical-align: middle; }
 .api-hint {
   margin-top: 1.5rem; padding: 10px 16px; background: var(--clr-surface); border: 1px solid var(--clr-border);
   border-radius: 8px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: var(--clr-text-dim);

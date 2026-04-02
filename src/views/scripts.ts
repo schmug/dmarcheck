@@ -590,4 +590,39 @@ if (!window.__dmarcheckBound) {
     isActive = false;
   }
 })();
+
+/* Recent grades on landing page */
+(function() {
+  var el = document.getElementById('recent-grades');
+  if (!el) return;
+  fetch('/api/grades/latest').then(function(r) { return r.json(); }).then(function(data) {
+    var grades = data.grades;
+    var order = ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','F'];
+    var items = [];
+    for (var i = 0; i < order.length; i++) {
+      var g = order[i];
+      if (grades[g] && grades[g].domain) {
+        items.push({ grade: g, domain: grades[g].domain });
+      }
+    }
+    if (items.length === 0) return;
+    /* Pick up to 4 spread across the grade spectrum */
+    var picks = [];
+    if (items.length <= 4) { picks = items; }
+    else {
+      var step = (items.length - 1) / 3;
+      for (var j = 0; j < 4; j++) {
+        picks.push(items[Math.round(j * step)]);
+      }
+    }
+    var html = 'Recent: ';
+    for (var k = 0; k < picks.length; k++) {
+      if (k > 0) html += ' &middot; ';
+      var letter = picks[k].grade.charAt(0).toUpperCase();
+      var cls = (letter === 'A' || letter === 'B') ? 'grade-a' : (letter === 'C' || letter === 'D') ? 'grade-c' : 'grade-f';
+      html += '<a href="/check?domain=' + encodeURIComponent(picks[k].domain) + '">' + picks[k].domain + '</a> <span class="grade-pill ' + cls + '">' + picks[k].grade + '</span>';
+    }
+    el.innerHTML = html;
+  }).catch(function() {});
+})();
 `;
