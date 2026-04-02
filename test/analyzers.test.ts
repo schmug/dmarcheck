@@ -323,4 +323,60 @@ describe("analyzeSpf", () => {
     expect(result.status).not.toBe("fail");
     expect(result.record).toBe("v=spf1");
   });
+
+  it("detects circular self-include and reports permerror", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "pcsnc.us") {
+        return {
+          entries: ["v=spf1 include:pcsnc.us include:_spf.google.com ~all"],
+          raw: "v=spf1 include:pcsnc.us include:_spf.google.com ~all",
+        };
+      }
+      if (name === "_spf.google.com") {
+        return {
+          entries: ["v=spf1 ip4:35.190.247.0/24 -all"],
+          raw: "v=spf1 ip4:35.190.247.0/24 -all",
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeSpf("pcsnc.us");
+    expect(result.status).toBe("fail");
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("Circular include"),
+      ),
+    ).toBe(true);
+    // include:pcsnc.us(1) + include:_spf.google.com(1) = 2
+    expect(result.lookups_used).toBe(2);
+  });
+
+  it("detects indirect circular include (A -> B -> A)", async () => {
+    mockQueryTxt.mockImplementation(async (name: string) => {
+      if (name === "a.example.com") {
+        return {
+          entries: ["v=spf1 include:b.example.com -all"],
+          raw: "v=spf1 include:b.example.com -all",
+        };
+      }
+      if (name === "b.example.com") {
+        return {
+          entries: ["v=spf1 include:a.example.com -all"],
+          raw: "v=spf1 include:a.example.com -all",
+        };
+      }
+      return null;
+    });
+
+    const result = await analyzeSpf("a.example.com");
+    expect(result.status).toBe("fail");
+    expect(
+      result.validations.some(
+        (v) => v.status === "fail" && v.message.includes("Circular include"),
+      ),
+    ).toBe(true);
+    // a includes b(1), b includes a(1) but cycle stops = 2
+    expect(result.lookups_used).toBe(2);
+  });
 });
