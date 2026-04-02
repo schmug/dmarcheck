@@ -157,10 +157,14 @@ export function spfTree(node: SpfIncludeNode): string {
     .join("");
 
   const includes = node.includes
-    .map(
-      (child) =>
-        `<li><span class="spf-node include">${esc(`include:${child.domain}`)}</span>${spfTreeInner(child)}</li>`,
-    )
+    .map((child) => {
+      const inner = spfTreeInner(child);
+      const isExpandable = inner !== "";
+      const attrs = isExpandable
+        ? ` role="button" tabindex="0" aria-expanded="true"`
+        : "";
+      return `<li><span class="spf-node include"${attrs}>${esc(`include:${child.domain}`)}</span>${inner}</li>`;
+    })
     .join("");
 
   return `<div class="spf-tree"><ul>${items}${includes}</ul></div>`;
@@ -179,10 +183,14 @@ function spfTreeInner(node: SpfIncludeNode): string {
     .join("");
 
   const includes = node.includes
-    .map(
-      (child) =>
-        `<li><span class="spf-node include">${esc(`include:${child.domain}`)}</span>${spfTreeInner(child)}</li>`,
-    )
+    .map((child) => {
+      const inner = spfTreeInner(child);
+      const isExpandable = inner !== "";
+      const attrs = isExpandable
+        ? ` role="button" tabindex="0" aria-expanded="true"`
+        : "";
+      return `<li><span class="spf-node include"${attrs}>${esc(`include:${child.domain}`)}</span>${inner}</li>`;
+    })
     .join("");
 
   if (!items && !includes) return "";
