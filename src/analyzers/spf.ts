@@ -4,7 +4,11 @@ import type { SpfIncludeNode, SpfResult, Validation } from "./types.js";
 const MAX_LOOKUPS = 10;
 
 export async function analyzeSpf(domain: string): Promise<SpfResult> {
-  const ctx: ResolutionContext = { lookups: 0 };
+  const ctx: ResolutionContext = {
+    lookups: 0,
+    visited: new Set(),
+    hasCycle: false,
+  };
   const tree = await resolveSpfTree(domain, ctx, 0);
 
   if (!tree?.record) {
@@ -31,6 +35,15 @@ export async function analyzeSpf(domain: string): Promise<SpfResult> {
     validations.push({
       status: "fail",
       message: `Exceeds 10-lookup limit (${ctx.lookups} used) — SPF will permerror`,
+    });
+  }
+
+  // Circular include check
+  if (ctx.hasCycle) {
+    validations.push({
+      status: "fail",
+      message:
+        "Circular include detected — SPF will permerror (RFC 7208 §4.6.4)",
     });
   }
 
@@ -92,6 +105,8 @@ export async function analyzeSpf(domain: string): Promise<SpfResult> {
 
 interface ResolutionContext {
   lookups: number;
+  visited: Set<string>;
+  hasCycle: boolean;
 }
 
 async function resolveSpfTree(
@@ -100,6 +115,13 @@ async function resolveSpfTree(
   depth: number,
 ): Promise<SpfIncludeNode | null> {
   if (depth > 10) return null; // Prevent infinite recursion
+
+  const normalizedDomain = domain.toLowerCase();
+  if (ctx.visited.has(normalizedDomain)) {
+    ctx.hasCycle = true;
+    return null;
+  }
+  ctx.visited.add(normalizedDomain);
 
   const txt = await queryTxt(domain);
   if (!txt) return null;
