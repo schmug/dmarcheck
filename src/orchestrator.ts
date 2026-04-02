@@ -57,14 +57,15 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
-  const [mxResult, dmarcResult, spfResult, dkimResult, mtaStsResult] =
-    await Promise.all([
-      analyzeMx(domain),
-      analyzeDmarc(domain),
-      analyzeSpf(domain),
-      analyzeDkim(domain, customSelectors),
-      analyzeMtaSts(domain),
-    ]);
+  const mxResult = await analyzeMx(domain);
+  const providerNames = mxResult.providers.map((p) => p.name);
+
+  const [dmarcResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
+    analyzeDmarc(domain),
+    analyzeSpf(domain),
+    analyzeDkim(domain, customSelectors, providerNames),
+    analyzeMtaSts(domain),
+  ]);
 
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
   const bimiResult = await analyzeBimi(domain, dmarcPolicy);
@@ -84,13 +85,15 @@ export async function scanStreaming(
   customSelectors: string[],
   onResult: (id: ProtocolId, result: ProtocolResult) => void,
 ): Promise<ScanResult> {
-  const mxPromise = analyzeMx(domain);
+  const mxResult = await analyzeMx(domain);
+  onResult("mx", mxResult);
+  const providerNames = mxResult.providers.map((p) => p.name);
+
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
-  const dkimPromise = analyzeDkim(domain, customSelectors);
+  const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
   const mtaStsPromise = analyzeMtaSts(domain);
 
-  mxPromise.then((r) => onResult("mx", r));
   spfPromise.then((r) => onResult("spf", r));
   dkimPromise.then((r) => onResult("dkim", r));
   mtaStsPromise.then((r) => onResult("mta_sts", r));
@@ -102,8 +105,7 @@ export async function scanStreaming(
   const bimiResult = await analyzeBimi(domain, dmarcPolicy);
   onResult("bimi", bimiResult);
 
-  const [mxResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
-    mxPromise,
+  const [spfResult, dkimResult, mtaStsResult] = await Promise.all([
     spfPromise,
     dkimPromise,
     mtaStsPromise,

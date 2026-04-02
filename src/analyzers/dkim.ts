@@ -19,6 +19,9 @@ const COMMON_SELECTORS = [
   "protonmail",
   "protonmail2",
   "protonmail3",
+  "fm1",
+  "fm2",
+  "fm3",
   "mandrill",
   "mxvault",
   "smtp",
@@ -38,11 +41,29 @@ const COMMON_SELECTORS = [
   "cf2025-2",
 ];
 
+const PROVIDER_SELECTORS: Record<string, string[]> = {
+  "Google Workspace": ["google"],
+  "Microsoft 365": ["selector1", "selector2"],
+  "Proton Mail": ["protonmail", "protonmail2", "protonmail3"],
+  "Zoho Mail": ["default"],
+  Fastmail: ["fm1", "fm2", "fm3"],
+  "Rackspace Email": ["mail"],
+};
+
 export async function analyzeDkim(
   domain: string,
   customSelectors: string[] = [],
+  providerNames: string[] = [],
 ): Promise<DkimResult> {
-  const allSelectors = [...new Set([...COMMON_SELECTORS, ...customSelectors])];
+  const unique = [...new Set([...COMMON_SELECTORS, ...customSelectors])];
+  const prioritized = providerNames.flatMap(
+    (name) => PROVIDER_SELECTORS[name] ?? [],
+  );
+  const prioritySet = new Set(prioritized);
+  const allSelectors = [
+    ...prioritized.filter((s) => unique.includes(s)),
+    ...unique.filter((s) => !prioritySet.has(s)),
+  ];
 
   const results = await Promise.allSettled(
     allSelectors.map((sel) => probeSelector(domain, sel)),
