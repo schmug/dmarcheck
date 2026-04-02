@@ -670,7 +670,27 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .creature-panicked .creature-pupil { width: 2px; height: 2px; top: 4px; left: 4px; }
 
 /* Party hat variant */
-.creature-partying { position: relative; }
+.creature-partying {
+  position: relative;
+  animation: creature-dance 1.2s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+.creature-partying .creature-leg:nth-child(1) {
+  animation: creature-kick 0.6s ease-in-out infinite alternate;
+}
+.creature-partying .creature-leg:nth-child(3) {
+  animation: creature-kick 0.6s ease-in-out infinite alternate-reverse;
+}
+@keyframes creature-dance {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(-4deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-3px) rotate(4deg); }
+}
+@keyframes creature-kick {
+  0% { transform: rotate(-12deg); }
+  100% { transform: rotate(12deg); }
+}
 .creature-hat {
   position: absolute; top: -12px; left: 50%;
   transform: translateX(-50%) rotate(8deg);
@@ -711,6 +731,8 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   .at-creature { display: none !important; }
   .creature-loading .creature-leg { animation: none !important; }
   .grade-s { animation: none; }
+  .creature-partying { animation: none; }
+  .creature-partying .creature-leg { animation: none; }
 }
 
 /* Skeleton loading cards */
