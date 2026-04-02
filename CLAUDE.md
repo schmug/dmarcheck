@@ -32,6 +32,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - `src/cache.ts` — SSE result caching
 - `src/csv.ts` — CSV export for scan results
 - `src/views/` — HTML generation via template literals (styles.ts, scripts.ts, components.ts, html.ts, favicon.ts)
+  - `components.ts` — `generateCreature(size, mood, partyHat?)` helper and `gradeToMood()` mapping
 - `src/rate-limit.ts` — Cache API-based rate limiter (10 req/IP/60s)
 
 ## Conventions
@@ -42,6 +43,17 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - HTML is generated server-side as template literal strings, no JSX or build step
 - Client-side JS is minimal (expand/collapse, tooltips) — inline script tag
 - Dark/light theme with OS-aware switching and manual toggle; orange accent (#f97316)
+
+## Brand / DMarcus
+
+- **DMarcus** is the site mascot — an orange `@` character with googly eyes and three legs (pun on DMARC)
+- Rendered by `generateCreature(size, mood, partyHat?)` in `src/views/components.ts`
+- **Moods** map to scan grades via `gradeToMood()`: celebrating (A+/A), content (B), worried (C), scared (D), panicked (F)
+- **Party hat** variant with dance animation for S (perfect) grade
+- **Sizes:** lg (landing page logo), md (grade reactions, footer), sm (nav links)
+- Appears in landing page, report header, loading state, error page, and nav
+- **Easter egg:** idle-triggered (60s) creature walks around eating page elements, panics on interaction; respects `prefers-reduced-motion`
+- Name appears in footer ("Guarded by DMarcus"), loading text, aria labels, and README
 
 ## Quality Gates
 
