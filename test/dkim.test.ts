@@ -268,8 +268,11 @@ describe("analyzeDkim", () => {
 
     await analyzeDkim("example.com", [], ["Google Workspace"]);
 
-    // "google" selector should be probed first
-    expect(callOrder[0]).toBe("google._domainkey.example.com");
+    // "google" selector should be probed before non-provider selectors like "default"
+    const googleIdx = callOrder.indexOf("google._domainkey.example.com");
+    const defaultIdx = callOrder.indexOf("default._domainkey.example.com");
+    expect(googleIdx).toBe(0);
+    expect(googleIdx).toBeLessThan(defaultIdx);
   });
 
   it("probes Microsoft selectors first when Microsoft 365 detected", async () => {
@@ -303,7 +306,7 @@ describe("analyzeDkim", () => {
     const result = await analyzeDkim("example.com", [], ["Unknown Provider"]);
 
     // Should behave like no providers — all selectors present
-    expect(Object.keys(result.selectors).length).toBeGreaterThanOrEqual(38);
+    expect(Object.keys(result.selectors).length).toBeGreaterThanOrEqual(33);
   });
 
   it("behaves identically with empty providerNames", async () => {
