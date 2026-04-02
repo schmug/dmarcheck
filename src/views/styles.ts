@@ -226,6 +226,15 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .grade-c { background: var(--clr-warn-bg); color: var(--clr-warn); border: 1px solid var(--clr-warn-border); }
 .grade-d { background: var(--clr-warn-bg); color: var(--clr-warn); border: 1px solid var(--clr-warn-border); }
 .grade-f { background: var(--clr-fail-bg); color: var(--clr-fail); border: 1px solid var(--clr-fail-border); }
+.grade-s {
+  background: linear-gradient(135deg, #fde68a, #f59e0b, #facc15);
+  color: #78350f; border: 1px solid #f59e0b;
+  animation: grade-s-glow 2s ease-in-out infinite;
+}
+@keyframes grade-s-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.7); }
+}
 .confetti-toggle {
   position: fixed; bottom: 1rem; left: 1rem; z-index: 100;
   display: inline-flex; align-items: center; justify-content: center;
@@ -654,6 +663,37 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .creature-panicked .creature-eye { transform: scale(1.4); }
 .creature-panicked .creature-pupil { width: 2px; height: 2px; top: 4px; left: 4px; }
 
+/* Party hat — S grade easter egg */
+.creature-partying { position: relative; }
+.creature-hat {
+  position: absolute; top: -12px; left: 50%;
+  transform: translateX(-50%) rotate(8deg);
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 14px solid #f59e0b;
+  z-index: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+}
+.creature-hat::after {
+  content: ''; position: absolute;
+  top: 12px; left: -9px;
+  width: 18px; height: 4px;
+  background: repeating-linear-gradient(90deg, #ef4444, #ef4444 3px, #22c55e 3px, #22c55e 6px, #3b82f6 6px, #3b82f6 9px);
+  border-radius: 2px;
+}
+.creature-hat::before {
+  content: ''; position: absolute;
+  top: -4px; left: -1px;
+  width: 4px; height: 4px;
+  background: #facc15; border-radius: 50%;
+}
+.creature-lg .creature-hat { top: -16px; border-left-width: 10px; border-right-width: 10px; border-bottom-width: 20px; }
+.creature-lg .creature-hat::after { top: 17px; left: -13px; width: 26px; height: 5px; }
+.creature-lg .creature-hat::before { top: -5px; left: -1px; width: 5px; height: 5px; }
+.creature-sm .creature-hat { top: -8px; border-left-width: 5px; border-right-width: 5px; border-bottom-width: 10px; }
+.creature-sm .creature-hat::after { top: 8px; left: -6px; width: 12px; height: 3px; }
+.creature-sm .creature-hat::before { top: -3px; left: -1px; width: 3px; height: 3px; }
+
 /* Loading creature — walking animation */
 .creature-loading .creature-leg:nth-child(odd) {
   animation: creature-walk 0.3s ease-in-out infinite alternate;
@@ -664,6 +704,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 @media (prefers-reduced-motion: reduce) {
   .at-creature { display: none !important; }
   .creature-loading .creature-leg { animation: none !important; }
+  .grade-s { animation: none; }
 }
 
 /* Skeleton loading cards */

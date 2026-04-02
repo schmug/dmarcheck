@@ -33,6 +33,7 @@ export function esc(s: string): string {
 }
 
 export function gradeClass(grade: string): string {
+  if (grade === "S") return "grade-s";
   const letter = grade.charAt(0).toUpperCase();
   if (letter === "A" || letter === "B") return "grade-a";
   if (letter === "C" || letter === "D") return "grade-c";
@@ -50,10 +51,13 @@ export type CreatureMood =
 export function generateCreature(
   size: CreatureSize,
   mood?: CreatureMood,
+  partyHat?: boolean,
 ): string {
   const moodClass = mood ? ` creature-${mood}` : "";
-  return `<div class="creature creature-${size}${moodClass}" aria-hidden="true">
-  <div class="creature-body">@<div class="creature-eyes"><div class="creature-eye"><div class="creature-pupil"></div></div><div class="creature-eye"><div class="creature-pupil"></div></div></div></div>
+  const hatClass = partyHat ? " creature-partying" : "";
+  const hatHtml = partyHat ? '<div class="creature-hat"></div>' : "";
+  return `<div class="creature creature-${size}${moodClass}${hatClass}" aria-hidden="true">
+  ${hatHtml}<div class="creature-body">@<div class="creature-eyes"><div class="creature-eye"><div class="creature-pupil"></div></div><div class="creature-eye"><div class="creature-pupil"></div></div></div></div>
   <div class="creature-legs"><div class="creature-leg"></div><div class="creature-leg"></div><div class="creature-leg"></div></div>
 </div>`;
 }
@@ -63,6 +67,7 @@ export function themeToggle(): string {
 }
 
 export function gradeToMood(grade: string): CreatureMood {
+  if (grade === "S") return "celebrating";
   const letter = grade.charAt(0).toUpperCase();
   if (letter === "A") return "celebrating";
   if (letter === "B") return "content";

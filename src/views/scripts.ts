@@ -145,6 +145,8 @@ if (!window.__dmarcheckBound) {
     requestAnimationFrame(frame);
   }
 
+  var sGradeInterval = null;
+
   function fireConfetti(grade, originEl) {
     var letter = grade.charAt(0).toUpperCase();
     var plus = grade.indexOf('+') !== -1;
@@ -152,6 +154,18 @@ if (!window.__dmarcheckBound) {
     var oranges = ['#f97316', '#fb923c'];
     var golds = ['#facc15', '#fde68a'];
     var ambers = ['#f59e0b', '#fbbf24', '#d97706'];
+
+    if (grade === 'S') {
+      var sColors = ['#facc15', '#fde68a', '#f59e0b', '#d97706', '#22c55e', '#4ade80', '#f97316'];
+      launchConfetti(40, sColors, originEl);
+      setTimeout(function() { launchConfetti(35, sColors, originEl); }, 300);
+      setTimeout(function() { launchConfetti(30, sColors, originEl); }, 600);
+      sGradeInterval = setInterval(function() {
+        launchConfetti(25, sColors, originEl);
+        setTimeout(function() { launchConfetti(20, sColors, originEl); }, 300);
+      }, 4000);
+      return;
+    }
 
     if (letter === 'A' && plus) {
       launchConfetti(35, greens.concat(oranges, golds), originEl);
@@ -187,7 +201,11 @@ if (!window.__dmarcheckBound) {
       localStorage.setItem('confetti-disabled', disabled ? 'true' : 'false');
       toggleBtn.classList.toggle('disabled', disabled);
       toggleBtn.setAttribute('aria-pressed', disabled ? 'false' : 'true');
-      if (!disabled) fireConfetti(grade, gradeEl);
+      if (disabled) {
+        if (sGradeInterval) { clearInterval(sGradeInterval); sGradeInterval = null; }
+      } else {
+        fireConfetti(grade, gradeEl);
+      }
     });
   }
 })();
