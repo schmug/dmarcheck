@@ -262,6 +262,11 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .card-header {
   display: flex; align-items: center; padding: 16px 20px; cursor: pointer; gap: 14px;
 }
+.card-header:focus-visible {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
 .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .status-pass { background: var(--clr-pass); box-shadow: 0 0 8px var(--clr-pass-glow); }
 .status-warn { background: var(--clr-warn); box-shadow: 0 0 8px var(--clr-warn-glow); }
@@ -346,6 +351,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .spf-node.mechanism { color: var(--clr-accent); }
 .spf-node.include { color: var(--clr-info); cursor: pointer; }
 .spf-node.include:hover { background: var(--clr-info-bg); }
+.spf-node.include:focus-visible { outline: 2px solid var(--clr-info); outline-offset: 2px; }
 .lookup-count {
   display: inline-block; padding: 2px 8px; border-radius: 4px;
   font-size: 0.75rem; font-weight: 600; margin-top: 8px;

@@ -24,12 +24,28 @@ if (!window.__dmarcheckBound) {
     }
   });
 
+  function toggleSpfNode(node) {
+    var li = node.parentElement;
+    var sub = li.querySelector('ul');
+    if (sub) {
+      var isHidden = sub.style.display === 'none';
+      sub.style.display = isHidden ? '' : 'none';
+      node.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+    }
+  }
+
   document.addEventListener('click', function(e) {
     var node = e.target.closest('.spf-node.include');
     if (node) {
-      var li = node.parentElement;
-      var sub = li.querySelector('ul');
-      if (sub) sub.style.display = sub.style.display === 'none' ? '' : 'none';
+      toggleSpfNode(node);
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    var node = e.target.closest('.spf-node.include');
+    if (node && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      toggleSpfNode(node);
     }
   });
 
