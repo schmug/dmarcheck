@@ -13,6 +13,7 @@ import type {
   ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
+import { queryTxt } from "./dns/client.js";
 import { computeGradeBreakdown } from "./shared/scoring.js";
 
 export type ProtocolId = "mx" | "dmarc" | "spf" | "dkim" | "bimi" | "mta_sts";
@@ -24,11 +25,24 @@ export type ProtocolResult =
   | BimiResult
   | MtaStsResult;
 
-function buildScanResult(
+async function buildScanResult(
   domain: string,
   protocols: ScanResult["protocols"],
-): ScanResult {
+): Promise<ScanResult> {
   const breakdown = computeGradeBreakdown(protocols);
+
+  // Easter egg: S grade for A+ domains advertising dmarc.mx
+  if (breakdown.grade === "A+") {
+    try {
+      const txt = await queryTxt(domain);
+      if (txt?.entries.some((e) => e.toLowerCase().includes("dmarc.mx"))) {
+        breakdown.grade = "S";
+      }
+    } catch {
+      // Silently ignore — don't downgrade the experience for a DNS hiccup
+    }
+  }
+
   const dkimFound = Object.values(protocols.dkim.selectors).filter(
     (s) => s.found,
   ).length;
@@ -70,7 +84,7 @@ export async function scan(
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
   const bimiResult = await analyzeBimi(domain, dmarcPolicy);
 
-  return buildScanResult(domain, {
+  return await buildScanResult(domain, {
     mx: mxResult,
     dmarc: dmarcResult,
     spf: spfResult,
@@ -111,7 +125,7 @@ export async function scanStreaming(
     mtaStsPromise,
   ]);
 
-  return buildScanResult(domain, {
+  return await buildScanResult(domain, {
     mx: mxResult,
     dmarc: dmarcResult,
     spf: spfResult,
