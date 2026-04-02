@@ -294,9 +294,21 @@ describe("SSE streaming cache", () => {
       grade: "A+",
       breakdown: {
         grade: "A+",
+        tier: "A",
+        tierReason: "All protocols passing",
+        modifier: 0,
+        modifierLabel: "",
         score: 100,
         maxScore: 100,
-        protocols: {},
+        factors: [],
+        recommendations: [],
+        protocolSummaries: {
+          dmarc: { status: "pass", summary: "p=reject" },
+          spf: { status: "pass", summary: "pass" },
+          dkim: { status: "pass", summary: "1 selector found" },
+          bimi: { status: "fail", summary: "No BIMI record" },
+          mta_sts: { status: "fail", summary: "No MTA-STS policy" },
+        },
       } as any,
       summary: {
         mx_records: 1,

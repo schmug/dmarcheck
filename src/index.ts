@@ -168,6 +168,35 @@ app.get("/api/check/stream", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   return streamSSE(c, async (stream) => {
+    const cached = await getCachedScan(domain, selectors);
+
+    if (cached) {
+      const protocolIds: ProtocolId[] = [
+        "mx",
+        "dmarc",
+        "spf",
+        "dkim",
+        "bimi",
+        "mta_sts",
+      ];
+      for (const id of protocolIds) {
+        const html = protocolRenderers[id](cached.protocols[id]);
+        await stream.writeSSE({
+          event: "protocol",
+          data: JSON.stringify({ id, html }),
+        });
+      }
+      await stream.writeSSE({
+        event: "done",
+        data: JSON.stringify({
+          grade: cached.grade,
+          headerHtml: renderReportHeader(cached),
+          footerHtml: renderReportFooter(),
+        }),
+      });
+      return;
+    }
+
     const result = await scanStreaming(
       domain,
       selectors,
