@@ -660,6 +660,37 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .creature-panicked .creature-eye { transform: scale(1.4); }
 .creature-panicked .creature-pupil { width: 2px; height: 2px; top: 4px; left: 4px; }
 
+/* Party hat variant */
+.creature-partying { position: relative; }
+.creature-hat {
+  position: absolute; top: -12px; left: 50%;
+  transform: translateX(-50%) rotate(8deg);
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 14px solid #f59e0b;
+  z-index: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+}
+.creature-hat::after {
+  content: ''; position: absolute;
+  top: 12px; left: -9px;
+  width: 18px; height: 4px;
+  background: repeating-linear-gradient(90deg, #ef4444, #ef4444 3px, #22c55e 3px, #22c55e 6px, #3b82f6 6px, #3b82f6 9px);
+  border-radius: 2px;
+}
+.creature-hat::before {
+  content: ''; position: absolute;
+  top: -4px; left: -1px;
+  width: 4px; height: 4px;
+  background: #facc15; border-radius: 50%;
+}
+.creature-lg .creature-hat { top: -16px; border-left-width: 10px; border-right-width: 10px; border-bottom-width: 20px; }
+.creature-lg .creature-hat::after { top: 17px; left: -13px; width: 26px; height: 5px; }
+.creature-lg .creature-hat::before { top: -5px; left: -1px; width: 5px; height: 5px; }
+.creature-sm .creature-hat { top: -8px; border-left-width: 5px; border-right-width: 5px; border-bottom-width: 10px; }
+.creature-sm .creature-hat::after { top: 8px; left: -6px; width: 12px; height: 3px; }
+.creature-sm .creature-hat::before { top: -3px; left: -1px; width: 3px; height: 3px; }
+
 /* Loading creature — walking animation */
 .creature-loading .creature-leg:nth-child(odd) {
   animation: creature-walk 0.3s ease-in-out infinite alternate;
