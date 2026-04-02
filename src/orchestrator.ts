@@ -57,17 +57,33 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
-  const [mxResult, dmarcResult, spfResult, dkimResult, mtaStsResult] =
-    await Promise.all([
-      analyzeMx(domain),
-      analyzeDmarc(domain),
-      analyzeSpf(domain),
-      analyzeDkim(domain, customSelectors),
-      analyzeMtaSts(domain),
-    ]);
+  const mxPromise = analyzeMx(domain);
+  const dmarcPromise = analyzeDmarc(domain);
+  const spfPromise = analyzeSpf(domain);
+  const dkimPromise = analyzeDkim(domain, customSelectors);
+  const mtaStsPromise = analyzeMtaSts(domain);
 
-  const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy);
+  // Run BIMI analysis concurrently once DMARC resolves, rather than waiting for all scans (like DKIM)
+  const bimiPromise = dmarcPromise.then((dmarcResult) => {
+    const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
+    return analyzeBimi(domain, dmarcPolicy);
+  });
+
+  const [
+    mxResult,
+    dmarcResult,
+    spfResult,
+    dkimResult,
+    mtaStsResult,
+    bimiResult,
+  ] = await Promise.all([
+    mxPromise,
+    dmarcPromise,
+    spfPromise,
+    dkimPromise,
+    mtaStsPromise,
+    bimiPromise,
+  ]);
 
   return buildScanResult(domain, {
     mx: mxResult,
