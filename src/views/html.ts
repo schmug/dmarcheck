@@ -189,6 +189,7 @@ function reportBody(result: ScanResult): string {
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
+    ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
   ${scoreSnippet(result)}
@@ -223,6 +224,7 @@ export function renderReport(result: ScanResult): string {
 export function renderReportHeader(result: ScanResult): string {
   return `<div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
+    ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
   ${scoreSnippet(result)}
@@ -389,6 +391,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
+    ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
     <div class="domain-name">${esc(result.domain)}</div>
   </div>
   <div class="report-meta">

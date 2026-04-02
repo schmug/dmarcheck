@@ -226,6 +226,15 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .grade-c { background: var(--clr-warn-bg); color: var(--clr-warn); border: 1px solid var(--clr-warn-border); }
 .grade-d { background: var(--clr-warn-bg); color: var(--clr-warn); border: 1px solid var(--clr-warn-border); }
 .grade-f { background: var(--clr-fail-bg); color: var(--clr-fail); border: 1px solid var(--clr-fail-border); }
+.grade-s {
+  background: linear-gradient(135deg, #fde68a, #f59e0b, #facc15);
+  color: #78350f; border: 1px solid #f59e0b;
+  animation: grade-s-glow 2s ease-in-out infinite;
+}
+@keyframes grade-s-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.7); }
+}
 .confetti-toggle {
   position: fixed; bottom: 1rem; left: 1rem; z-index: 100;
   display: inline-flex; align-items: center; justify-content: center;
@@ -701,6 +710,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 @media (prefers-reduced-motion: reduce) {
   .at-creature { display: none !important; }
   .creature-loading .creature-leg { animation: none !important; }
+  .grade-s { animation: none; }
 }
 
 /* Skeleton loading cards */
