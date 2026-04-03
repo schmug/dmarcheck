@@ -269,6 +269,7 @@ export function renderStreamingLoading(
   const qs = selectors
     ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
     : `domain=${encodeURIComponent(domain)}`;
+  const safeQs = qs.replace(/'/g, "\\'");
 
   return page(
     `Scanning ${domain} — dmarcheck`,
@@ -292,7 +293,7 @@ export function renderStreamingLoading(
 </div>
 <script>
 (function() {
-  var qs = '${qs}';
+  var qs = '${safeQs}';
   var source = new EventSource('/api/check/stream?' + qs);
   var container = document.getElementById('protocol-cards');
   var parser = new DOMParser();
@@ -353,6 +354,7 @@ export function renderCheckLoading(domain: string, selectors: string): string {
   const qs = selectors
     ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
     : `domain=${encodeURIComponent(domain)}`;
+  const safeQs = qs.replace(/'/g, "\\'");
 
   return page(
     `Scanning ${domain} — dmarcheck`,
@@ -365,7 +367,7 @@ export function renderCheckLoading(domain: string, selectors: string): string {
   <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
 </div>
 <script>
-fetch('/check?${qs}', { headers: { 'X-Scan-Fetch': '1' } })
+fetch('/check?${safeQs}', { headers: { 'X-Scan-Fetch': '1' } })
   .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
   .then(function(html) {
     var newDoc = new DOMParser().parseFromString(html, 'text/html');
@@ -376,7 +378,7 @@ fetch('/check?${qs}', { headers: { 'X-Scan-Fetch': '1' } })
       old.parentNode.replaceChild(s, old);
     });
   })
-  .catch(function() { window.location.href = '/check?${qs}&_direct=1'; });
+  .catch(function() { window.location.href = '/check?${safeQs}&_direct=1'; });
 </script>`,
   );
 }
