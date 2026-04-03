@@ -69,7 +69,7 @@ export function renderLandingPage(): string {
     <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
     <form action="/check" method="GET">
       <div class="search-box">
-        <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" autofocus required>
+        <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Domain to scan" autofocus required>
         <button type="submit">Scan</button>
       </div>
       <details class="advanced-options">
