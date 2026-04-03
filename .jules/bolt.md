@@ -1,0 +1,3 @@
+## 2025-04-03 - Optimize DNS Parallelization in Orchestrator
+**Learning:** The orchestration layer `src/orchestrator.ts` unnecessarily serialized independent DNS requests. It awaited `analyzeMx` (because DKIM probe requires email provider details) before firing off `analyzeDmarc`, `analyzeSpf`, and `analyzeMtaSts`, which have no dependencies. This left the Cloudflare Worker's concurrency heavily underutilized and compounded the latency of all downstream requests.
+**Action:** Always map the exact dependency graph of external calls. Independent requests should be initiated synchronously as early as possible before any `await` is triggered.
