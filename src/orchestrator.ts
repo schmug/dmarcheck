@@ -71,14 +71,22 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
+  // Start independent DNS queries immediately for better performance
+  const dmarcPromise = analyzeDmarc(domain);
+  const spfPromise = analyzeSpf(domain);
+  const mtaStsPromise = analyzeMtaSts(domain);
+
   const mxResult = await analyzeMx(domain);
   const providerNames = mxResult.providers.map((p) => p.name);
 
+  // Start DKIM query after MX resolution provides email provider names
+  const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
+
   const [dmarcResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
-    analyzeDmarc(domain),
-    analyzeSpf(domain),
-    analyzeDkim(domain, customSelectors, providerNames),
-    analyzeMtaSts(domain),
+    dmarcPromise,
+    spfPromise,
+    dkimPromise,
+    mtaStsPromise,
   ]);
 
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
@@ -99,14 +107,17 @@ export async function scanStreaming(
   customSelectors: string[],
   onResult: (id: ProtocolId, result: ProtocolResult) => void,
 ): Promise<ScanResult> {
+  // Start independent DNS queries immediately for better performance
+  const dmarcPromise = analyzeDmarc(domain);
+  const spfPromise = analyzeSpf(domain);
+  const mtaStsPromise = analyzeMtaSts(domain);
+
   const mxResult = await analyzeMx(domain);
   onResult("mx", mxResult);
   const providerNames = mxResult.providers.map((p) => p.name);
 
-  const dmarcPromise = analyzeDmarc(domain);
-  const spfPromise = analyzeSpf(domain);
+  // Start DKIM query after MX resolution provides email provider names
   const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
-  const mtaStsPromise = analyzeMtaSts(domain);
 
   spfPromise.then((r) => onResult("spf", r));
   dkimPromise.then((r) => onResult("dkim", r));
