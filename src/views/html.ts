@@ -266,9 +266,11 @@ export function renderStreamingLoading(
   domain: string,
   selectors: string,
 ): string {
-  const qs = selectors
-    ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
-    : `domain=${encodeURIComponent(domain)}`;
+  const qs = (
+    selectors
+      ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
+      : `domain=${encodeURIComponent(domain)}`
+  ).replace(/'/g, "%27");
 
   return page(
     `Scanning ${domain} — dmarcheck`,
@@ -350,9 +352,11 @@ export function renderStreamingLoading(
 }
 
 export function renderCheckLoading(domain: string, selectors: string): string {
-  const qs = selectors
-    ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
-    : `domain=${encodeURIComponent(domain)}`;
+  const qs = (
+    selectors
+      ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
+      : `domain=${encodeURIComponent(domain)}`
+  ).replace(/'/g, "%27");
 
   return page(
     `Scanning ${domain} — dmarcheck`,
