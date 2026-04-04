@@ -1,0 +1,3 @@
+## 2024-04-04 - Promise Graph Optimization
+**Learning:** Found an unintentional sequential bottleneck in `src/orchestrator.ts`. Although `Promise.all` was used, some independent lookups (DMARC, SPF, MTA-STS) were forced to wait until MX analysis finished, and BIMI waited until *everything* finished. The bottleneck occurred because the orchestrator was written sequentially instead of instantiating all promise graphs upfront.
+**Action:** When orchestrating multiple network requests or DNS lookups, identify the actual dependency graph (e.g. DKIM depends on MX, BIMI depends on DMARC) and instantiate all root promises immediately. Use `.then()` to branch dependent tasks, and then `await Promise.all()` on the leaves to maximize concurrency and minimize overall latency.

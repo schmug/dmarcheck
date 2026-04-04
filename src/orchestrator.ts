@@ -71,18 +71,40 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
-  const mxResult = await analyzeMx(domain);
-  const providerNames = mxResult.providers.map((p) => p.name);
+  // Bolt Optimization: Kicking off independent DNS lookups immediately to maximize concurrency.
+  // Previously, lookups waited for MX analysis to complete sequentially.
+  // Expected impact: Reduces overall scan latency by overlapping I/O bound tasks.
+  const mxPromise = analyzeMx(domain);
+  const dmarcPromise = analyzeDmarc(domain);
+  const spfPromise = analyzeSpf(domain);
+  const mtaStsPromise = analyzeMtaSts(domain);
 
-  const [dmarcResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
-    analyzeDmarc(domain),
-    analyzeSpf(domain),
-    analyzeDkim(domain, customSelectors, providerNames),
-    analyzeMtaSts(domain),
+  // Dependent lookups are chained directly to their specific prerequisites
+  const dkimPromise = mxPromise.then((mxResult) => {
+    const providerNames = mxResult.providers.map((p) => p.name);
+    return analyzeDkim(domain, customSelectors, providerNames);
+  });
+
+  const bimiPromise = dmarcPromise.then((dmarcResult) => {
+    const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
+    return analyzeBimi(domain, dmarcPolicy);
+  });
+
+  const [
+    mxResult,
+    dmarcResult,
+    spfResult,
+    dkimResult,
+    bimiResult,
+    mtaStsResult,
+  ] = await Promise.all([
+    mxPromise,
+    dmarcPromise,
+    spfPromise,
+    dkimPromise,
+    bimiPromise,
+    mtaStsPromise,
   ]);
-
-  const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy);
 
   return await buildScanResult(domain, {
     mx: mxResult,
@@ -99,29 +121,47 @@ export async function scanStreaming(
   customSelectors: string[],
   onResult: (id: ProtocolId, result: ProtocolResult) => void,
 ): Promise<ScanResult> {
-  const mxResult = await analyzeMx(domain);
-  onResult("mx", mxResult);
-  const providerNames = mxResult.providers.map((p) => p.name);
-
+  // Bolt Optimization: Maximize concurrency by starting independent lookups immediately
+  // and streaming results as soon as they resolve via .then() handlers.
+  const mxPromise = analyzeMx(domain);
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
-  const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
   const mtaStsPromise = analyzeMtaSts(domain);
 
+  mxPromise.then((r) => onResult("mx", r));
+  dmarcPromise.then((r) => onResult("dmarc", r));
   spfPromise.then((r) => onResult("spf", r));
-  dkimPromise.then((r) => onResult("dkim", r));
   mtaStsPromise.then((r) => onResult("mta_sts", r));
 
-  const dmarcResult = await dmarcPromise;
-  onResult("dmarc", dmarcResult);
+  const dkimPromise = mxPromise.then((mxResult) => {
+    const providerNames = mxResult.providers.map((p) => p.name);
+    return analyzeDkim(domain, customSelectors, providerNames).then((r) => {
+      onResult("dkim", r);
+      return r;
+    });
+  });
 
-  const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy);
-  onResult("bimi", bimiResult);
+  const bimiPromise = dmarcPromise.then((dmarcResult) => {
+    const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
+    return analyzeBimi(domain, dmarcPolicy).then((r) => {
+      onResult("bimi", r);
+      return r;
+    });
+  });
 
-  const [spfResult, dkimResult, mtaStsResult] = await Promise.all([
+  const [
+    mxResult,
+    dmarcResult,
+    spfResult,
+    dkimResult,
+    bimiResult,
+    mtaStsResult,
+  ] = await Promise.all([
+    mxPromise,
+    dmarcPromise,
     spfPromise,
     dkimPromise,
+    bimiPromise,
     mtaStsPromise,
   ]);
 
