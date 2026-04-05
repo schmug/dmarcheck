@@ -144,6 +144,106 @@ describe("normalizeDomain — extended edge cases", () => {
   });
 });
 
+describe("normalizeDomain — XSS payload rejection", () => {
+  // These inputs were the XSS vectors before the fix: `encodeURIComponent`
+  // preserves single quotes, and the URL constructor accepts them in hostnames.
+  // normalizeDomain must now reject them at the boundary.
+  it("rejects single quote in hostname", () => {
+    expect(normalizeDomain("example.com';alert(1);'")).toBeNull();
+  });
+
+  it("rejects double quote in hostname", () => {
+    expect(normalizeDomain('example.com";alert(1);"')).toBeNull();
+  });
+
+  it("rejects angle brackets in hostname", () => {
+    expect(normalizeDomain("example.com<script>")).toBeNull();
+  });
+
+  it("rejects backtick in hostname", () => {
+    expect(normalizeDomain("example.com`alert(1)`")).toBeNull();
+  });
+
+  it("rejects underscore in hostname (not valid per RFC 1035)", () => {
+    expect(normalizeDomain("foo_bar.example.com")).toBeNull();
+  });
+
+  it("accepts plain ASCII hostnames", () => {
+    expect(normalizeDomain("example.com")).toBe("example.com");
+    expect(normalizeDomain("sub.example.co.uk")).toBe("sub.example.co.uk");
+    expect(normalizeDomain("a-b.example.com")).toBe("a-b.example.com");
+  });
+
+  it("accepts IPv4 addresses (dotted quads pass the charset)", () => {
+    expect(normalizeDomain("192.168.1.1")).toBe("192.168.1.1");
+  });
+});
+
+describe("parseSelectors — XSS payload rejection", () => {
+  it("drops selector containing single quote", () => {
+    expect(parseSelectors("x';alert(1);'")).toEqual([]);
+  });
+
+  it("drops selector containing angle brackets", () => {
+    expect(parseSelectors("<script>")).toEqual([]);
+  });
+
+  it("drops selector containing space (rejected by strict charset)", () => {
+    expect(parseSelectors("foo bar")).toEqual([]);
+  });
+
+  it("keeps valid selectors and drops invalid ones in the same list", () => {
+    expect(parseSelectors("google,x';alert(1);',selector1")).toEqual([
+      "google",
+      "selector1",
+    ]);
+  });
+
+  it("accepts selectors with dots, underscores, and hyphens", () => {
+    expect(parseSelectors("dkim._domainkey,my-selector,s_1")).toEqual([
+      "dkim._domainkey",
+      "my-selector",
+      "s_1",
+    ]);
+  });
+});
+
+describe("GET /check — XSS regression", () => {
+  // Full end-to-end check: a pathological domain or selectors query string
+  // must not cause attacker-controlled JavaScript tokens to appear in the
+  // HTML response.
+  it("does not reflect XSS payload from selectors into streaming loader", async () => {
+    const res = await app.request(
+      "/check?domain=example.com&selectors=x';alert(1);'",
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // The payload string must not appear verbatim anywhere in the response
+    expect(html).not.toContain("alert(1)");
+    expect(html).not.toContain("';alert");
+  });
+
+  it("does not reflect XSS payload from domain into streaming loader", async () => {
+    // A domain with a single quote must be rejected with a 400 — it never
+    // reaches renderStreamingLoading, so no injection point.
+    const res = await app.request("/check?domain=example.com';alert(2);'");
+    // Either rejected as invalid (400) or silently normalized — in both
+    // cases, the payload must not appear in the response body.
+    const html = await res.text();
+    expect(html).not.toContain("alert(2)");
+  });
+
+  it("streaming loader emits qs in a data-qs attribute, not a JS literal", async () => {
+    const res = await app.request("/check?domain=example.com&selectors=google");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Must contain the new data-qs attribute
+    expect(html).toContain('data-qs="domain=example.com&amp;selectors=google"');
+    // Must NOT contain the old inline JS literal pattern with the query string
+    expect(html).not.toMatch(/var qs = 'domain=/);
+  });
+});
+
 describe("GET /health", () => {
   it("returns 200 with status ok and a timestamp", async () => {
     const res = await app.request("/health");
