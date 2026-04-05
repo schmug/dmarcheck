@@ -92,7 +92,7 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
     const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
     const resp = await fetch(url, {
       headers: { "User-Agent": "dmarcheck/1.0" },
-      redirect: "follow",
+      redirect: "error",
       signal: AbortSignal.timeout(3000),
     });
 
