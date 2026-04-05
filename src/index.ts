@@ -147,6 +147,31 @@ app.use("/api/check", async (c, next) => {
   }
 });
 
+// The SSE streaming endpoint fans out ~50 DNS lookups per request and is
+// bypassed by the `/api/check` middleware above (Hono matches exact paths).
+// Give it its own limiter so it cannot be used as a DNS amplification vector.
+app.use("/api/check/stream", async (c, next) => {
+  const ip =
+    c.req.header("CF-Connecting-IP") ||
+    c.req.header("X-Forwarded-For") ||
+    "unknown";
+  const { allowed, remaining } = await checkRateLimit(ip);
+
+  if (!allowed) {
+    const headers = rateLimitHeaders(remaining);
+    return c.json(
+      { error: "Rate limit exceeded. Try again in 60 seconds." },
+      { status: 429, headers },
+    );
+  }
+
+  const headers = rateLimitHeaders(remaining);
+  await next();
+  for (const [key, value] of Object.entries(headers)) {
+    c.res.headers.set(key, value);
+  }
+});
+
 const protocolRenderers: Record<
   ProtocolId,
   (result: ProtocolResult) => string
@@ -426,8 +451,10 @@ app.get("/check", async (c) => {
     }
   }
 
-  // Default: return streaming loading page with skeleton cards, JS opens SSE
-  return c.html(renderStreamingLoading(domain, c.req.query("selectors") || ""));
+  // Default: return streaming loading page with skeleton cards, JS opens SSE.
+  // Pass the sanitized selectors (re-joined from parseSelectors) rather than
+  // the raw query string so the loader only ever sees validated characters.
+  return c.html(renderStreamingLoading(domain, selectors.join(",")));
 });
 
 export function normalizeDomain(raw: string | undefined): string | null {
@@ -444,19 +471,30 @@ export function normalizeDomain(raw: string | undefined): string | null {
   }
   // RFC 1035: domain names must not exceed 253 characters
   if (domain.length > 253) return null;
-  // Basic validation: must have at least one dot, no spaces
-  if (!domain.includes(".") || /\s/.test(domain)) return null;
   // Strip trailing dot
   domain = domain.replace(/\.$/, "");
+  // Restrict to ASCII hostname charset. IDNs are Punycode-encoded by `new URL`
+  // (e.g. münchen.de → xn--mnchen-3ya.de), so this set covers valid IDNs too.
+  // Rejects anything exotic (quotes, spaces, brackets) that could break out of
+  // an HTML attribute or JS literal downstream.
+  if (!/^[a-z0-9.-]+$/.test(domain)) return null;
+  // Must have at least one dot
+  if (!domain.includes(".")) return null;
   return domain;
 }
+
+// DKIM selector charset per RFC 6376 §3.1: sub-domain syntax, which is
+// letters / digits / hyphens, with dot-separated labels. We also allow
+// underscores since some providers use them in practice. Anything else
+// is dropped silently — an invalid selector cannot match a real DKIM key.
+const VALID_SELECTOR = /^[A-Za-z0-9._-]+$/;
 
 export function parseSelectors(raw: string | undefined): string[] {
   if (!raw) return [];
   return raw
     .split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((s) => s.length > 0 && VALID_SELECTOR.test(s));
 }
 
 export default app;

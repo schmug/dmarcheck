@@ -266,15 +266,20 @@ export function renderStreamingLoading(
   domain: string,
   selectors: string,
 ): string {
-  const qs = (
-    selectors
-      ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
-      : `domain=${encodeURIComponent(domain)}`
-  ).replace(/'/g, "%27");
+  // `domain` and `selectors` are already validated by normalizeDomain /
+  // parseSelectors at the route boundary, but we still avoid interpolating
+  // them into JS string literals. Instead, the query string is emitted as an
+  // HTML-escaped `data-qs` attribute and the inline script reads it from the
+  // DOM — defense in depth against a future regression in input validation.
+  // This replaces an earlier minimal fix (`.replace(/'/g, "%27")`) with a
+  // structural solution that removes the injection point entirely.
+  const qs = selectors
+    ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
+    : `domain=${encodeURIComponent(domain)}`;
 
   return page(
     `Scanning ${domain} — dmarcheck`,
-    `<div class="report">
+    `<div class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
@@ -290,11 +295,12 @@ export function renderStreamingLoading(
     ${skeletonCard("BIMI", false)}
     ${skeletonCard("MTA-STS", false)}
   </div>
-  <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
+  <noscript><meta http-equiv="refresh" content="0;url=/check?${esc(qs)}&_direct=1"></noscript>
 </div>
 <script>
 (function() {
-  var qs = '${qs}';
+  var root = document.querySelector('.report[data-qs]');
+  var qs = root ? root.getAttribute('data-qs') : '';
   var source = new EventSource('/api/check/stream?' + qs);
   var container = document.getElementById('protocol-cards');
   var parser = new DOMParser();
@@ -347,40 +353,6 @@ export function renderStreamingLoading(
     window.location.href = '/check?' + qs + '&_direct=1';
   });
 })();
-</script>`,
-  );
-}
-
-export function renderCheckLoading(domain: string, selectors: string): string {
-  const qs = (
-    selectors
-      ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
-      : `domain=${encodeURIComponent(domain)}`
-  ).replace(/'/g, "%27");
-
-  return page(
-    `Scanning ${domain} — dmarcheck`,
-    `<div class="scan-loading">
-  <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
-  <div class="loading">
-    <div class="creature-loading">${generateCreature("lg")}</div>
-    <p>DMarcus is scanning ${esc(domain)}&hellip;</p>
-  </div>
-  <noscript><meta http-equiv="refresh" content="0;url=/check?${qs}&_direct=1"></noscript>
-</div>
-<script>
-fetch('/check?${qs}', { headers: { 'X-Scan-Fetch': '1' } })
-  .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-  .then(function(html) {
-    var newDoc = new DOMParser().parseFromString(html, 'text/html');
-    document.replaceChild(document.adoptNode(newDoc.documentElement), document.documentElement);
-    Array.from(document.querySelectorAll('script')).forEach(function(old) {
-      var s = document.createElement('script');
-      s.textContent = old.textContent;
-      old.parentNode.replaceChild(s, old);
-    });
-  })
-  .catch(function() { window.location.href = '/check?${qs}&_direct=1'; });
 </script>`,
   );
 }
