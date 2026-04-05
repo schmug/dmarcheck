@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Main Worker (dmarcheck) npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # MTA-STS Worker npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/mta-sts-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # GitHub Actions used in .github/workflows — keeps SHA-pinned actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"

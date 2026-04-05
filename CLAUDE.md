@@ -61,6 +61,16 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Claude Code hooks auto-format on edit and run tests + typecheck before commits
 - Run `npm run lint` to check, `npm run lint:fix` to auto-fix
 
+## Security
+
+- **Runners:** All CI runs on GitHub-hosted `ubuntu-latest`. Do not reintroduce `self-hosted` — this is a public repo with `pull_request` triggers and self-hosted runners are a known RCE-on-runner pattern.
+- **Action pinning:** All actions in `.github/workflows/*` are pinned by full commit SHA with a `# v<version>` comment. Dependabot (`.github/dependabot.yml`) keeps them up to date weekly.
+- **Workflow permissions:** Every workflow declares an explicit top-level `permissions:` block (default `contents: read`). Elevate at the job level only where needed (e.g., `release.yml` for tag push).
+- **Branch protection:** `main` requires the `check` status from CI to pass before merging, blocks force pushes and deletions, and requires a PR.
+- **Secret scanning:** Secret scanning, push protection, non-provider patterns, and validity checks are all enabled in repo settings. Never commit `.env`, tokens, or wrangler secrets.
+- **Input validation:** User-supplied domains are restricted to `[a-z0-9.-]` in `normalizeDomain` (`src/index.ts`). DKIM selectors are restricted to `[A-Za-z0-9._-]` in `parseSelectors`. HTML output never interpolates raw user input into inline `<script>` blocks — use `data-*` attributes via `esc()` instead.
+- **Reporting:** See `SECURITY.md` for the private disclosure process.
+
 ## Testing
 
 - Tests in `test/` directory
