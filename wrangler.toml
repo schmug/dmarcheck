@@ -1,7 +1,8 @@
 name = "dmarcheck"
 main = "src/index.ts"
 compatibility_date = "2025-03-30"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "nodejs_als"]
+upload_source_maps = true
 
 routes = [
   { pattern = "dmarc.mx", custom_domain = true },
