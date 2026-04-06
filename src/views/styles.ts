@@ -401,7 +401,10 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   box-shadow: 0 4px 12px var(--clr-shadow);
 }
-.tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+.tooltip:hover .tooltip-text, .tooltip:focus-visible .tooltip-text { visibility: visible; opacity: 1; }
+.tooltip:focus-visible {
+  outline: 2px solid var(--clr-accent); outline-offset: 4px; border-radius: 2px;
+}
 
 /* Error */
 .error-box {
