@@ -249,7 +249,19 @@ app.get("/api/check/stream", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   return streamSSE(c, async (stream) => {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const cached = await getCachedScan(domain, selectors);
+    Sentry.addBreadcrumb({
+      category: cached ? "cache.hit" : "cache.miss",
+      message: domain,
+      data: { domain },
+      level: "info",
+    });
 
     if (cached) {
       tagScanResult(cached);
@@ -437,7 +449,19 @@ app.get("/api/check", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   try {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const cached = await getCachedScan(domain, selectors);
+    Sentry.addBreadcrumb({
+      category: cached ? "cache.hit" : "cache.miss",
+      message: domain,
+      data: { domain },
+      level: "info",
+    });
     const result = cached ?? (await scan(domain, selectors));
     tagScanResult(result);
     if (!cached) setCachedScan(domain, selectors, result);
@@ -469,6 +493,12 @@ app.get("/check/score", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   try {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const result = await scan(domain, selectors);
     tagScanResult(result);
     return c.html(renderScoreBreakdown(result));
@@ -494,6 +524,12 @@ app.get("/check", async (c) => {
 
   if (wantsJson) {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const result = await scan(domain, selectors);
       tagScanResult(result);
       return c.json(result);
@@ -506,6 +542,12 @@ app.get("/check", async (c) => {
 
   if (wantsCsv) {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const result = await scan(domain, selectors);
       tagScanResult(result);
       return c.body(generateCsv(result), 200, {
@@ -522,7 +564,19 @@ app.get("/check", async (c) => {
   // Fetch from loading page or noscript fallback — do the actual scan
   if (c.req.header("X-Scan-Fetch") === "1" || c.req.query("_direct") === "1") {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const cached = await getCachedScan(domain, selectors);
+      Sentry.addBreadcrumb({
+        category: cached ? "cache.hit" : "cache.miss",
+        message: domain,
+        data: { domain },
+        level: "info",
+      });
       const result = cached ?? (await scan(domain, selectors));
       tagScanResult(result);
       if (!cached) setCachedScan(domain, selectors, result);
