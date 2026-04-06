@@ -8,6 +8,7 @@ import type {
   DmarcResult,
   MtaStsResult,
   MxResult,
+  ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
@@ -45,6 +46,34 @@ import { CSS } from "./views/styles.js";
 
 const app = new Hono();
 
+// Set Sentry scope context for every request
+app.use("*", async (c, next) => {
+  const scope = Sentry.getCurrentScope();
+  const domain = c.req.query("domain")?.trim().toLowerCase() || undefined;
+  const format =
+    c.req.query("format") ||
+    (c.req.header("Accept")?.includes("application/json") ? "json" : "html");
+  const selectors = c.req.query("selectors") || undefined;
+
+  // Raw user input (not normalizeDomain) — shows what was actually typed, even for rejected requests
+  if (domain) scope.setTag("domain", domain);
+  scope.setTag("format", format);
+  scope.setTag("path", c.req.path);
+  scope.setContext("request", {
+    selectors,
+    method: c.req.method,
+    path: c.req.path,
+  });
+  scope.setUser({
+    ip_address:
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("X-Forwarded-For") ||
+      undefined,
+  });
+
+  await next();
+});
+
 // Security headers middleware (HSTS is handled at Cloudflare edge)
 
 app.use("*", async (c, next) => {
@@ -66,6 +95,19 @@ app.use("*", async (c, next) => {
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
   }
+});
+
+// Safety net: capture any unhandled errors that bypass route catch blocks
+app.onError((err, c) => {
+  Sentry.captureException(err);
+  const message = err instanceof Error ? err.message : "Internal error";
+  const wantsJson =
+    c.req.header("Accept")?.includes("application/json") ||
+    c.req.query("format") === "json";
+  if (wantsJson) {
+    return c.json({ error: message }, 500);
+  }
+  return c.html(renderError(message), 500);
 });
 
 app.use("/api/*", cors());
@@ -188,6 +230,16 @@ const protocolRenderers: Record<
   mta_sts: (r) => renderMtaStsCard(r as MtaStsResult),
 };
 
+function tagScanResult(result: ScanResult): void {
+  const scope = Sentry.getCurrentScope();
+  scope.setTag("grade", result.grade);
+  scope.setTag("dmarc.status", result.protocols.dmarc.status);
+  scope.setTag("spf.status", result.protocols.spf.status);
+  scope.setTag("dkim.status", result.protocols.dkim.status);
+  scope.setTag("bimi.status", result.protocols.bimi.status);
+  scope.setTag("mta_sts.status", result.protocols.mta_sts.status);
+}
+
 app.get("/api/check/stream", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
   if (!domain) {
@@ -197,9 +249,22 @@ app.get("/api/check/stream", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   return streamSSE(c, async (stream) => {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const cached = await getCachedScan(domain, selectors);
+    Sentry.addBreadcrumb({
+      category: cached ? "cache.hit" : "cache.miss",
+      message: domain,
+      data: { domain },
+      level: "info",
+    });
 
     if (cached) {
+      tagScanResult(cached);
       const protocolIds: ProtocolId[] = [
         "mx",
         "dmarc",
@@ -238,6 +303,7 @@ app.get("/api/check/stream", async (c) => {
       },
     );
 
+    tagScanResult(result);
     setCachedScan(domain, selectors, result);
 
     stream.writeSSE({
@@ -383,8 +449,21 @@ app.get("/api/check", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   try {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const cached = await getCachedScan(domain, selectors);
+    Sentry.addBreadcrumb({
+      category: cached ? "cache.hit" : "cache.miss",
+      message: domain,
+      data: { domain },
+      level: "info",
+    });
     const result = cached ?? (await scan(domain, selectors));
+    tagScanResult(result);
     if (!cached) setCachedScan(domain, selectors, result);
 
     if (c.req.query("format") === "csv") {
@@ -399,6 +478,7 @@ app.get("/api/check", async (c) => {
     }
     return c.json(result);
   } catch (err) {
+    Sentry.captureException(err);
     const message = err instanceof Error ? err.message : "Internal error";
     return c.json({ error: message }, 500);
   }
@@ -413,9 +493,17 @@ app.get("/check/score", async (c) => {
   const selectors = parseSelectors(c.req.query("selectors"));
 
   try {
+    Sentry.addBreadcrumb({
+      category: "scan.start",
+      message: domain,
+      data: { domain, selectors },
+      level: "info",
+    });
     const result = await scan(domain, selectors);
+    tagScanResult(result);
     return c.html(renderScoreBreakdown(result));
   } catch (err) {
+    Sentry.captureException(err);
     const message = err instanceof Error ? err.message : "Internal error";
     return c.html(renderError(message), 500);
   }
@@ -436,9 +524,17 @@ app.get("/check", async (c) => {
 
   if (wantsJson) {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const result = await scan(domain, selectors);
+      tagScanResult(result);
       return c.json(result);
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);
     }
@@ -446,12 +542,20 @@ app.get("/check", async (c) => {
 
   if (wantsCsv) {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const result = await scan(domain, selectors);
+      tagScanResult(result);
       return c.body(generateCsv(result), 200, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${domain}-email-security.csv"`,
       });
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);
     }
@@ -460,11 +564,25 @@ app.get("/check", async (c) => {
   // Fetch from loading page or noscript fallback — do the actual scan
   if (c.req.header("X-Scan-Fetch") === "1" || c.req.query("_direct") === "1") {
     try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
       const cached = await getCachedScan(domain, selectors);
+      Sentry.addBreadcrumb({
+        category: cached ? "cache.hit" : "cache.miss",
+        message: domain,
+        data: { domain },
+        level: "info",
+      });
       const result = cached ?? (await scan(domain, selectors));
+      tagScanResult(result);
       if (!cached) setCachedScan(domain, selectors, result);
       return c.html(renderReport(result));
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.html(renderError(message), 500);
     }
@@ -519,7 +637,11 @@ export function parseSelectors(raw: string | undefined): string[] {
 export default Sentry.withSentry(
   (env?: { SENTRY_DSN?: string }) => ({
     dsn: env?.SENTRY_DSN ?? "",
-    tracesSampleRate: 1.0,
+    tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
+      if (samplingContext.parentSampled !== undefined)
+        return samplingContext.parentSampled;
+      return 0.3;
+    },
   }),
   app,
 );

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/cloudflare";
 import { analyzeBimi, prefetchBimiDns } from "./analyzers/bimi.js";
 import { analyzeDkim } from "./analyzers/dkim.js";
 import { analyzeDmarc } from "./analyzers/dmarc.js";
@@ -78,6 +79,12 @@ export async function scan(
   const bimiDnsPromise = prefetchBimiDns(domain);
 
   const mxResult = await analyzeMx(domain);
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `mx: ${mxResult.status}`,
+    data: { protocol: "mx", status: mxResult.status },
+    level: "info",
+  });
   const providerNames = mxResult.providers.map((p) => p.name);
 
   // Start DKIM query after MX resolution provides email provider names
@@ -92,8 +99,39 @@ export async function scan(
       bimiDnsPromise,
     ]);
 
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `dmarc: ${dmarcResult.status}`,
+    data: { protocol: "dmarc", status: dmarcResult.status },
+    level: "info",
+  });
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `spf: ${spfResult.status}`,
+    data: { protocol: "spf", status: spfResult.status },
+    level: "info",
+  });
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `dkim: ${dkimResult.status}`,
+    data: { protocol: "dkim", status: dkimResult.status },
+    level: "info",
+  });
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `mta_sts: ${mtaStsResult.status}`,
+    data: { protocol: "mta_sts", status: mtaStsResult.status },
+    level: "info",
+  });
+
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
   const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `bimi: ${bimiResult.status}`,
+    data: { protocol: "bimi", status: bimiResult.status },
+    level: "info",
+  });
 
   return await buildScanResult(domain, {
     mx: mxResult,
@@ -117,24 +155,66 @@ export async function scanStreaming(
   const bimiDnsPromise = prefetchBimiDns(domain);
 
   const mxResult = await analyzeMx(domain);
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `mx: ${mxResult.status}`,
+    data: { protocol: "mx", status: mxResult.status },
+    level: "info",
+  });
   onResult("mx", mxResult);
   const providerNames = mxResult.providers.map((p) => p.name);
 
   // Start DKIM query after MX resolution provides email provider names
   const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
 
-  spfPromise.then((r) => onResult("spf", r));
-  dkimPromise.then((r) => onResult("dkim", r));
-  mtaStsPromise.then((r) => onResult("mta_sts", r));
+  spfPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `spf: ${r.status}`,
+      data: { protocol: "spf", status: r.status },
+      level: "info",
+    });
+    onResult("spf", r);
+  });
+  dkimPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `dkim: ${r.status}`,
+      data: { protocol: "dkim", status: r.status },
+      level: "info",
+    });
+    onResult("dkim", r);
+  });
+  mtaStsPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `mta_sts: ${r.status}`,
+      data: { protocol: "mta_sts", status: r.status },
+      level: "info",
+    });
+    onResult("mta_sts", r);
+  });
 
   const [dmarcResult, bimiDns] = await Promise.all([
     dmarcPromise,
     bimiDnsPromise,
   ]);
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `dmarc: ${dmarcResult.status}`,
+    data: { protocol: "dmarc", status: dmarcResult.status },
+    level: "info",
+  });
   onResult("dmarc", dmarcResult);
 
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
   const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
+  Sentry.addBreadcrumb({
+    category: "analyzer.complete",
+    message: `bimi: ${bimiResult.status}`,
+    data: { protocol: "bimi", status: bimiResult.status },
+    level: "info",
+  });
   onResult("bimi", bimiResult);
 
   const [spfResult, dkimResult, mtaStsResult] = await Promise.all([
