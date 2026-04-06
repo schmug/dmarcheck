@@ -12,7 +12,7 @@ export const CSS = `
   --clr-text-muted: #52525b;
   --clr-text-dim: #52525b;
   --clr-text-faint: #a1a1aa;
-  --clr-accent: #ea580c;
+  --clr-accent: #c2410c;
   --clr-accent-hover: #c2410c;
   --clr-on-accent: #ffffff;
   --clr-pass: #16a34a;
@@ -182,7 +182,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .landing-footer .learn-link { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .api-hint { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .foss-callout { margin-top: 0; }
-.examples { margin-top: 2rem; color: var(--clr-text-faint); font-size: 0.85rem; }
+.examples { margin-top: 2rem; color: var(--clr-text-dim); font-size: 0.85rem; }
 .api-hint {
   margin-top: 1.5rem; padding: 10px 16px; background: var(--clr-surface); border: 1px solid var(--clr-border);
   border-radius: 8px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: var(--clr-text-dim);
@@ -198,7 +198,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .dmarcus-credit {
   margin-top: 0.75rem; text-align: center; font-size: 0.75rem;
   color: var(--clr-text-dim); display: inline-flex; align-items: center; gap: 4px;
-  width: 100%; justify-content: center; opacity: 0.6;
+  width: 100%; justify-content: center; opacity: 0.8;
 }
 .dmarcus-credit:hover { opacity: 1; transition: opacity 0.3s; }
 .footer-creature { margin-bottom: 0.75rem; opacity: 0.6; }
