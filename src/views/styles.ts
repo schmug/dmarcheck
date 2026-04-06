@@ -10,7 +10,7 @@ export const CSS = `
   --clr-text: #18181b;
   --clr-text-secondary: #27272a;
   --clr-text-muted: #52525b;
-  --clr-text-dim: #71717a;
+  --clr-text-dim: #52525b;
   --clr-text-faint: #a1a1aa;
   --clr-accent: #ea580c;
   --clr-accent-hover: #c2410c;
@@ -46,6 +46,7 @@ export const CSS = `
     --clr-text: #e4e4e7;
     --clr-text-secondary: #d4d4d8;
     --clr-text-muted: #a1a1aa;
+    --clr-text-dim: #a1a1aa;
     --clr-text-faint: #52525b;
     --clr-accent: #f97316;
     --clr-accent-hover: #ea580c;
@@ -80,6 +81,7 @@ export const CSS = `
   --clr-text: #e4e4e7;
   --clr-text-secondary: #d4d4d8;
   --clr-text-muted: #a1a1aa;
+  --clr-text-dim: #a1a1aa;
   --clr-text-faint: #52525b;
   --clr-accent: #f97316;
   --clr-accent-hover: #ea580c;
@@ -176,6 +178,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .advanced-body small { display: block; margin-top: 6px; color: var(--clr-text-faint); font-size: 0.75rem; }
 
 .learn-link { margin-top: 1.5rem; text-align: center; font-size: 0.85rem; color: var(--clr-text-dim); }
+.learn-link a { text-decoration: underline; text-underline-offset: 2px; }
 .landing-footer .learn-link { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .api-hint { margin-top: 0; margin-bottom: 0.75rem; }
 .landing-footer .foss-callout { margin-top: 0; }
@@ -190,19 +193,14 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--clr-text-dim); font-size: 0.8rem; text-decoration: none;
 }
-<<<<<<< HEAD
 .foss-link:hover { color: var(--clr-text-muted); text-decoration: none; }
 .foss-link:hover svg { fill: var(--clr-text-muted); }
-=======
-.foss-link:hover { color: #a1a1aa; text-decoration: none; }
-.foss-link:hover svg { fill: #a1a1aa; }
 .dmarcus-credit {
   margin-top: 0.75rem; text-align: center; font-size: 0.75rem;
-  color: #71717a; display: inline-flex; align-items: center; gap: 4px;
+  color: var(--clr-text-dim); display: inline-flex; align-items: center; gap: 4px;
   width: 100%; justify-content: center; opacity: 0.6;
 }
 .dmarcus-credit:hover { opacity: 1; transition: opacity 0.3s; }
->>>>>>> 352d741 (Add DMarcus branding and update CLAUDE.md for accuracy)
 .footer-creature { margin-bottom: 0.75rem; opacity: 0.6; }
 .footer-creature:hover { opacity: 1; transition: opacity 0.3s; }
 .logo-text { display: inline; }
