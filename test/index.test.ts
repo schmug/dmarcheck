@@ -378,6 +378,12 @@ describe("HTML head tags", () => {
     expect(html).toContain('rel="apple-touch-icon"');
     expect(html).toContain('rel="manifest"');
   });
+
+  it("includes preconnect hint", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('rel="preconnect"');
+  });
 });
 
 describe("SSE streaming cache", () => {
