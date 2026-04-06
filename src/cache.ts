@@ -1,6 +1,7 @@
 import type { ScanResult } from "./analyzers/types.js";
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
+const STALE_REVALIDATE_SECONDS = 600; // 10 minutes
 
 function cacheKey(domain: string, selectors: string[]): Request {
   const sorted = [...selectors].sort().join(",");
@@ -34,7 +35,7 @@ export async function setCachedScan(
     const resp = new Response(JSON.stringify(result), {
       headers: {
         "Content-Type": "application/json",
-        "Cache-Control": `s-maxage=${CACHE_TTL_SECONDS}`,
+        "Cache-Control": `s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=${STALE_REVALIDATE_SECONDS}`,
       },
     });
     await cache.put(cacheKey(domain, selectors), resp);
