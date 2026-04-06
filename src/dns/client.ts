@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import * as Sentry from "@sentry/cloudflare";
 import type { MxRecord, TxtRecord } from "./types.js";
 
 const resolver = new dns.promises.Resolver();
@@ -16,6 +17,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export async function queryTxt(name: string): Promise<TxtRecord | null> {
+  Sentry.addBreadcrumb({
+    category: "dns.query",
+    message: `TXT ${name}`,
+    data: { type: "TXT", hostname: name },
+    level: "info",
+  });
   try {
     const records = await withTimeout(
       resolver.resolveTxt(name),
@@ -35,6 +42,12 @@ export async function queryTxt(name: string): Promise<TxtRecord | null> {
 }
 
 export async function queryMx(name: string): Promise<MxRecord[] | null> {
+  Sentry.addBreadcrumb({
+    category: "dns.query",
+    message: `MX ${name}`,
+    data: { type: "MX", hostname: name },
+    level: "info",
+  });
   try {
     const records = await withTimeout(resolver.resolveMx(name), DNS_TIMEOUT_MS);
     return records.map((r) => ({ priority: r.priority, exchange: r.exchange }));
