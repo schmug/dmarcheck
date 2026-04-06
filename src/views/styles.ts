@@ -570,7 +570,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .at-creature .creature-eye {
   width: 10px; height: 10px; background: white; border-radius: 50%;
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; box-shadow: 0 0 0 1.5px var(--clr-accent-hover);
 }
 .at-creature .creature-pupil {
   width: 5px; height: 5px; background: #0a0a0f; border-radius: 50%;
@@ -623,7 +623,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   position: absolute; display: flex; pointer-events: none;
 }
 .creature .creature-eye {
-  background: white; border-radius: 50%; position: relative; overflow: hidden;
+  background: white; border-radius: 50%; position: relative; overflow: hidden; box-shadow: 0 0 0 1.5px var(--clr-accent-hover);
 }
 .creature .creature-pupil {
   background: #0a0a0f; border-radius: 50%; position: absolute;
