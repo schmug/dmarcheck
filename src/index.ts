@@ -45,6 +45,34 @@ import { CSS } from "./views/styles.js";
 
 const app = new Hono();
 
+// Set Sentry scope context for every request
+app.use("*", async (c, next) => {
+  const scope = Sentry.getCurrentScope();
+  const domain = c.req.query("domain")?.trim().toLowerCase() || undefined;
+  const format =
+    c.req.query("format") ||
+    (c.req.header("Accept")?.includes("application/json") ? "json" : "html");
+  const selectors = c.req.query("selectors") || undefined;
+
+  // Raw user input (not normalizeDomain) — shows what was actually typed, even for rejected requests
+  if (domain) scope.setTag("domain", domain);
+  scope.setTag("format", format);
+  scope.setTag("path", c.req.path);
+  scope.setContext("request", {
+    selectors,
+    method: c.req.method,
+    path: c.req.path,
+  });
+  scope.setUser({
+    ip_address:
+      c.req.header("CF-Connecting-IP") ||
+      c.req.header("X-Forwarded-For") ||
+      undefined,
+  });
+
+  await next();
+});
+
 // Security headers middleware (HSTS is handled at Cloudflare edge)
 
 app.use("*", async (c, next) => {
@@ -66,6 +94,19 @@ app.use("*", async (c, next) => {
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
   }
+});
+
+// Safety net: capture any unhandled errors that bypass route catch blocks
+app.onError((err, c) => {
+  Sentry.captureException(err);
+  const message = err instanceof Error ? err.message : "Internal error";
+  const wantsJson =
+    c.req.header("Accept")?.includes("application/json") ||
+    c.req.query("format") === "json";
+  if (wantsJson) {
+    return c.json({ error: message }, 500);
+  }
+  return c.html(renderError(message), 500);
 });
 
 app.use("/api/*", cors());
@@ -519,7 +560,11 @@ export function parseSelectors(raw: string | undefined): string[] {
 export default Sentry.withSentry(
   (env?: { SENTRY_DSN?: string }) => ({
     dsn: env?.SENTRY_DSN ?? "",
-    tracesSampleRate: 1.0,
+    tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
+      if (samplingContext.parentSampled !== undefined)
+        return samplingContext.parentSampled;
+      return 0.3;
+    },
   }),
   app,
 );
