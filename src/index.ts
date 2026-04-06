@@ -8,6 +8,7 @@ import type {
   DmarcResult,
   MtaStsResult,
   MxResult,
+  ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
@@ -229,6 +230,16 @@ const protocolRenderers: Record<
   mta_sts: (r) => renderMtaStsCard(r as MtaStsResult),
 };
 
+function tagScanResult(result: ScanResult): void {
+  const scope = Sentry.getCurrentScope();
+  scope.setTag("grade", result.grade);
+  scope.setTag("dmarc.status", result.protocols.dmarc.status);
+  scope.setTag("spf.status", result.protocols.spf.status);
+  scope.setTag("dkim.status", result.protocols.dkim.status);
+  scope.setTag("bimi.status", result.protocols.bimi.status);
+  scope.setTag("mta_sts.status", result.protocols.mta_sts.status);
+}
+
 app.get("/api/check/stream", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
   if (!domain) {
@@ -241,6 +252,7 @@ app.get("/api/check/stream", async (c) => {
     const cached = await getCachedScan(domain, selectors);
 
     if (cached) {
+      tagScanResult(cached);
       const protocolIds: ProtocolId[] = [
         "mx",
         "dmarc",
@@ -279,6 +291,7 @@ app.get("/api/check/stream", async (c) => {
       },
     );
 
+    tagScanResult(result);
     setCachedScan(domain, selectors, result);
 
     stream.writeSSE({
@@ -426,6 +439,7 @@ app.get("/api/check", async (c) => {
   try {
     const cached = await getCachedScan(domain, selectors);
     const result = cached ?? (await scan(domain, selectors));
+    tagScanResult(result);
     if (!cached) setCachedScan(domain, selectors, result);
 
     if (c.req.query("format") === "csv") {
@@ -440,6 +454,7 @@ app.get("/api/check", async (c) => {
     }
     return c.json(result);
   } catch (err) {
+    Sentry.captureException(err);
     const message = err instanceof Error ? err.message : "Internal error";
     return c.json({ error: message }, 500);
   }
@@ -455,8 +470,10 @@ app.get("/check/score", async (c) => {
 
   try {
     const result = await scan(domain, selectors);
+    tagScanResult(result);
     return c.html(renderScoreBreakdown(result));
   } catch (err) {
+    Sentry.captureException(err);
     const message = err instanceof Error ? err.message : "Internal error";
     return c.html(renderError(message), 500);
   }
@@ -478,8 +495,10 @@ app.get("/check", async (c) => {
   if (wantsJson) {
     try {
       const result = await scan(domain, selectors);
+      tagScanResult(result);
       return c.json(result);
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);
     }
@@ -488,11 +507,13 @@ app.get("/check", async (c) => {
   if (wantsCsv) {
     try {
       const result = await scan(domain, selectors);
+      tagScanResult(result);
       return c.body(generateCsv(result), 200, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${domain}-email-security.csv"`,
       });
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.json({ error: message }, 500);
     }
@@ -503,9 +524,11 @@ app.get("/check", async (c) => {
     try {
       const cached = await getCachedScan(domain, selectors);
       const result = cached ?? (await scan(domain, selectors));
+      tagScanResult(result);
       if (!cached) setCachedScan(domain, selectors, result);
       return c.html(renderReport(result));
     } catch (err) {
+      Sentry.captureException(err);
       const message = err instanceof Error ? err.message : "Internal error";
       return c.html(renderError(message), 500);
     }
