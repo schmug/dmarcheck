@@ -123,7 +123,7 @@ export function tagGrid(
   const rows = Object.entries(tags)
     .map(([key, value]) => {
       const tip = tooltips[key]
-        ? `<span class="tooltip">${esc(key)}<span class="tooltip-text">${esc(tooltips[key])}</span></span>`
+        ? `<span class="tooltip" tabindex="0" aria-label="${esc(key)}: ${esc(tooltips[key])}">${esc(key)}<span class="tooltip-text" aria-hidden="true">${esc(tooltips[key])}</span></span>`
         : esc(key);
       return `<span class="tag-name">${tip}</span><span class="tag-value">${esc(value)}</span>`;
     })
