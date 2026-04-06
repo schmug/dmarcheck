@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/cloudflare";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -515,4 +516,10 @@ export function parseSelectors(raw: string | undefined): string[] {
     .filter((s) => s.length > 0 && VALID_SELECTOR.test(s));
 }
 
-export default app;
+export default Sentry.withSentry(
+  (env?: { SENTRY_DSN?: string }) => ({
+    dsn: env?.SENTRY_DSN ?? "",
+    tracesSampleRate: 1.0,
+  }),
+  app,
+);
