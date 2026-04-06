@@ -5,3 +5,5 @@ dist/
 .dev.vars
 .worktrees/
 docs/internal/
+pnpm-lock.yaml
+.jules/
