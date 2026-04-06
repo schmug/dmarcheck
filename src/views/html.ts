@@ -63,7 +63,7 @@ ${themeToggle()}
 export function renderLandingPage(): string {
   return page(
     "dmarcheck — DNS Email Security Analyzer",
-    `<div class="landing">
+    `<main class="landing">
   <div class="landing-main">
     <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
     <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
@@ -103,7 +103,7 @@ export function renderLandingPage(): string {
     </div>
     <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
   </div>
-</div>`,
+</main>`,
   );
 }
 
@@ -183,7 +183,7 @@ export function renderMxCard(mx: MxResult): string {
 function reportBody(result: ScanResult): string {
   const { mx, dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
 
-  return `<div class="report">
+  return `<main class="report">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
@@ -214,7 +214,7 @@ function reportBody(result: ScanResult): string {
       Free and open source &mdash; MIT License
     </a>
   </div>
-</div>`;
+</main>`;
 }
 
 export function renderReport(result: ScanResult): string {
@@ -279,7 +279,7 @@ export function renderStreamingLoading(
 
   return page(
     `Scanning ${domain} — dmarcheck`,
-    `<div class="report" data-qs="${esc(qs)}">
+    `<main class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
@@ -296,7 +296,7 @@ export function renderStreamingLoading(
     ${skeletonCard("MTA-STS", false)}
   </div>
   <noscript><meta http-equiv="refresh" content="0;url=/check?${esc(qs)}&_direct=1"></noscript>
-</div>
+</main>
 <script>
 (function() {
   var root = document.querySelector('.report[data-qs]');
@@ -361,7 +361,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
   const { breakdown } = result;
   const backUrl = `/check?domain=${encodeURIComponent(result.domain)}`;
 
-  const body = `<div class="breakdown">
+  const body = `<main class="breakdown">
   <div class="report-nav">
     <a href="${backUrl}">${generateCreature("sm")} Back to results</a>
   </div>
@@ -378,13 +378,13 @@ export function renderScoreBreakdown(result: ScanResult): string {
   ${protocolContributionGrid(breakdown.protocolSummaries)}
   ${recommendationList(breakdown.recommendations)}
   <div class="learn-link" style="margin-top:2rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
-</div>`;
+</main>`;
 
   return page(`Scoring breakdown — ${result.domain} — dmarcheck`, body);
 }
 
 export function renderScoringRubric(): string {
-  const body = `<div class="breakdown">
+  const body = `<main class="breakdown">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} Home</a>
   </div>
@@ -491,7 +491,7 @@ export function renderScoringRubric(): string {
       Free and open source &mdash; MIT License
     </a>
   </div>
-</div>`;
+</main>`;
 
   return page("Email Security Scoring — dmarcheck", body);
 }
@@ -499,7 +499,7 @@ export function renderScoringRubric(): string {
 export function renderError(message: string): string {
   return page(
     "Error — dmarcheck",
-    `<div class="landing">
+    `<main class="landing">
   <div class="landing-main">
     <div class="logo">${generateCreature("lg", "worried")}<span class="logo-text">dmar<span>check</span></span></div>
     <div class="error-box">
@@ -508,6 +508,6 @@ export function renderError(message: string): string {
     </div>
     <a href="/">&larr; Try again</a>
   </div>
-</div>`,
+</main>`,
   );
 }
