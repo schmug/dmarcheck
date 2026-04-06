@@ -60,7 +60,7 @@ app.use("*", async (c, next) => {
   if (isHtml) {
     c.res.headers.set(
       "Content-Security-Policy",
-      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     );
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");

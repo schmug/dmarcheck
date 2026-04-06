@@ -290,7 +290,9 @@ describe("security headers", () => {
   it("sets CSP with inline scripts allowed on HTML responses", async () => {
     const res = await app.request("/");
     const csp = res.headers.get("Content-Security-Policy");
-    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain(
+      "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
+    );
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
     expect(csp).toContain("frame-ancestors 'none'");
   });
@@ -310,6 +312,12 @@ describe("security headers", () => {
     const res = await app.request("/");
     const csp = res.headers.get("Content-Security-Policy");
     expect(csp).toContain("img-src 'self' data:");
+  });
+
+  it("allows same-origin manifest in CSP", async () => {
+    const res = await app.request("/");
+    const csp = res.headers.get("Content-Security-Policy");
+    expect(csp).toContain("manifest-src 'self'");
   });
 });
 
