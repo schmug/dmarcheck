@@ -14,6 +14,7 @@ import { generateCsv } from "./csv.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
+import { CSS_PATH, JS_PATH } from "./views/assets.js";
 import {
   APPLE_TOUCH_ICON_BASE64,
   FAVICON_ICO_BASE64,
@@ -38,6 +39,8 @@ import {
   renderSpfCard,
   renderStreamingLoading,
 } from "./views/html.js";
+import { JS } from "./views/scripts.js";
+import { CSS } from "./views/styles.js";
 
 const app = new Hono();
 
@@ -57,7 +60,7 @@ app.use("*", async (c, next) => {
   if (isHtml) {
     c.res.headers.set(
       "Content-Security-Policy",
-      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     );
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
@@ -290,6 +293,21 @@ app.get("/og-image.svg", (c) => {
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",
     "Cache-Control": "public, max-age=86400",
+  });
+});
+
+// Content-hashed static assets with immutable caching
+app.get(CSS_PATH, (c) => {
+  return c.body(CSS, 200, {
+    "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=31536000, immutable",
+  });
+});
+
+app.get(JS_PATH, (c) => {
+  return c.body(JS, 200, {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Cache-Control": "public, max-age=31536000, immutable",
   });
 });
 

@@ -291,7 +291,7 @@ describe("security headers", () => {
     const res = await app.request("/");
     const csp = res.headers.get("Content-Security-Policy");
     expect(csp).toContain("script-src 'self' 'unsafe-inline'");
-    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 
@@ -383,6 +383,43 @@ describe("HTML head tags", () => {
     const res = await app.request("/");
     const html = await res.text();
     expect(html).toContain('rel="preconnect"');
+  });
+
+  it("references external CSS and JS instead of inlining", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('rel="stylesheet" href="/assets/styles-');
+    expect(html).toContain('<script src="/assets/scripts-');
+    expect(html).not.toMatch(/<style>[^<]{500,}<\/style>/);
+    expect(html).not.toMatch(/<script>[^<]{500,}<\/script>/);
+  });
+});
+
+describe("static asset routes", () => {
+  it("serves CSS with immutable cache header", async () => {
+    const { CSS_PATH } = await import("../src/views/assets.js");
+    const res = await app.request(CSS_PATH);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/css; charset=utf-8");
+    expect(res.headers.get("Cache-Control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    const body = await res.text();
+    expect(body.length).toBeGreaterThan(1000);
+  });
+
+  it("serves JS with immutable cache header", async () => {
+    const { JS_PATH } = await import("../src/views/assets.js");
+    const res = await app.request(JS_PATH);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe(
+      "application/javascript; charset=utf-8",
+    );
+    expect(res.headers.get("Cache-Control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    const body = await res.text();
+    expect(body.length).toBeGreaterThan(1000);
   });
 });
 

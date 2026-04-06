@@ -7,6 +7,7 @@ import type {
   ScanResult,
   SpfResult,
 } from "../analyzers/types.js";
+import { CSS_PATH, JS_PATH } from "./assets.js";
 import {
   dkimSelectorGrid,
   esc,
@@ -28,8 +29,6 @@ import {
   tierExplanationCard,
   validationList,
 } from "./components.js";
-import { JS } from "./scripts.js";
-import { CSS } from "./styles.js";
 
 function page(title: string, body: string): string {
   return `<!DOCTYPE html>
@@ -51,12 +50,12 @@ function page(title: string, body: string): string {
 <link rel="preconnect" href="/">
 <title>${esc(title)}</title>
 <script>(function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
-<style>${CSS}</style>
+<link rel="stylesheet" href="${CSS_PATH}">
 </head>
 <body>
 ${body}
 ${themeToggle()}
-<script>${JS}</script>
+<script src="${JS_PATH}"></script>
 </body>
 </html>`;
 }
