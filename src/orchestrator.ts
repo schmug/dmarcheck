@@ -1,4 +1,4 @@
-import { analyzeBimi } from "./analyzers/bimi.js";
+import { analyzeBimi, prefetchBimiDns } from "./analyzers/bimi.js";
 import { analyzeDkim } from "./analyzers/dkim.js";
 import { analyzeDmarc } from "./analyzers/dmarc.js";
 import { analyzeMtaSts } from "./analyzers/mta-sts.js";
@@ -75,6 +75,7 @@ export async function scan(
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
   const mtaStsPromise = analyzeMtaSts(domain);
+  const bimiDnsPromise = prefetchBimiDns(domain);
 
   const mxResult = await analyzeMx(domain);
   const providerNames = mxResult.providers.map((p) => p.name);
@@ -82,15 +83,17 @@ export async function scan(
   // Start DKIM query after MX resolution provides email provider names
   const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
 
-  const [dmarcResult, spfResult, dkimResult, mtaStsResult] = await Promise.all([
-    dmarcPromise,
-    spfPromise,
-    dkimPromise,
-    mtaStsPromise,
-  ]);
+  const [dmarcResult, spfResult, dkimResult, mtaStsResult, bimiDns] =
+    await Promise.all([
+      dmarcPromise,
+      spfPromise,
+      dkimPromise,
+      mtaStsPromise,
+      bimiDnsPromise,
+    ]);
 
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy);
+  const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
 
   return await buildScanResult(domain, {
     mx: mxResult,
@@ -111,6 +114,7 @@ export async function scanStreaming(
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
   const mtaStsPromise = analyzeMtaSts(domain);
+  const bimiDnsPromise = prefetchBimiDns(domain);
 
   const mxResult = await analyzeMx(domain);
   onResult("mx", mxResult);
@@ -123,11 +127,14 @@ export async function scanStreaming(
   dkimPromise.then((r) => onResult("dkim", r));
   mtaStsPromise.then((r) => onResult("mta_sts", r));
 
-  const dmarcResult = await dmarcPromise;
+  const [dmarcResult, bimiDns] = await Promise.all([
+    dmarcPromise,
+    bimiDnsPromise,
+  ]);
   onResult("dmarc", dmarcResult);
 
   const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy);
+  const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
   onResult("bimi", bimiResult);
 
   const [spfResult, dkimResult, mtaStsResult] = await Promise.all([

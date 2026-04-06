@@ -5,7 +5,7 @@ vi.mock("../src/dns/client.js", () => ({
   queryMx: vi.fn(),
 }));
 
-import { analyzeBimi } from "../src/analyzers/bimi.js";
+import { analyzeBimi, prefetchBimiDns } from "../src/analyzers/bimi.js";
 import { queryTxt } from "../src/dns/client.js";
 
 const mockQueryTxt = vi.mocked(queryTxt);
@@ -212,5 +212,31 @@ describe("analyzeBimi", () => {
 
     const result = await analyzeBimi("example.com", "reject");
     expect(result.status).toBe("pass");
+  });
+
+  it("uses prefetched DNS result instead of querying again", async () => {
+    const prefetched = {
+      entries: [
+        "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+      ],
+      raw: "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+    };
+    const result = await analyzeBimi("example.com", "reject", prefetched);
+    expect(result.status).toBe("pass");
+    expect(mockQueryTxt).not.toHaveBeenCalled();
+  });
+
+  it("uses prefetched null (no record) without querying", async () => {
+    const result = await analyzeBimi("example.com", "reject", null);
+    expect(result.status).toBe("warn");
+    expect(mockQueryTxt).not.toHaveBeenCalled();
+  });
+});
+
+describe("prefetchBimiDns", () => {
+  it("queries the correct BIMI subdomain", async () => {
+    mockQueryTxt.mockResolvedValue(null);
+    await prefetchBimiDns("example.com");
+    expect(mockQueryTxt).toHaveBeenCalledWith("default._bimi.example.com");
   });
 });

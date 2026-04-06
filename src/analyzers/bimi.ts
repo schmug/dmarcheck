@@ -1,12 +1,21 @@
 import { queryTxt } from "../dns/client.js";
+import type { TxtRecord } from "../dns/types.js";
 import { parseTags } from "../shared/parse-tags.js";
 import type { BimiResult, Validation } from "./types.js";
+
+export function prefetchBimiDns(domain: string): Promise<TxtRecord | null> {
+  return queryTxt(`default._bimi.${domain}`);
+}
 
 export async function analyzeBimi(
   domain: string,
   dmarcPolicy: string | null,
+  prefetchedDns?: TxtRecord | null,
 ): Promise<BimiResult> {
-  const txt = await queryTxt(`default._bimi.${domain}`);
+  const txt =
+    prefetchedDns !== undefined
+      ? prefetchedDns
+      : await queryTxt(`default._bimi.${domain}`);
 
   if (!txt) {
     const validations: Validation[] = [
