@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/cloudflare";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type {
@@ -112,12 +112,21 @@ app.onError((err, c) => {
 
 app.use("/api/*", cors());
 
+function getClientIp(c: Context): string {
+  const cfIp = c.req.header("CF-Connecting-IP");
+  if (cfIp) return cfIp;
+
+  // Prevent rate limit bypass by extracting only the first IP address
+  // if multiple comma-separated IPs are present in X-Forwarded-For.
+  const xff = c.req.header("X-Forwarded-For");
+  if (xff) return xff.split(",")[0].trim();
+
+  return "unknown";
+}
+
 // Rate limit scan endpoints (not the landing page)
 app.use("/check", async (c, next) => {
-  const ip =
-    c.req.header("CF-Connecting-IP") ||
-    c.req.header("X-Forwarded-For") ||
-    "unknown";
+  const ip = getClientIp(c);
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
@@ -148,10 +157,7 @@ app.use("/check", async (c, next) => {
 });
 
 app.use("/check/score", async (c, next) => {
-  const ip =
-    c.req.header("CF-Connecting-IP") ||
-    c.req.header("X-Forwarded-For") ||
-    "unknown";
+  const ip = getClientIp(c);
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
@@ -172,10 +178,7 @@ app.use("/check/score", async (c, next) => {
 });
 
 app.use("/api/check", async (c, next) => {
-  const ip =
-    c.req.header("CF-Connecting-IP") ||
-    c.req.header("X-Forwarded-For") ||
-    "unknown";
+  const ip = getClientIp(c);
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
@@ -197,10 +200,7 @@ app.use("/api/check", async (c, next) => {
 // bypassed by the `/api/check` middleware above (Hono matches exact paths).
 // Give it its own limiter so it cannot be used as a DNS amplification vector.
 app.use("/api/check/stream", async (c, next) => {
-  const ip =
-    c.req.header("CF-Connecting-IP") ||
-    c.req.header("X-Forwarded-For") ||
-    "unknown";
+  const ip = getClientIp(c);
   const { allowed, remaining } = await checkRateLimit(ip);
 
   if (!allowed) {
