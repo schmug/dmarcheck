@@ -72,31 +72,34 @@ export async function scan(
   domain: string,
   customSelectors: string[] = [],
 ): Promise<ScanResult> {
-  // Start independent DNS queries immediately for better performance
+  // Fire all independent DNS queries immediately
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
   const mtaStsPromise = analyzeMtaSts(domain);
   const bimiDnsPromise = prefetchBimiDns(domain);
+  const mxPromise = analyzeMx(domain);
 
-  const mxResult = await analyzeMx(domain);
-  Sentry.addBreadcrumb({
-    category: "analyzer.complete",
-    message: `mx: ${mxResult.status}`,
-    data: { protocol: "mx", status: mxResult.status },
-    level: "info",
+  // Chain DKIM off MX so it starts as soon as MX resolves
+  // without blocking on unrelated queries
+  const dkimPromise = mxPromise.then((mxResult) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `mx: ${mxResult.status}`,
+      data: { protocol: "mx", status: mxResult.status },
+      level: "info",
+    });
+    const providerNames = mxResult.providers.map((p) => p.name);
+    return analyzeDkim(domain, customSelectors, providerNames);
   });
-  const providerNames = mxResult.providers.map((p) => p.name);
 
-  // Start DKIM query after MX resolution provides email provider names
-  const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
-
-  const [dmarcResult, spfResult, dkimResult, mtaStsResult, bimiDns] =
+  const [dmarcResult, spfResult, dkimResult, mtaStsResult, bimiDns, mxResult] =
     await Promise.all([
       dmarcPromise,
       spfPromise,
       dkimPromise,
       mtaStsPromise,
       bimiDnsPromise,
+      mxPromise,
     ]);
 
   Sentry.addBreadcrumb({
