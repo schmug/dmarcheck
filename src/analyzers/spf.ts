@@ -158,21 +158,25 @@ async function resolveSpfTree(
   }
 
   // Resolve includes in parallel
-  const resolved = await Promise.allSettled(
-    includeTargets.map((target) => resolveSpfTree(target, ctx, depth + 1)),
-  );
+  // Optimization: If we've already exceeded the SPF lookup limit, avoid fetching further includes.
+  // We still record the mechanism to accurately reflect the original SPF, but skip the recursion.
+  if (ctx.lookups <= MAX_LOOKUPS) {
+    const resolved = await Promise.allSettled(
+      includeTargets.map((target) => resolveSpfTree(target, ctx, depth + 1)),
+    );
 
-  for (const result of resolved) {
-    if (result.status === "fulfilled" && result.value) {
-      includes.push(result.value);
+    for (const result of resolved) {
+      if (result.status === "fulfilled" && result.value) {
+        includes.push(result.value);
+      }
     }
-  }
 
-  // Handle redirect (processed after all mechanisms)
-  if (redirect) {
-    const redirectNode = await resolveSpfTree(redirect, ctx, depth + 1);
-    if (redirectNode) {
-      includes.push(redirectNode);
+    // Handle redirect (processed after all mechanisms)
+    if (redirect) {
+      const redirectNode = await resolveSpfTree(redirect, ctx, depth + 1);
+      if (redirectNode) {
+        includes.push(redirectNode);
+      }
     }
   }
 
