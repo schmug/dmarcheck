@@ -92,7 +92,8 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
     const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
     const resp = await fetch(url, {
       headers: { "User-Agent": "dmarcheck/1.0" },
-      redirect: "manual",
+      // Security: Enforce RFC 8461 Section 3.3. Prevent SSRF by not following redirects.
+      redirect: "error",
       signal: AbortSignal.timeout(3000),
     });
 

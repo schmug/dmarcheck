@@ -116,6 +116,9 @@ async function resolveSpfTree(
 ): Promise<SpfIncludeNode | null> {
   if (depth > 10) return null; // Prevent infinite recursion
 
+  // Security: Prevent excessive DNS queries by aborting early when the limit is reached.
+  if (ctx.lookups >= MAX_LOOKUPS) return null;
+
   const normalizedDomain = domain.toLowerCase();
   if (ctx.visited.has(normalizedDomain)) {
     ctx.hasCycle = true;
