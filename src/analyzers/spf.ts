@@ -158,9 +158,16 @@ async function resolveSpfTree(
   }
 
   // Resolve includes in parallel
-  const resolved = await Promise.allSettled(
-    includeTargets.map((target) => resolveSpfTree(target, ctx, depth + 1)),
-  );
+  // ⚡ Bolt: Only recurse on includes if we haven't already exceeded the DNS lookup limit
+  // Prevents cascading excessive parallel DNS queries for complex or malicious SPF trees
+  const resolved =
+    ctx.lookups > MAX_LOOKUPS
+      ? []
+      : await Promise.allSettled(
+          includeTargets.map((target) =>
+            resolveSpfTree(target, ctx, depth + 1),
+          ),
+        );
 
   for (const result of resolved) {
     if (result.status === "fulfilled" && result.value) {
@@ -169,7 +176,7 @@ async function resolveSpfTree(
   }
 
   // Handle redirect (processed after all mechanisms)
-  if (redirect) {
+  if (redirect && ctx.lookups <= MAX_LOOKUPS) {
     const redirectNode = await resolveSpfTree(redirect, ctx, depth + 1);
     if (redirectNode) {
       includes.push(redirectNode);
