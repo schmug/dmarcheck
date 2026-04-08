@@ -115,6 +115,7 @@ async function resolveSpfTree(
   depth: number,
 ): Promise<SpfIncludeNode | null> {
   if (depth > 10) return null; // Prevent infinite recursion
+  if (ctx.lookups > MAX_LOOKUPS) return null; // Prevent excessive DNS queries
 
   const normalizedDomain = domain.toLowerCase();
   if (ctx.visited.has(normalizedDomain)) {
@@ -139,6 +140,8 @@ async function resolveSpfTree(
   let redirect: string | null = null;
 
   for (const mech of mechanisms) {
+    if (ctx.lookups > MAX_LOOKUPS) break;
+
     const bare = mech.replace(/^[+\-~?]/, "");
     if (bare.startsWith("include:")) {
       ctx.lookups++;
