@@ -106,18 +106,29 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
 }
 
 function parsePolicy(text: string): MtaStsPolicy {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
   let version = "";
   let mode = "";
   const mx: string[] = [];
   let maxAge = 0;
 
-  for (const line of lines) {
+  // Performance optimization:
+  // Use a single-pass `indexOf` loop instead of `text.split('\n').map(...).filter(...)`
+  // This avoids allocating intermediate arrays and strings, reducing GC pressure.
+  let start = 0;
+  while (start < text.length) {
+    let end = text.indexOf("\n", start);
+    if (end === -1) {
+      end = text.length;
+    }
+
+    const line = text.slice(start, end).trim();
+    start = end + 1;
+
+    if (!line) continue;
+
     const colonIdx = line.indexOf(":");
     if (colonIdx === -1) continue;
+
     const key = line.slice(0, colonIdx).trim().toLowerCase();
     const value = line.slice(colonIdx + 1).trim();
 
