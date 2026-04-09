@@ -194,6 +194,26 @@ describe("analyzeMtaSts", () => {
     ).toBe(true);
   });
 
+  it("handles redirect as error per RFC 8461", async () => {
+    mockQueryTxt.mockResolvedValue({
+      entries: ["v=STSv1; id=20240101"],
+      raw: "v=STSv1; id=20240101",
+    });
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new TypeError("redirect mode is set to error"),
+    );
+
+    const result = await analyzeMtaSts("example.com");
+    expect(result.policy).toBeNull();
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" &&
+          v.message.includes("Policy file not accessible"),
+      ),
+    ).toBe(true);
+  });
+
   it("handles non-ok HTTP response gracefully", async () => {
     mockQueryTxt.mockResolvedValue({
       entries: ["v=STSv1; id=20240101"],

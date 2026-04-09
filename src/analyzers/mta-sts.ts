@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/cloudflare";
 import { queryTxt } from "../dns/client.js";
 import type { MtaStsPolicy, MtaStsResult, Validation } from "./types.js";
 
@@ -101,7 +102,12 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
 
     const text = await resp.text();
     return parsePolicy(text);
-  } catch {
+  } catch (err) {
+    Sentry.addBreadcrumb({
+      category: "mta-sts.fetch",
+      message: err instanceof Error ? err.message : String(err),
+      level: "warning",
+    });
     return null;
   }
 }

@@ -8,6 +8,7 @@ export async function analyzeSpf(domain: string): Promise<SpfResult> {
     lookups: 0,
     visited: new Set(),
     hasCycle: false,
+    truncated: false,
   };
   const tree = await resolveSpfTree(domain, ctx, 0);
 
@@ -24,6 +25,14 @@ export async function analyzeSpf(domain: string): Promise<SpfResult> {
 
   const validations: Validation[] = [];
   validations.push({ status: "pass", message: "SPF record found" });
+
+  if (ctx.truncated) {
+    validations.push({
+      status: "warn",
+      message:
+        "Include tree was truncated — some branches not resolved due to lookup limit",
+    });
+  }
 
   // Lookup limit check
   if (ctx.lookups <= MAX_LOOKUPS) {
@@ -107,6 +116,7 @@ interface ResolutionContext {
   lookups: number;
   visited: Set<string>;
   hasCycle: boolean;
+  truncated: boolean;
 }
 
 async function resolveSpfTree(
@@ -117,7 +127,10 @@ async function resolveSpfTree(
   if (depth > 10) return null; // Prevent infinite recursion
 
   // Security: Prevent excessive DNS queries by aborting early when the limit is reached.
-  if (ctx.lookups >= MAX_LOOKUPS) return null;
+  if (ctx.lookups >= MAX_LOOKUPS) {
+    ctx.truncated = true;
+    return null;
+  }
 
   const normalizedDomain = domain.toLowerCase();
   if (ctx.visited.has(normalizedDomain)) {
