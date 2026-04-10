@@ -130,7 +130,24 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 }
 .logo { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 12px; justify-content: center; }
 .logo-text span { color: var(--clr-accent); }
-.tagline { color: var(--clr-text-dim); font-size: 1.1rem; margin-bottom: 2.5rem; text-align: center; }
+h1.tagline, .tagline { color: var(--clr-text-dim); font-size: 1.1rem; font-weight: 400; margin: 0 0 2.5rem; text-align: center; }
+
+/* Landing explainer (SEO / intro copy, below the search form) */
+.landing-explainer {
+  max-width: 760px; margin: 2rem auto 0; padding: 0 0.5rem;
+  color: var(--clr-text-muted); font-size: 0.92rem; line-height: 1.55;
+}
+.landing-explainer p { margin: 0 0 1.25rem; }
+.explainer-grid {
+  display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 0;
+}
+.explainer-grid > div { margin: 0; }
+.explainer-grid dt {
+  font-weight: 700; color: var(--clr-text); font-size: 0.85rem;
+  letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.2rem;
+}
+.explainer-grid dd { margin: 0; color: var(--clr-text-dim); font-size: 0.85rem; }
 
 .search-box {
   display: flex; width: 100%; max-width: 560px;
@@ -214,7 +231,7 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .report-nav a { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
 .report-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
 .report-header .creature { margin-left: 8px; }
-.domain-name { font-size: 1.5rem; font-weight: 700; }
+h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .overall-grade {
   display: inline-flex; align-items: center; justify-content: center;
   width: 44px; height: 44px; border-radius: 10px; font-weight: 800; font-size: 1.2rem;

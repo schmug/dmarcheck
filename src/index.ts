@@ -76,6 +76,17 @@ app.use("*", async (c, next) => {
 
 // Security headers middleware (HSTS is handled at Cloudflare edge)
 
+// Content types that should be hidden from search engines. HTML is the opposite:
+// it's the whole point of the site and must stay crawlable. Images/CSS/JS are
+// skipped because noindex on subresources is a no-op for how Googlebot renders
+// pages. XML (sitemap) and text/plain (robots.txt) need to stay crawlable.
+const NOINDEX_CONTENT_TYPES = [
+  "application/json",
+  "application/manifest+json",
+  "text/csv",
+  "text/event-stream",
+];
+
 app.use("*", async (c, next) => {
   await next();
   c.res.headers.set("X-Content-Type-Options", "nosniff");
@@ -86,14 +97,30 @@ app.use("*", async (c, next) => {
     "camera=(), microphone=(), geolocation=()",
   );
 
-  const isHtml = c.res.headers.get("content-type")?.includes("text/html");
+  const contentType = c.res.headers.get("content-type") ?? "";
+  const isHtml = contentType.includes("text/html");
   if (isHtml) {
     c.res.headers.set(
       "Content-Security-Policy",
       `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
     );
+    // Short edge cache so Cloudflare can absorb landing/scoring/report traffic
+    // without hitting the Worker on every request. Browsers still revalidate.
+    if (!c.res.headers.has("Cache-Control")) {
+      c.res.headers.set(
+        "Cache-Control",
+        "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
+      );
+    }
   } else {
     c.res.headers.set("Content-Security-Policy", "default-src 'none'");
+  }
+
+  // Keep the JSON API, CSV exports, the SSE stream, and the PWA manifest out
+  // of Google's index. These showed up in Search Console as "Crawled - currently
+  // not indexed" noise — no reason to spend crawl budget on them.
+  if (NOINDEX_CONTENT_TYPES.some((t) => contentType.includes(t))) {
+    c.res.headers.set("X-Robots-Tag", "noindex");
   }
 });
 
@@ -432,6 +459,50 @@ app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Crawl guidance for search engines. Block the API namespace (Google was
+// logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
+// noise) and point to the sitemap.
+app.get("/robots.txt", (c) => {
+  const body = `User-agent: *
+Allow: /
+Disallow: /api/
+Sitemap: https://dmarc.mx/sitemap.xml
+`;
+  return c.body(body, 200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+// Static URLs worth reinforcing to search engines. The three example domains
+// are already in Google's index and one of them ranks position 9 for a
+// long-tail query — listing them as canonical crawl targets is a cheap
+// authority signal.
+const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
+  { loc: "https://dmarc.mx/", priority: "1.0" },
+  { loc: "https://dmarc.mx/scoring", priority: "0.8" },
+  { loc: "https://dmarc.mx/check?domain=dmarc.mx", priority: "0.6" },
+  { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
+  { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
+];
+const SITEMAP_LASTMOD = "2026-04-10";
+
+app.get("/sitemap.xml", (c) => {
+  const urls = SITEMAP_URLS.map(
+    ({ loc, priority }) =>
+      `  <url><loc>${loc}</loc><lastmod>${SITEMAP_LASTMOD}</lastmod><priority>${priority}</priority></url>`,
+  ).join("\n");
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
+  return c.body(body, 200, {
+    "Content-Type": "application/xml; charset=utf-8",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
 app.get("/", (c) => {
   return c.html(renderLandingPage());
 });
@@ -510,15 +581,26 @@ app.get("/check/score", async (c) => {
 });
 
 app.get("/check", async (c) => {
-  const domain = normalizeDomain(c.req.query("domain"));
-  if (!domain) {
-    return c.html(renderError("Please provide a valid domain name."), 400);
-  }
-
   const format = c.req.query("format");
   const wantsJson =
     format === "json" || c.req.header("Accept")?.includes("application/json");
   const wantsCsv = format === "csv";
+
+  const domain = normalizeDomain(c.req.query("domain"));
+  if (!domain) {
+    // API clients still get a structured error. Browsers get a 302 to `/` so
+    // Google doesn't report `/check` (bare) as a crawl error — the human intent
+    // of landing on `/check` with no query is "I want to scan something".
+    if (wantsJson) {
+      return c.json({ error: "Missing or invalid domain parameter" }, 400);
+    }
+    if (wantsCsv) {
+      return c.body("error,Missing or invalid domain parameter\n", 400, {
+        "Content-Type": "text/csv; charset=utf-8",
+      });
+    }
+    return c.redirect("/", 302);
+  }
 
   const selectors = parseSelectors(c.req.query("selectors"));
 

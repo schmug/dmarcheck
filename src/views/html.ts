@@ -30,27 +30,51 @@ import {
   validationList,
 } from "./components.js";
 
-function page(title: string, body: string): string {
+export const SITE_ORIGIN = "https://dmarc.mx";
+export const DEFAULT_DESCRIPTION =
+  "Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.";
+
+interface PageOptions {
+  title: string;
+  body: string;
+  /** Absolute-path form, e.g. "/" or "/scoring" or "/check?domain=example.com". Defaults to "/". */
+  path?: string;
+  /** Overrides the default meta/og/twitter description. */
+  description?: string;
+  /** Pre-stringified JSON for a `<script type="application/ld+json">` block. */
+  jsonLd?: string;
+}
+
+function page(opts: PageOptions): string {
+  const { title, body, path = "/", description = DEFAULT_DESCRIPTION } = opts;
+  const canonical = `${SITE_ORIGIN}${path}`;
+  const jsonLdBlock = opts.jsonLd
+    ? `\n<script type="application/ld+json">${opts.jsonLd}</script>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.">
+<meta name="theme-color" content="#f97316">
+<meta name="description" content="${esc(description)}">
+<link rel="canonical" href="${esc(canonical)}">
 <meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="Free, open-source DNS email security analyzer. Check DMARC, SPF, DKIM, BIMI, and MTA-STS records for any domain.">
+<meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://dmarc.mx">
-<meta property="og:image" content="https://dmarc.mx/og-image.svg">
+<meta property="og:url" content="${esc(canonical)}">
+<meta property="og:image" content="${SITE_ORIGIN}/og-image.svg">
 <meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${SITE_ORIGIN}/og-image.svg">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="preconnect" href="/">
 <title>${esc(title)}</title>
 <script>(function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
-<link rel="stylesheet" href="${CSS_PATH}">
+<link rel="stylesheet" href="${CSS_PATH}">${jsonLdBlock}
 </head>
 <body>
 ${body}
@@ -60,13 +84,53 @@ ${themeToggle()}
 </html>`;
 }
 
+const LANDING_JSON_LD = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_ORIGIN}/#website`,
+      url: `${SITE_ORIGIN}/`,
+      name: "dmarcheck",
+      description: DEFAULT_DESCRIPTION,
+      publisher: { "@id": `${SITE_ORIGIN}/#org` },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${SITE_ORIGIN}/check?domain={domain}`,
+        },
+        "query-input": "required name=domain",
+      },
+    },
+    {
+      "@type": "Organization",
+      "@id": `${SITE_ORIGIN}/#org`,
+      name: "dmarcheck",
+      url: `${SITE_ORIGIN}/`,
+      logo: `${SITE_ORIGIN}/logo.svg`,
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "dmarcheck",
+      url: `${SITE_ORIGIN}/`,
+      applicationCategory: "SecurityApplication",
+      operatingSystem: "Any",
+      description: DEFAULT_DESCRIPTION,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+  ],
+});
+
 export function renderLandingPage(): string {
-  return page(
-    "dmarcheck — DNS Email Security Analyzer",
-    `<main class="landing">
+  return page({
+    title: "dmarcheck — DNS Email Security Analyzer",
+    path: "/",
+    jsonLd: LANDING_JSON_LD,
+    body: `<main class="landing">
   <div class="landing-main">
     <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
-    <div class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</div>
+    <h1 class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</h1>
     <form action="/check" method="GET">
       <div class="search-box">
         <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Enter a domain" autofocus required>
@@ -88,6 +152,16 @@ export function renderLandingPage(): string {
       <a href="/check?domain=google.com">google.com</a> &middot;
       <a href="/check?domain=github.com">github.com</a>
     </div>
+    <section class="landing-explainer" aria-label="What dmarcheck checks">
+      <p>dmarcheck is a free DMARC, SPF, DKIM, BIMI, and MTA-STS checker for any domain. Enter a hostname and it pulls the live DNS records, validates them against the specs, and grades the overall posture from F to A+.</p>
+      <dl class="explainer-grid">
+        <div><dt>DMARC</dt><dd>The policy record that tells receivers how to treat unauthenticated mail and where to send aggregate reports.</dd></div>
+        <div><dt>SPF</dt><dd>The list of hosts authorized to send on your behalf, including the 10-DNS-lookup budget.</dd></div>
+        <div><dt>DKIM</dt><dd>Per-selector signing keys and their key length, checked against 38 common selectors.</dd></div>
+        <div><dt>BIMI</dt><dd>The brand logo record that can render next to authenticated messages in supporting inboxes.</dd></div>
+        <div><dt>MTA-STS</dt><dd>The TLS enforcement policy that prevents downgrade attacks on inbound mail.</dd></div>
+      </dl>
+    </section>
     <div class="learn-link">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
   </div>
   <div class="landing-footer">
@@ -104,7 +178,7 @@ export function renderLandingPage(): string {
     <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
   </div>
 </main>`,
-  );
+  });
 }
 
 export function renderDmarcCard(dmarc: DmarcResult): string {
@@ -190,7 +264,7 @@ function reportBody(result: ScanResult): string {
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
-    <div class="domain-name">${esc(result.domain)}</div>
+    <h1 class="domain-name">${esc(result.domain)}</h1>
   </div>
   ${scoreSnippet(result)}
   <button class="confetti-toggle" data-grade="${esc(result.grade)}"
@@ -218,14 +292,19 @@ function reportBody(result: ScanResult): string {
 }
 
 export function renderReport(result: ScanResult): string {
-  return page(`${result.domain} — dmarcheck`, reportBody(result));
+  return page({
+    title: `${result.domain} — dmarcheck`,
+    path: `/check?domain=${encodeURIComponent(result.domain)}`,
+    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${result.domain}. Grade: ${result.grade}.`,
+    body: reportBody(result),
+  });
 }
 
 export function renderReportHeader(result: ScanResult): string {
   return `<div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
-    <div class="domain-name">${esc(result.domain)}</div>
+    <h1 class="domain-name">${esc(result.domain)}</h1>
   </div>
   ${scoreSnippet(result)}
   <button class="confetti-toggle" data-grade="${esc(result.grade)}"
@@ -277,15 +356,17 @@ export function renderStreamingLoading(
     ? `domain=${encodeURIComponent(domain)}&selectors=${encodeURIComponent(selectors)}`
     : `domain=${encodeURIComponent(domain)}`;
 
-  return page(
-    `Scanning ${domain} — dmarcheck`,
-    `<main class="report" data-qs="${esc(qs)}">
+  return page({
+    title: `Scanning ${domain} — dmarcheck`,
+    path: `/check?domain=${encodeURIComponent(domain)}`,
+    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${domain}.`,
+    body: `<main class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
   </div>
   <div class="stream-header">
     <div class="grade-skeleton" style="margin:0 auto"></div>
-    <div class="domain-name">${esc(domain)}</div>
+    <h1 class="domain-name">${esc(domain)}</h1>
   </div>
   <div id="protocol-cards">
     ${skeletonCard("MX", false)}
@@ -354,7 +435,7 @@ export function renderStreamingLoading(
   });
 })();
 </script>`,
-  );
+  });
 }
 
 export function renderScoreBreakdown(result: ScanResult): string {
@@ -368,7 +449,7 @@ export function renderScoreBreakdown(result: ScanResult): string {
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
     ${result.grade === "S" ? generateCreature("md", "celebrating", true) : ""}
-    <div class="domain-name">${esc(result.domain)}</div>
+    <h1 class="domain-name">${esc(result.domain)}</h1>
   </div>
   <div class="report-meta">
     <time datetime="${esc(result.timestamp)}">Scanned ${esc(new Date(result.timestamp).toUTCString())}</time>
@@ -380,8 +461,68 @@ export function renderScoreBreakdown(result: ScanResult): string {
   <div class="learn-link" style="margin-top:2rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
 </main>`;
 
-  return page(`Scoring breakdown — ${result.domain} — dmarcheck`, body);
+  return page({
+    title: `Scoring breakdown — ${result.domain} — dmarcheck`,
+    path: `/check/score?domain=${encodeURIComponent(result.domain)}`,
+    description: `Detailed scoring breakdown for ${result.domain}: tier, modifiers, and per-protocol contributions.`,
+    body,
+  });
 }
+
+const SCORING_JSON_LD = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "What is DMARC?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Domain-based Message Authentication, Reporting & Conformance. The policy layer that ties SPF and DKIM together and tells receivers what to do with unauthenticated mail. This is the most important factor in your grade.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What is SPF?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Sender Policy Framework. A DNS record listing which IP addresses are authorized to send mail for your domain. Receivers check the sending server's IP against this list.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What is DKIM?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "DomainKeys Identified Mail. Adds a cryptographic signature to outgoing messages, proving they haven't been tampered with in transit. Key strength of 2048 bits or more and multiple selectors improve your score.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What is BIMI?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Brand Indicators for Message Identification. Displays your brand logo next to authenticated messages in supporting email clients. Requires DMARC p=reject.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What is MTA-STS?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Mail Transfer Agent Strict Transport Security. Forces TLS encryption for inbound mail delivery, preventing downgrade attacks. Modes: testing (report only) and enforce (reject unencrypted).",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "How is the dmarcheck grade calculated?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "The grade has two parts: a base tier determined by your DMARC policy and authentication setup (F through A+), and modifiers that adjust the grade up (+) or down (-) based on reporting, SPF lookup budget, DKIM key length, BIMI, and MTA-STS.",
+      },
+    },
+  ],
+});
 
 export function renderScoringRubric(): string {
   const body = `<main class="breakdown">
@@ -493,13 +634,21 @@ export function renderScoringRubric(): string {
   </div>
 </main>`;
 
-  return page("Email Security Scoring — dmarcheck", body);
+  return page({
+    title: "Email Security Scoring — dmarcheck",
+    path: "/scoring",
+    description:
+      "How dmarcheck grades email security: DMARC policy tiers, SPF/DKIM requirements, and the modifiers that push grades up or down.",
+    jsonLd: SCORING_JSON_LD,
+    body,
+  });
 }
 
 export function renderError(message: string): string {
-  return page(
-    "Error — dmarcheck",
-    `<main class="landing">
+  return page({
+    title: "Error — dmarcheck",
+    path: "/",
+    body: `<main class="landing">
   <div class="landing-main">
     <div class="logo">${generateCreature("lg", "worried")}<span class="logo-text">dmar<span>check</span></span></div>
     <div class="error-box">
@@ -509,5 +658,5 @@ export function renderError(message: string): string {
     <a href="/">&larr; Try again</a>
   </div>
 </main>`,
-  );
+  });
 }

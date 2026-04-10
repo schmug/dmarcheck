@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import app, { normalizeDomain, parseSelectors } from "../src/index.js";
+import { _memoryStore } from "../src/rate-limit.js";
 
 vi.mock("../src/cache.js", () => ({
   getCachedScan: vi.fn().mockResolvedValue(null),
@@ -19,6 +20,13 @@ vi.mock("../src/dns/client.js", () => ({
   queryTxt: vi.fn().mockResolvedValue(null),
   queryMx: vi.fn().mockResolvedValue(null),
 }));
+
+// Rate limit is 10 req/IP/60s and all app.request() calls in this file share
+// the synthetic "unknown" IP. Wipe the in-memory bucket between tests so
+// ordering-dependent 429s don't mask unrelated regressions.
+beforeEach(() => {
+  _memoryStore.clear();
+});
 
 describe("normalizeDomain", () => {
   it("returns null for undefined input", () => {
@@ -387,12 +395,6 @@ describe("HTML head tags", () => {
     expect(html).toContain('rel="manifest"');
   });
 
-  it("includes preconnect hint", async () => {
-    const res = await app.request("/");
-    const html = await res.text();
-    expect(html).toContain('rel="preconnect"');
-  });
-
   it("references external CSS and JS instead of inlining", async () => {
     const res = await app.request("/");
     const html = await res.text();
@@ -400,6 +402,147 @@ describe("HTML head tags", () => {
     expect(html).toContain('<script src="/assets/scripts-');
     expect(html).not.toMatch(/<style>[^<]{500,}<\/style>/);
     expect(html).not.toMatch(/<script>[^<]{500,}<\/script>/);
+  });
+
+  it("includes canonical link, theme-color, and twitter:image", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('<link rel="canonical" href="https://dmarc.mx/">');
+    expect(html).toContain('<meta name="theme-color" content="#f97316">');
+    expect(html).toContain(
+      '<meta name="twitter:image" content="https://dmarc.mx/og-image.svg">',
+    );
+    expect(html).toContain(
+      '<meta property="og:url" content="https://dmarc.mx/">',
+    );
+  });
+
+  it("does not include the old self-pointing preconnect", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).not.toContain('<link rel="preconnect" href="/">');
+  });
+
+  it("landing page uses a proper h1 and includes the explainer section", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toMatch(/<h1 class="tagline">[^<]*DMARC[^<]*<\/h1>/);
+    expect(html).toContain('<section class="landing-explainer"');
+    // Keyword targets observed in Search Console: we want these strings on the page
+    expect(html).toContain("DKIM");
+    expect(html).toContain("MTA-STS");
+  });
+
+  it("landing page embeds WebSite + SoftwareApplication JSON-LD", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('<script type="application/ld+json">');
+    expect(html).toContain('"@type":"WebSite"');
+    expect(html).toContain('"@type":"SoftwareApplication"');
+    expect(html).toContain("SearchAction");
+  });
+
+  it("scoring page has a canonical pointing to /scoring and FAQ JSON-LD", async () => {
+    const res = await app.request("/scoring");
+    const html = await res.text();
+    expect(html).toContain(
+      '<link rel="canonical" href="https://dmarc.mx/scoring">',
+    );
+    expect(html).toContain('"@type":"FAQPage"');
+    expect(html).toContain("What is DMARC?");
+  });
+});
+
+describe("SEO routes", () => {
+  it("serves /robots.txt with sitemap pointer and API disallow", async () => {
+    const res = await app.request("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    const body = await res.text();
+    expect(body).toContain("User-agent: *");
+    expect(body).toContain("Disallow: /api/");
+    expect(body).toContain("Sitemap: https://dmarc.mx/sitemap.xml");
+  });
+
+  it("serves /sitemap.xml listing the core URLs", async () => {
+    const res = await app.request("/sitemap.xml");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe(
+      "application/xml; charset=utf-8",
+    );
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    const body = await res.text();
+    expect(body).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(body).toContain(
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    );
+    expect(body).toContain("<loc>https://dmarc.mx/</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/scoring</loc>");
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=github.com</loc>",
+    );
+  });
+
+  it("/robots.txt is NOT marked noindex (must stay crawlable)", async () => {
+    const res = await app.request("/robots.txt");
+    expect(res.headers.get("X-Robots-Tag")).toBeNull();
+  });
+
+  it("/sitemap.xml is NOT marked noindex (must stay crawlable)", async () => {
+    const res = await app.request("/sitemap.xml");
+    expect(res.headers.get("X-Robots-Tag")).toBeNull();
+  });
+});
+
+describe("bare /check request", () => {
+  it("redirects browsers to / when no domain query parameter is supplied", async () => {
+    const res = await app.request("/check");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/");
+  });
+
+  it("returns 400 JSON to API clients missing the domain parameter", async () => {
+    const res = await app.request("/check?format=json");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("domain");
+  });
+
+  it("returns 400 to Accept: application/json clients", async () => {
+    const res = await app.request("/check", {
+      headers: { Accept: "application/json" },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("HTML Cache-Control and X-Robots-Tag", () => {
+  it("sets a short edge Cache-Control on HTML responses", async () => {
+    const res = await app.request("/");
+    const cc = res.headers.get("Cache-Control");
+    expect(cc).toContain("s-maxage=300");
+    expect(cc).toContain("stale-while-revalidate");
+  });
+
+  it("does not set X-Robots-Tag on HTML responses", async () => {
+    const res = await app.request("/");
+    expect(res.headers.get("X-Robots-Tag")).toBeNull();
+  });
+
+  it("sets X-Robots-Tag: noindex on the JSON API", async () => {
+    const res = await app.request("/api/check?domain=dmarc.mx");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+  });
+
+  it("sets X-Robots-Tag: noindex on /manifest.webmanifest", async () => {
+    const res = await app.request("/manifest.webmanifest");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+  });
+
+  it("sets X-Robots-Tag: noindex on /health JSON", async () => {
+    const res = await app.request("/health");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
   });
 });
 
