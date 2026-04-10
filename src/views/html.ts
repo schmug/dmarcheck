@@ -78,8 +78,9 @@ export function renderLandingPage(): string {
           <label for="selectors">Custom DKIM selectors</label>
           <input type="text" id="selectors" name="selectors"
                  placeholder="e.g. myselector, custom2"
-                 autocomplete="off" />
-          <small>Comma-separated. These are checked in addition to the 38 common selectors.</small>
+                 autocomplete="off"
+                 aria-describedby="selectors-help" />
+          <small id="selectors-help">Comma-separated. These are checked in addition to the 38 common selectors.</small>
         </div>
       </details>
     </form>
