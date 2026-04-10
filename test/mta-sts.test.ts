@@ -228,4 +228,49 @@ describe("analyzeMtaSts", () => {
     const result = await analyzeMtaSts("example.com");
     expect(result.status).toBe("pass");
   });
+
+  // Regression guard for PRs #58 and #92: the policy fetch must use
+  // redirect:"manual", NOT "error". `"error"` throws in the Cloudflare
+  // Workers fetch runtime and breaks every scan. See src/analyzers/mta-sts.ts
+  // and commit 2b47fe7 for the history.
+  it("passes redirect:'manual' to fetch (regression guard for PR #58/#92)", async () => {
+    mockQueryTxt.mockResolvedValue({
+      entries: ["v=STSv1; id=20240101"],
+      raw: "v=STSv1; id=20240101",
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      text: async () => validPolicy,
+    } as Response);
+
+    await analyzeMtaSts("example.com");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://mta-sts.example.com/.well-known/mta-sts.txt",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+  });
+
+  it("returns null policy when fetch returns an opaque-redirect response", async () => {
+    mockQueryTxt.mockResolvedValue({
+      entries: ["v=STSv1; id=20240101"],
+      raw: "v=STSv1; id=20240101",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 0,
+      type: "opaqueredirect",
+      text: async () => "",
+    } as Response);
+
+    const result = await analyzeMtaSts("example.com");
+    expect(result.policy).toBeNull();
+    expect(
+      result.validations.some(
+        (v) =>
+          v.status === "fail" &&
+          v.message.includes("Policy file not accessible"),
+      ),
+    ).toBe(true);
+  });
 });

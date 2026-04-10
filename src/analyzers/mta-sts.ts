@@ -92,12 +92,27 @@ async function fetchPolicy(domain: string): Promise<MtaStsPolicy | null> {
     const url = `https://mta-sts.${domain}/.well-known/mta-sts.txt`;
     const resp = await fetch(url, {
       headers: { "User-Agent": "dmarcheck/1.0" },
-      // SECURITY: Set redirect to 'error' to strictly prevent SSRF attacks
-      // and adhere to RFC 8461 Section 3.3 which mandates not following redirects.
-      redirect: "error",
+      // SECURITY / RUNTIME — DO NOT CHANGE to "error" without reading this.
+      // RFC 8461 §3.3 forbids following redirects for MTA-STS policy fetches.
+      // We use `redirect: "manual"` (NOT `"error"`) because `"error"` throws a
+      // TypeError in the Cloudflare Workers fetch runtime, breaking the fetch
+      // for EVERY domain — not just ones that redirect. With `"manual"`, any
+      // 3xx yields an opaque-redirect Response (`type === "opaqueredirect"`,
+      // `ok === false`), which the checks below reject safely.
+      // History: PR #58 introduced "error" → regression fixed in 2b47fe7
+      // → PR #92 re-introduced "error" → this fix. See those commits before
+      // "hardening" this again.
+      redirect: "manual",
       signal: AbortSignal.timeout(3000),
     });
 
+    // Reject opaque-redirect responses explicitly (defense in depth — the
+    // !resp.ok check below already catches them, but being explicit makes the
+    // RFC 8461 §3.3 intent obvious to future readers and static analyzers).
+    // `resp.type` is cast to string because @cloudflare/workers-types narrows
+    // it to `"default" | "error"`, even though the runtime also emits
+    // `"opaqueredirect"` when a 3xx is encountered under `redirect: "manual"`.
+    if ((resp.type as string) === "opaqueredirect") return null;
     if (!resp.ok) return null;
 
     const text = await resp.text();
