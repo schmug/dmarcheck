@@ -22,3 +22,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # Supply-chain gate: block merges on HIGH/CRITICAL CVEs in runtime deps.
+      # --audit-level=high filters out perennial low/moderate noise in transitive
+      # chains that often have no patch available. --omit=dev excludes dev-only
+      # tooling (biome, vitest, wrangler, sharp) which never ships to the Worker
+      # runtime; dev-dep CVEs are still surfaced by Dependabot alerts in the
+      # Security tab, they just don't block PRs here. Tighten if the threat
+      # model expands to cover developer machines.
+      - run: npm audit --audit-level=high --omit=dev
