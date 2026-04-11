@@ -502,6 +502,9 @@ describe("HTML head tags", () => {
     const html = await res.text();
     expect(html).toMatch(/<h1 class="tagline">[^<]*DMARC[^<]*<\/h1>/);
     expect(html).toContain('<section class="landing-explainer"');
+    expect(html).toContain(
+      '<h2 id="explainer-heading">What dmarcheck checks</h2>',
+    );
     // Keyword targets observed in Search Console: we want these strings on the page
     expect(html).toContain("DKIM");
     expect(html).toContain("MTA-STS");

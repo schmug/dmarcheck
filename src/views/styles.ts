@@ -116,9 +116,12 @@ a:hover { text-decoration: underline; }
 code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.9em; }
 
 /* Landing */
-.landing {
+.landing { display: block; }
+.landing-hero {
   display: flex; flex-direction: column; align-items: center;
-  min-height: 100vh; padding: 2rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 2rem;
 }
 .landing-main {
   flex: 1; display: flex; flex-direction: column; align-items: center;
@@ -132,22 +135,38 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
 .logo-text span { color: var(--clr-accent); }
 h1.tagline, .tagline { color: var(--clr-text-dim); font-size: 1.1rem; font-weight: 400; margin: 0 0 2.5rem; text-align: center; }
 
-/* Landing explainer (SEO / intro copy, below the search form) */
+/* Landing explainer (SEO / intro copy — sits below the hero viewport) */
 .landing-explainer {
-  max-width: 760px; margin: 2rem auto 0; padding: 0 0.5rem;
+  max-width: 860px; margin: 0 auto; padding: 3.5rem 1.5rem 3rem;
+  border-top: 1px solid var(--clr-border);
   color: var(--clr-text-muted); font-size: 0.92rem; line-height: 1.55;
+  scroll-margin-top: 1rem;
 }
-.landing-explainer p { margin: 0 0 1.25rem; }
+.landing-explainer h2 {
+  margin: 0 0 0.5rem; text-align: center;
+  font-size: 1.15rem; font-weight: 700; color: var(--clr-text);
+  letter-spacing: -0.01em;
+}
+.landing-explainer > p {
+  margin: 0 auto 1.75rem; max-width: 680px;
+  text-align: center; color: var(--clr-text-dim);
+}
 .explainer-grid {
-  display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: grid; gap: 0.85rem; grid-template-columns: repeat(3, 1fr);
   margin: 0;
 }
-.explainer-grid > div { margin: 0; }
+.explainer-grid > div {
+  margin: 0; padding: 14px 16px;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-left: 3px solid var(--clr-accent);
+  border-radius: 8px;
+}
 .explainer-grid dt {
   font-weight: 700; color: var(--clr-text); font-size: 0.85rem;
-  letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.2rem;
+  letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.25rem;
 }
-.explainer-grid dd { margin: 0; color: var(--clr-text-dim); font-size: 0.85rem; }
+.explainer-grid dd { margin: 0; color: var(--clr-text-dim); font-size: 0.88rem; line-height: 1.5; }
 
 .search-box {
   display: flex; width: 100%; max-width: 560px;
@@ -804,6 +823,10 @@ h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 /* Responsive */
 @media (max-width: 640px) {
   .logo { font-size: 2rem; }
+  .landing-hero { padding: 1.5rem 1rem; }
+  .landing-explainer { padding: 2.5rem 1rem 2rem; }
+  .explainer-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+  .explainer-grid > div:last-child { grid-column: 1 / -1; }
   .search-box { flex-direction: column; border-radius: 12px; }
   .search-box button { padding: 14px; }
   .report { padding: 1rem; }
