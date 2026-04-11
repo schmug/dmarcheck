@@ -128,56 +128,59 @@ export function renderLandingPage(): string {
     path: "/",
     jsonLd: LANDING_JSON_LD,
     body: `<main class="landing">
-  <div class="landing-main">
-    <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
-    <h1 class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</h1>
-    <form action="/check" method="GET">
-      <div class="search-box">
-        <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Enter a domain" autofocus required>
-        <button type="submit">Scan</button>
-      </div>
-      <details class="advanced-options">
-        <summary>Advanced options</summary>
-        <div class="advanced-body">
-          <label for="selectors">Custom DKIM selectors</label>
-          <input type="text" id="selectors" name="selectors"
-                 placeholder="e.g. myselector, custom2"
-                 autocomplete="off"
-                 aria-describedby="selectors-help" />
-          <small id="selectors-help">Comma-separated. These are checked in addition to the 38 common selectors.</small>
+  <div class="landing-hero">
+    <div class="landing-main">
+      <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
+      <h1 class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</h1>
+      <form action="/check" method="GET">
+        <div class="search-box">
+          <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Enter a domain" autofocus required>
+          <button type="submit">Scan</button>
         </div>
-      </details>
-    </form>
-    <div class="examples">
-      Try: <a href="/check?domain=dmarc.mx">dmarc.mx</a> &middot;
-      <a href="/check?domain=google.com">google.com</a> &middot;
-      <a href="/check?domain=github.com">github.com</a>
+        <details class="advanced-options">
+          <summary>Advanced options</summary>
+          <div class="advanced-body">
+            <label for="selectors">Custom DKIM selectors</label>
+            <input type="text" id="selectors" name="selectors"
+                   placeholder="e.g. myselector, custom2"
+                   autocomplete="off"
+                   aria-describedby="selectors-help" />
+            <small id="selectors-help">Comma-separated. These are checked in addition to the 38 common selectors.</small>
+          </div>
+        </details>
+      </form>
+      <div class="examples">
+        Try: <a href="/check?domain=dmarc.mx">dmarc.mx</a> &middot;
+        <a href="/check?domain=google.com">google.com</a> &middot;
+        <a href="/check?domain=github.com">github.com</a>
+      </div>
+      <div class="learn-link">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
     </div>
-    <section class="landing-explainer" aria-label="What dmarcheck checks">
-      <p>dmarcheck is a free DMARC, SPF, DKIM, BIMI, and MTA-STS checker for any domain. Enter a hostname and it pulls the live DNS records, validates them against the specs, and grades the overall posture from F to A+.</p>
-      <dl class="explainer-grid">
-        <div><dt>DMARC</dt><dd>The policy record that tells receivers how to treat unauthenticated mail and where to send aggregate reports.</dd></div>
-        <div><dt>SPF</dt><dd>The list of hosts authorized to send on your behalf, including the 10-DNS-lookup budget.</dd></div>
-        <div><dt>DKIM</dt><dd>Per-selector signing keys and their key length, checked against 38 common selectors.</dd></div>
-        <div><dt>BIMI</dt><dd>The brand logo record that can render next to authenticated messages in supporting inboxes.</dd></div>
-        <div><dt>MTA-STS</dt><dd>The TLS enforcement policy that prevents downgrade attacks on inbound mail.</dd></div>
-      </dl>
-    </section>
-    <div class="learn-link">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
+    <div class="landing-footer">
+      <div class="api-hint">
+        <span>curl</span> https://dmarc.mx/api/check?domain=dmarc.mx
+      </div>
+      <div class="learn-link"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+      <div class="foss-callout">
+        <a href="https://github.com/schmug/dmarcheck" class="foss-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          Free and open source &mdash; MIT License
+        </a>
+      </div>
+      <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
+    </div>
   </div>
-  <div class="landing-footer">
-    <div class="api-hint">
-      <span>curl</span> https://dmarc.mx/api/check?domain=dmarc.mx
-    </div>
-    <div class="learn-link"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
-    <div class="foss-callout">
-      <a href="https://github.com/schmug/dmarcheck" class="foss-link">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        Free and open source &mdash; MIT License
-      </a>
-    </div>
-    <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
-  </div>
+  <section class="landing-explainer" id="what-we-check" aria-labelledby="explainer-heading">
+    <h2 id="explainer-heading">What dmarcheck checks</h2>
+    <p>dmarcheck is a free DMARC, SPF, DKIM, BIMI, and MTA-STS checker for any domain. Enter a hostname and it pulls the live DNS records, validates them against the specs, and grades the overall posture from F to A+.</p>
+    <dl class="explainer-grid">
+      <div><dt>DMARC</dt><dd>The policy record that tells receivers how to treat unauthenticated mail and where to send aggregate reports.</dd></div>
+      <div><dt>SPF</dt><dd>The list of hosts authorized to send on your behalf, including the 10-DNS-lookup budget.</dd></div>
+      <div><dt>DKIM</dt><dd>Per-selector signing keys and their key length, checked against 38 common selectors.</dd></div>
+      <div><dt>BIMI</dt><dd>The brand logo record that can render next to authenticated messages in supporting inboxes.</dd></div>
+      <div><dt>MTA-STS</dt><dd>The TLS enforcement policy that prevents downgrade attacks on inbound mail.</dd></div>
+    </dl>
+  </section>
 </main>`,
   });
 }
