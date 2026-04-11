@@ -45,7 +45,7 @@ interface PageOptions {
   jsonLd?: string;
 }
 
-function page(opts: PageOptions): string {
+export function page(opts: PageOptions): string {
   const { title, body, path = "/", description = DEFAULT_DESCRIPTION } = opts;
   const canonical = `${SITE_ORIGIN}${path}`;
   const jsonLdBlock = opts.jsonLd
@@ -174,11 +174,11 @@ export function renderLandingPage(): string {
     <h2 id="explainer-heading">What dmarcheck checks</h2>
     <p>dmarcheck is a free DMARC, SPF, DKIM, BIMI, and MTA-STS checker for any domain. Enter a hostname and it pulls the live DNS records, validates them against the specs, and grades the overall posture from F to A+.</p>
     <dl class="explainer-grid">
-      <div><dt>DMARC</dt><dd>The policy record that tells receivers how to treat unauthenticated mail and where to send aggregate reports.</dd></div>
-      <div><dt>SPF</dt><dd>The list of hosts authorized to send on your behalf, including the 10-DNS-lookup budget.</dd></div>
-      <div><dt>DKIM</dt><dd>Per-selector signing keys and their key length, checked against 38 common selectors.</dd></div>
-      <div><dt>BIMI</dt><dd>The brand logo record that can render next to authenticated messages in supporting inboxes.</dd></div>
-      <div><dt>MTA-STS</dt><dd>The TLS enforcement policy that prevents downgrade attacks on inbound mail.</dd></div>
+      <div><dt><a href="/learn/dmarc">DMARC</a></dt><dd>The policy record that tells receivers how to treat unauthenticated mail and where to send aggregate reports.</dd></div>
+      <div><dt><a href="/learn/spf">SPF</a></dt><dd>The list of hosts authorized to send on your behalf, including the 10-DNS-lookup budget.</dd></div>
+      <div><dt><a href="/learn/dkim">DKIM</a></dt><dd>Per-selector signing keys and their key length, checked against 38 common selectors.</dd></div>
+      <div><dt><a href="/learn/bimi">BIMI</a></dt><dd>The brand logo record that can render next to authenticated messages in supporting inboxes.</dd></div>
+      <div><dt><a href="/learn/mta-sts">MTA-STS</a></dt><dd>The TLS enforcement policy that prevents downgrade attacks on inbound mail.</dd></div>
     </dl>
   </section>
 </main>`,

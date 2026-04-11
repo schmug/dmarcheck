@@ -41,6 +41,14 @@ import {
   renderSpfCard,
   renderStreamingLoading,
 } from "./views/html.js";
+import {
+  renderLearnBimi,
+  renderLearnDkim,
+  renderLearnDmarc,
+  renderLearnHub,
+  renderLearnMtaSts,
+  renderLearnSpf,
+} from "./views/learn.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
@@ -481,11 +489,17 @@ Sitemap: https://dmarc.mx/sitemap.xml
 const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
+  { loc: "https://dmarc.mx/learn", priority: "0.7" },
+  { loc: "https://dmarc.mx/learn/dmarc", priority: "0.8" },
+  { loc: "https://dmarc.mx/learn/spf", priority: "0.8" },
+  { loc: "https://dmarc.mx/learn/dkim", priority: "0.7" },
+  { loc: "https://dmarc.mx/learn/bimi", priority: "0.6" },
+  { loc: "https://dmarc.mx/learn/mta-sts", priority: "0.7" },
   { loc: "https://dmarc.mx/check?domain=dmarc.mx", priority: "0.6" },
   { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
   { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
 ];
-const SITEMAP_LASTMOD = "2026-04-10";
+const SITEMAP_LASTMOD = "2026-04-11";
 
 app.get("/sitemap.xml", (c) => {
   const urls = SITEMAP_URLS.map(
@@ -510,6 +524,13 @@ app.get("/", (c) => {
 app.get("/scoring", (c) => {
   return c.html(renderScoringRubric());
 });
+
+app.get("/learn", (c) => c.html(renderLearnHub()));
+app.get("/learn/dmarc", (c) => c.html(renderLearnDmarc()));
+app.get("/learn/spf", (c) => c.html(renderLearnSpf()));
+app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
+app.get("/learn/bimi", (c) => c.html(renderLearnBimi()));
+app.get("/learn/mta-sts", (c) => c.html(renderLearnMtaSts()));
 
 app.get("/api/check", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
