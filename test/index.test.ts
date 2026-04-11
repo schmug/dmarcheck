@@ -182,8 +182,82 @@ describe("normalizeDomain — XSS payload rejection", () => {
     expect(normalizeDomain("a-b.example.com")).toBe("a-b.example.com");
   });
 
-  it("accepts IPv4 addresses (dotted quads pass the charset)", () => {
-    expect(normalizeDomain("192.168.1.1")).toBe("192.168.1.1");
+  it("accepts numeric subdomain labels (not confused with IPv4 literals)", () => {
+    // Numeric labels in a longer hostname must still be accepted — anchored
+    // IPv4 rejection below must not over-fire on legitimate domains like
+    // `123.example.com` or `1.2.3.4.example.com`.
+    expect(normalizeDomain("123.example.com")).toBe("123.example.com");
+    expect(normalizeDomain("1.2.3.4.example.com")).toBe("1.2.3.4.example.com");
+    expect(normalizeDomain("10.example.com")).toBe("10.example.com");
+  });
+});
+
+describe("normalizeDomain — IPv4 literal rejection", () => {
+  // DMARC/SPF/DKIM/BIMI/MTA-STS records are published in DNS at domain names,
+  // not IP addresses — there is no legitimate dmarcheck use case for scanning
+  // a bare IPv4 literal. Rejecting them at the boundary also closes a
+  // defense-in-depth gap flagged by static analysis around the MTA-STS fetch:
+  // the `mta-sts.<domain>` prefix previously happened to shield metadata-
+  // service IPs like 169.254.169.254 by accident. Make that rejection explicit.
+  //
+  // WHATWG URL (used by `new URL(...).hostname` inside normalizeDomain)
+  // normalizes hex, integer, and short-form IPv4 inputs into canonical dotted-
+  // decimal, so a single anchored regex on the post-URL form catches all of
+  // them. `999.999.999.999` throws from the URL constructor and is caught by
+  // the fallback branch — it must also be rejected as a dotted-quad form.
+
+  it("rejects AWS/GCP metadata service IPv4 (the original motivation)", () => {
+    expect(normalizeDomain("169.254.169.254")).toBeNull();
+  });
+
+  it("rejects loopback IPv4", () => {
+    expect(normalizeDomain("127.0.0.1")).toBeNull();
+  });
+
+  it("rejects RFC 1918 private IPv4 ranges", () => {
+    expect(normalizeDomain("192.168.1.1")).toBeNull();
+    expect(normalizeDomain("10.0.0.1")).toBeNull();
+    expect(normalizeDomain("172.16.0.1")).toBeNull();
+  });
+
+  it("rejects public IPv4 literals", () => {
+    expect(normalizeDomain("1.1.1.1")).toBeNull();
+    expect(normalizeDomain("8.8.8.8")).toBeNull();
+  });
+
+  it("rejects boundary IPv4 values", () => {
+    expect(normalizeDomain("0.0.0.0")).toBeNull();
+    expect(normalizeDomain("255.255.255.255")).toBeNull();
+  });
+
+  it("rejects hex-encoded IPv4 (WHATWG URL normalizes to dotted-decimal)", () => {
+    // 0xc0a80101 === 192.168.1.1; URL constructor canonicalizes before our check.
+    expect(normalizeDomain("0xc0a80101")).toBeNull();
+  });
+
+  it("rejects integer-encoded IPv4 (WHATWG URL normalizes to dotted-decimal)", () => {
+    // 3232235777 === 192.168.1.1
+    expect(normalizeDomain("3232235777")).toBeNull();
+  });
+
+  it("rejects short-form IPv4 (WHATWG URL normalizes to dotted-decimal)", () => {
+    // `127.1` is normalized to `127.0.0.1` by the URL constructor.
+    expect(normalizeDomain("127.1")).toBeNull();
+    // `1.2.3` is silently rewritten to `1.2.0.3` (the third component is
+    // interpreted as a 16-bit word). Previously this surfaced to the user
+    // as a bogus scan of `1.2.0.3` instead of an error.
+    expect(normalizeDomain("1.2.3")).toBeNull();
+  });
+
+  it("rejects out-of-range dotted-quad forms (caught via fallback path)", () => {
+    // `999.999.999.999` throws from the URL constructor and falls through
+    // to the manual-parse branch. It must still be rejected as IPv4-shaped.
+    expect(normalizeDomain("999.999.999.999")).toBeNull();
+  });
+
+  it("rejects IPv4 with http:// prefix", () => {
+    expect(normalizeDomain("http://192.168.1.1")).toBeNull();
+    expect(normalizeDomain("https://169.254.169.254/path")).toBeNull();
   });
 });
 
