@@ -510,6 +510,16 @@ describe("HTML head tags", () => {
     expect(html).toContain("MTA-STS");
   });
 
+  it("landing explainer cross-links each protocol to its /learn page", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).toContain('<dt><a href="/learn/dmarc">DMARC</a></dt>');
+    expect(html).toContain('<dt><a href="/learn/spf">SPF</a></dt>');
+    expect(html).toContain('<dt><a href="/learn/dkim">DKIM</a></dt>');
+    expect(html).toContain('<dt><a href="/learn/bimi">BIMI</a></dt>');
+    expect(html).toContain('<dt><a href="/learn/mta-sts">MTA-STS</a></dt>');
+  });
+
   it("landing page embeds WebSite + SoftwareApplication JSON-LD", async () => {
     const res = await app.request("/");
     const html = await res.text();
@@ -561,6 +571,17 @@ describe("SEO routes", () => {
     );
   });
 
+  it("sitemap lists the /learn hub and each protocol learn page", async () => {
+    const res = await app.request("/sitemap.xml");
+    const body = await res.text();
+    expect(body).toContain("<loc>https://dmarc.mx/learn</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/learn/dmarc</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/learn/spf</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/learn/dkim</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/learn/bimi</loc>");
+    expect(body).toContain("<loc>https://dmarc.mx/learn/mta-sts</loc>");
+  });
+
   it("/robots.txt is NOT marked noindex (must stay crawlable)", async () => {
     const res = await app.request("/robots.txt");
     expect(res.headers.get("X-Robots-Tag")).toBeNull();
@@ -569,6 +590,115 @@ describe("SEO routes", () => {
   it("/sitemap.xml is NOT marked noindex (must stay crawlable)", async () => {
     const res = await app.request("/sitemap.xml");
     expect(res.headers.get("X-Robots-Tag")).toBeNull();
+  });
+});
+
+describe("Learn pages", () => {
+  const protocols = [
+    { slug: "dmarc", label: "DMARC" },
+    { slug: "spf", label: "SPF" },
+    { slug: "dkim", label: "DKIM" },
+    { slug: "bimi", label: "BIMI" },
+    { slug: "mta-sts", label: "MTA-STS" },
+  ];
+
+  it("serves the /learn hub with a CollectionPage + BreadcrumbList", async () => {
+    const res = await app.request("/learn");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain(
+      '<link rel="canonical" href="https://dmarc.mx/learn">',
+    );
+    expect(html).toContain('<script type="application/ld+json">');
+    expect(html).toContain('"@type":"CollectionPage"');
+    expect(html).toContain('"@type":"BreadcrumbList"');
+    expect(html).toContain(
+      '<h1 class="rubric-title">Learn email authentication</h1>',
+    );
+    // Hub links to each protocol page
+    for (const p of protocols) {
+      expect(html).toContain(`href="/learn/${p.slug}"`);
+    }
+  });
+
+  for (const p of protocols) {
+    it(`serves /learn/${p.slug} with TechArticle + BreadcrumbList JSON-LD`, async () => {
+      const res = await app.request(`/learn/${p.slug}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/html");
+      const html = await res.text();
+      expect(html).toContain(
+        `<link rel="canonical" href="https://dmarc.mx/learn/${p.slug}">`,
+      );
+      expect(html).toContain('<script type="application/ld+json">');
+      expect(html).toContain('"@type":"TechArticle"');
+      expect(html).toContain('"@type":"BreadcrumbList"');
+      // H1 contains a "What is <protocol>?" style headline
+      expect(html).toMatch(new RegExp(`<h1[^>]*>[^<]*${p.label}[^<]*</h1>`));
+      // CTA form submits to /check so readers can scan their domain
+      expect(html).toContain('action="/check"');
+      // Cross-links back to the other learn pages (hub-and-spoke)
+      expect(html).toContain('href="/learn/');
+      // Link to /scoring as the deeper rubric reference
+      expect(html).toContain('href="/scoring"');
+    });
+  }
+
+  it("learn pages stay crawlable (no X-Robots-Tag)", async () => {
+    for (const p of protocols) {
+      const res = await app.request(`/learn/${p.slug}`);
+      expect(res.headers.get("X-Robots-Tag")).toBeNull();
+    }
+    const hub = await app.request("/learn");
+    expect(hub.headers.get("X-Robots-Tag")).toBeNull();
+  });
+
+  it("learn pages do NOT reuse the FAQPage schema (avoid cannibalizing /scoring)", async () => {
+    // /scoring owns FAQPage; /learn/* should use TechArticle so Google keeps
+    // both in the index instead of deduping them.
+    const res = await app.request("/learn/dmarc");
+    const html = await res.text();
+    expect(html).not.toContain('"@type":"FAQPage"');
+  });
+
+  it("DMARC learn page explains the core tag vocabulary", async () => {
+    const res = await app.request("/learn/dmarc");
+    const html = await res.text();
+    expect(html).toContain("<code>p</code>");
+    expect(html).toContain("<code>rua</code>");
+    expect(html).toContain("<code>pct</code>");
+  });
+
+  it("SPF learn page calls out the 10 DNS lookup limit", async () => {
+    const res = await app.request("/learn/spf");
+    const html = await res.text();
+    expect(html).toContain("10");
+    expect(html).toMatch(/lookup/i);
+    expect(html).toContain("permerror");
+  });
+
+  it("DKIM learn page mentions 2048-bit key guidance and selectors", async () => {
+    const res = await app.request("/learn/dkim");
+    const html = await res.text();
+    expect(html).toContain("2048");
+    expect(html).toMatch(/selector/i);
+  });
+
+  it("BIMI learn page mentions VMC and the DMARC requirement", async () => {
+    const res = await app.request("/learn/bimi");
+    const html = await res.text();
+    expect(html).toContain("VMC");
+    expect(html).toMatch(/DMARC/);
+    expect(html).toContain('href="/learn/dmarc"');
+  });
+
+  it("MTA-STS learn page mentions enforce/testing modes and the policy file", async () => {
+    const res = await app.request("/learn/mta-sts");
+    const html = await res.text();
+    expect(html).toContain("mta-sts.txt");
+    expect(html).toContain("enforce");
+    expect(html).toContain("testing");
   });
 });
 
