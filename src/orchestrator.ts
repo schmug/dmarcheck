@@ -92,15 +92,28 @@ export async function scan(
     return analyzeDkim(domain, customSelectors, providerNames);
   });
 
-  const [dmarcResult, spfResult, dkimResult, mtaStsResult, bimiDns, mxResult] =
-    await Promise.all([
-      dmarcPromise,
-      spfPromise,
-      dkimPromise,
-      mtaStsPromise,
-      bimiDnsPromise,
-      mxPromise,
-    ]);
+  const bimiPromise = Promise.all([dmarcPromise, bimiDnsPromise]).then(
+    ([dmarcResult, bimiDns]) => {
+      const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
+      return analyzeBimi(domain, dmarcPolicy, bimiDns);
+    },
+  );
+
+  const [
+    dmarcResult,
+    spfResult,
+    dkimResult,
+    mtaStsResult,
+    bimiResult,
+    mxResult,
+  ] = await Promise.all([
+    dmarcPromise,
+    spfPromise,
+    dkimPromise,
+    mtaStsPromise,
+    bimiPromise,
+    mxPromise,
+  ]);
 
   Sentry.addBreadcrumb({
     category: "analyzer.complete",
@@ -126,9 +139,6 @@ export async function scan(
     data: { protocol: "mta_sts", status: mtaStsResult.status },
     level: "info",
   });
-
-  const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
   Sentry.addBreadcrumb({
     category: "analyzer.complete",
     message: `bimi: ${bimiResult.status}`,
@@ -151,24 +161,41 @@ export async function scanStreaming(
   customSelectors: string[],
   onResult: (id: ProtocolId, result: ProtocolResult) => void,
 ): Promise<ScanResult> {
-  // Start independent DNS queries immediately for better performance
+  // ⚡ Bolt Optimization: Start all independent DNS queries immediately.
+  // Previously, the streaming sequence awaited MX resolution before dispatching
+  // DKIM *and* blocked the stream from yielding fast protocols (like SPF)
+  // until MX finished. Now, all lookups are chained directly from their
+  // prerequisites, maximizing concurrency and reducing scan latency.
   const dmarcPromise = analyzeDmarc(domain);
   const spfPromise = analyzeSpf(domain);
   const mtaStsPromise = analyzeMtaSts(domain);
   const bimiDnsPromise = prefetchBimiDns(domain);
+  const mxPromise = analyzeMx(domain);
 
-  const mxResult = await analyzeMx(domain);
-  Sentry.addBreadcrumb({
-    category: "analyzer.complete",
-    message: `mx: ${mxResult.status}`,
-    data: { protocol: "mx", status: mxResult.status },
-    level: "info",
+  // Chain DKIM off MX so it starts as soon as MX resolves
+  const dkimPromise = mxPromise.then((mxResult) => {
+    const providerNames = mxResult.providers.map((p) => p.name);
+    return analyzeDkim(domain, customSelectors, providerNames);
   });
-  onResult("mx", mxResult);
-  const providerNames = mxResult.providers.map((p) => p.name);
 
-  // Start DKIM query after MX resolution provides email provider names
-  const dkimPromise = analyzeDkim(domain, customSelectors, providerNames);
+  // Chain BIMI off DMARC and BIMI DNS
+  const bimiPromise = Promise.all([dmarcPromise, bimiDnsPromise]).then(
+    ([dmarcResult, bimiDns]) => {
+      const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
+      return analyzeBimi(domain, dmarcPolicy, bimiDns);
+    },
+  );
+
+  // Attach streaming handlers immediately
+  mxPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `mx: ${r.status}`,
+      data: { protocol: "mx", status: r.status },
+      level: "info",
+    });
+    onResult("mx", r);
+  });
 
   spfPromise.then((r) => {
     Sentry.addBreadcrumb({
@@ -179,15 +206,7 @@ export async function scanStreaming(
     });
     onResult("spf", r);
   });
-  dkimPromise.then((r) => {
-    Sentry.addBreadcrumb({
-      category: "analyzer.complete",
-      message: `dkim: ${r.status}`,
-      data: { protocol: "dkim", status: r.status },
-      level: "info",
-    });
-    onResult("dkim", r);
-  });
+
   mtaStsPromise.then((r) => {
     Sentry.addBreadcrumb({
       category: "analyzer.complete",
@@ -198,32 +217,50 @@ export async function scanStreaming(
     onResult("mta_sts", r);
   });
 
-  const [dmarcResult, bimiDns] = await Promise.all([
+  dmarcPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `dmarc: ${r.status}`,
+      data: { protocol: "dmarc", status: r.status },
+      level: "info",
+    });
+    onResult("dmarc", r);
+  });
+
+  dkimPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `dkim: ${r.status}`,
+      data: { protocol: "dkim", status: r.status },
+      level: "info",
+    });
+    onResult("dkim", r);
+  });
+
+  bimiPromise.then((r) => {
+    Sentry.addBreadcrumb({
+      category: "analyzer.complete",
+      message: `bimi: ${r.status}`,
+      data: { protocol: "bimi", status: r.status },
+      level: "info",
+    });
+    onResult("bimi", r);
+  });
+
+  const [
+    dmarcResult,
+    spfResult,
+    dkimResult,
+    mtaStsResult,
+    bimiResult,
+    mxResult,
+  ] = await Promise.all([
     dmarcPromise,
-    bimiDnsPromise,
-  ]);
-  Sentry.addBreadcrumb({
-    category: "analyzer.complete",
-    message: `dmarc: ${dmarcResult.status}`,
-    data: { protocol: "dmarc", status: dmarcResult.status },
-    level: "info",
-  });
-  onResult("dmarc", dmarcResult);
-
-  const dmarcPolicy = dmarcResult.tags?.p?.toLowerCase() ?? null;
-  const bimiResult = await analyzeBimi(domain, dmarcPolicy, bimiDns);
-  Sentry.addBreadcrumb({
-    category: "analyzer.complete",
-    message: `bimi: ${bimiResult.status}`,
-    data: { protocol: "bimi", status: bimiResult.status },
-    level: "info",
-  });
-  onResult("bimi", bimiResult);
-
-  const [spfResult, dkimResult, mtaStsResult] = await Promise.all([
     spfPromise,
     dkimPromise,
     mtaStsPromise,
+    bimiPromise,
+    mxPromise,
   ]);
 
   return await buildScanResult(domain, {
