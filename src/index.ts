@@ -162,7 +162,10 @@ function getClientIp(c: Context): string {
 // Rate limit scan endpoints (not the landing page)
 app.use("/check", async (c, next) => {
   const ip = getClientIp(c);
-  const { allowed, remaining } = await checkRateLimit(ip);
+  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
+  if (pendingWrite) {
+    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+  }
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
@@ -193,7 +196,10 @@ app.use("/check", async (c, next) => {
 
 app.use("/check/score", async (c, next) => {
   const ip = getClientIp(c);
-  const { allowed, remaining } = await checkRateLimit(ip);
+  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
+  if (pendingWrite) {
+    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+  }
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
@@ -214,7 +220,10 @@ app.use("/check/score", async (c, next) => {
 
 app.use("/api/check", async (c, next) => {
   const ip = getClientIp(c);
-  const { allowed, remaining } = await checkRateLimit(ip);
+  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
+  if (pendingWrite) {
+    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+  }
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
@@ -236,7 +245,10 @@ app.use("/api/check", async (c, next) => {
 // Give it its own limiter so it cannot be used as a DNS amplification vector.
 app.use("/api/check/stream", async (c, next) => {
   const ip = getClientIp(c);
-  const { allowed, remaining } = await checkRateLimit(ip);
+  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
+  if (pendingWrite) {
+    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+  }
 
   if (!allowed) {
     const headers = rateLimitHeaders(remaining);
@@ -339,7 +351,10 @@ app.get("/api/check/stream", async (c) => {
     );
 
     tagScanResult(result);
-    setCachedScan(domain, selectors, result);
+    const pendingCacheWrite = setCachedScan(domain, selectors, result);
+    if (pendingCacheWrite) {
+      c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+    }
 
     stream.writeSSE({
       event: "done",
@@ -556,7 +571,12 @@ app.get("/api/check", async (c) => {
     });
     const result = cached ?? (await scan(domain, selectors));
     tagScanResult(result);
-    if (!cached) setCachedScan(domain, selectors, result);
+    if (!cached) {
+      const pendingCacheWrite = setCachedScan(domain, selectors, result);
+      if (pendingCacheWrite) {
+        c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+      }
+    }
 
     if (c.req.query("format") === "csv") {
       return c.body(generateCsv(result), 200, {
@@ -682,7 +702,12 @@ app.get("/check", async (c) => {
       });
       const result = cached ?? (await scan(domain, selectors));
       tagScanResult(result);
-      if (!cached) setCachedScan(domain, selectors, result);
+      if (!cached) {
+        const pendingCacheWrite = setCachedScan(domain, selectors, result);
+        if (pendingCacheWrite) {
+          c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+        }
+      }
       return c.html(renderReport(result));
     } catch (err) {
       Sentry.captureException(err);

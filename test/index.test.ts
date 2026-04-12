@@ -810,7 +810,7 @@ describe("SSE streaming cache", () => {
           bimi: { status: "fail", summary: "No BIMI record" },
           mta_sts: { status: "fail", summary: "No MTA-STS policy" },
         },
-      } as any,
+      } as unknown as ScanResult,
       summary: {
         mx_records: 1,
         mx_providers: ["Google Workspace"],

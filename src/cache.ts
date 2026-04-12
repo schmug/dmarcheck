@@ -24,11 +24,11 @@ export async function getCachedScan(
   }
 }
 
-export async function setCachedScan(
+export function setCachedScan(
   domain: string,
   selectors: string[],
   result: ScanResult,
-): Promise<void> {
+): Promise<void> | void {
   try {
     if (typeof caches === "undefined" || !caches.default) return;
     const cache = caches.default;
@@ -38,7 +38,10 @@ export async function setCachedScan(
         "Cache-Control": `s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=${STALE_REVALIDATE_SECONDS}`,
       },
     });
-    await cache.put(cacheKey(domain, selectors), resp);
+    // ⚡ Bolt Optimization: Do not await cache.put on the critical path.
+    // Return the promise so the caller can pass it to executionCtx.waitUntil(),
+    // removing Cache API write latency from scan endpoints.
+    return cache.put(cacheKey(domain, selectors), resp);
   } catch {
     // Cache write failure is non-fatal
   }
