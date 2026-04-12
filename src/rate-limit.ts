@@ -6,9 +6,11 @@ const memoryStore = new Map<string, { count: number; expires: number }>();
 let callCount = 0;
 const SWEEP_INTERVAL = 100;
 
-export async function checkRateLimit(
-  ip: string,
-): Promise<{ allowed: boolean; remaining: number }> {
+export async function checkRateLimit(ip: string): Promise<{
+  allowed: boolean;
+  remaining: number;
+  pendingWrite?: Promise<void>;
+}> {
   try {
     if (typeof caches !== "undefined" && caches.default) {
       return await checkRateLimitCache(ip);
@@ -19,9 +21,11 @@ export async function checkRateLimit(
   return checkRateLimitMemory(ip);
 }
 
-async function checkRateLimitCache(
-  ip: string,
-): Promise<{ allowed: boolean; remaining: number }> {
+async function checkRateLimitCache(ip: string): Promise<{
+  allowed: boolean;
+  remaining: number;
+  pendingWrite?: Promise<void>;
+}> {
   const cache = caches.default;
   const key = new Request(`https://dmarc-mx-ratelimit.internal/${ip}`);
 
@@ -41,9 +45,12 @@ async function checkRateLimitCache(
       "Cache-Control": `s-maxage=${WINDOW_SECONDS}`,
     },
   });
-  await cache.put(key, response);
+  // ⚡ Bolt Optimization: Do not await cache.put on the critical path.
+  // Return the promise so the caller can pass it to executionCtx.waitUntil(),
+  // removing Cache API write latency from every rate-limited request.
+  const pendingWrite = cache.put(key, response);
 
-  return { allowed, remaining };
+  return { allowed, remaining, pendingWrite };
 }
 
 function checkRateLimitMemory(ip: string): {
