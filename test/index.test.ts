@@ -352,7 +352,7 @@ describe("CSV format routes", () => {
   it("sets strict CSP on CSV responses (non-HTML)", async () => {
     const res = await app.request("/api/check?domain=&format=csv");
     const csp = res.headers.get("Content-Security-Policy");
-    expect(csp).toBe("default-src 'none'");
+    expect(csp).toBe("default-src 'none'; frame-ancestors 'none'");
   });
 });
 
@@ -360,13 +360,24 @@ describe("security headers", () => {
   it("sets security headers on landing page", async () => {
     const res = await app.request("/");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expect(res.headers.get("Referrer-Policy")).toBe(
       "strict-origin-when-cross-origin",
     );
     expect(res.headers.get("Permissions-Policy")).toBe(
       "camera=(), microphone=(), geolocation=()",
     );
+  });
+
+  // X-Frame-Options would override `frame-ancestors` in older browsers and
+  // defeat the cortech.online embed allowlist, so it must not be sent.
+  it("does not set X-Frame-Options on HTML responses", async () => {
+    const res = await app.request("/");
+    expect(res.headers.get("X-Frame-Options")).toBeNull();
+  });
+
+  it("does not set X-Frame-Options on non-HTML responses", async () => {
+    const res = await app.request("/api/check?domain=");
+    expect(res.headers.get("X-Frame-Options")).toBeNull();
   });
 
   it("sets CSP with inline scripts allowed on HTML responses", async () => {
@@ -376,13 +387,22 @@ describe("security headers", () => {
       "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
     );
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
-    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("frame-ancestors 'self' https://cortech.online");
   });
 
-  it("sets strict CSP on JSON responses", async () => {
+  it("allows only cortech.online to embed (no wildcards, exact origin)", async () => {
+    const res = await app.request("/");
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    const match = csp.match(/frame-ancestors ([^;]+)/);
+    expect(match).not.toBeNull();
+    const sources = match?.[1].trim().split(/\s+/) ?? [];
+    expect(sources).toEqual(["'self'", "https://cortech.online"]);
+  });
+
+  it("sets strict CSP with frame-ancestors 'none' on JSON responses", async () => {
     const res = await app.request("/api/check?domain=");
     const csp = res.headers.get("Content-Security-Policy");
-    expect(csp).toBe("default-src 'none'");
+    expect(csp).toBe("default-src 'none'; frame-ancestors 'none'");
   });
 
   it("does not include HSTS header (handled by Cloudflare)", async () => {
