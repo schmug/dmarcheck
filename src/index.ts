@@ -95,10 +95,15 @@ const NOINDEX_CONTENT_TYPES = [
   "text/event-stream",
 ];
 
+// Origins permitted to embed the HTML report in an iframe. Anything not listed
+// here (including subdomains) is blocked by the `frame-ancestors` directive
+// below. X-Frame-Options is intentionally NOT set — older browsers honor it
+// over `frame-ancestors`, which would defeat this allowlist.
+const EMBED_ALLOWED_ORIGINS = ["https://cortech.online"];
+
 app.use("*", async (c, next) => {
   await next();
   c.res.headers.set("X-Content-Type-Options", "nosniff");
-  c.res.headers.set("X-Frame-Options", "DENY");
   c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   c.res.headers.set(
     "Permissions-Policy",
@@ -108,9 +113,10 @@ app.use("*", async (c, next) => {
   const contentType = c.res.headers.get("content-type") ?? "";
   const isHtml = contentType.includes("text/html");
   if (isHtml) {
+    const frameAncestors = ["'self'", ...EMBED_ALLOWED_ORIGINS].join(" ");
     c.res.headers.set(
       "Content-Security-Policy",
-      `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors ${frameAncestors}`,
     );
     // Short edge cache so Cloudflare can absorb landing/scoring/report traffic
     // without hitting the Worker on every request. Browsers still revalidate.
@@ -121,7 +127,12 @@ app.use("*", async (c, next) => {
       );
     }
   } else {
-    c.res.headers.set("Content-Security-Policy", "default-src 'none'");
+    // `frame-ancestors` does not inherit from `default-src`, so it must be
+    // declared explicitly to keep JSON/CSV/SSE responses unframable.
+    c.res.headers.set(
+      "Content-Security-Policy",
+      "default-src 'none'; frame-ancestors 'none'",
+    );
   }
 
   // Keep the JSON API, CSV exports, the SSE stream, and the PWA manifest out
