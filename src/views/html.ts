@@ -655,7 +655,7 @@ export function renderError(message: string): string {
     body: `<main class="landing">
   <div class="landing-main">
     <div class="logo">${generateCreature("lg", "worried")}<span class="logo-text">dmar<span>check</span></span></div>
-    <div class="error-box">
+    <div class="error-box" role="alert">
       <h3>Error</h3>
       <p>${esc(message)}</p>
     </div>

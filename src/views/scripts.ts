@@ -73,8 +73,11 @@ if (!window.__dmarcheckBound) {
       var domain = form.querySelector('input[name="domain"]').value;
       var wrapper = document.createElement('div');
       wrapper.className = 'loading';
+      wrapper.setAttribute('role', 'status');
+      wrapper.setAttribute('aria-live', 'polite');
       var spinner = document.createElement('div');
       spinner.className = 'spinner';
+      spinner.setAttribute('aria-hidden', 'true');
       var msg = document.createElement('p');
       msg.textContent = 'Scanning ' + domain + '...';
       wrapper.appendChild(spinner);
