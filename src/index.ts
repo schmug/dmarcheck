@@ -73,10 +73,7 @@ app.use("*", async (c, next) => {
     path: c.req.path,
   });
   scope.setUser({
-    ip_address:
-      c.req.header("CF-Connecting-IP") ||
-      c.req.header("X-Forwarded-For") ||
-      undefined,
+    ip_address: c.req.header("CF-Connecting-IP") || undefined,
   });
 
   await next();
@@ -161,11 +158,6 @@ app.use("/api/*", cors());
 function getClientIp(c: Context): string {
   const cfIp = c.req.header("CF-Connecting-IP");
   if (cfIp) return cfIp;
-
-  // Prevent rate limit bypass by extracting only the first IP address
-  // if multiple comma-separated IPs are present in X-Forwarded-For.
-  const xff = c.req.header("X-Forwarded-For");
-  if (xff) return xff.split(",")[0].trim();
 
   return "unknown";
 }
