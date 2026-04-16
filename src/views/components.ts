@@ -23,7 +23,10 @@ const DMARC_TOOLTIPS: Record<string, string> = {
   ri: "Report interval — seconds between aggregate reports",
 };
 
+const ESCAPE_TEST = /[&<>"']/;
+
 export function esc(s: string): string {
+  if (!ESCAPE_TEST.test(s)) return s;
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
