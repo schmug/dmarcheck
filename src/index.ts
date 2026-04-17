@@ -11,6 +11,8 @@ import type {
   ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
+import { API_CATALOG_JSON } from "./api/catalog.js";
+import { OPENAPI_JSON } from "./api/openapi.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
 import { generateCsv } from "./csv.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
@@ -26,6 +28,7 @@ import {
   webManifest,
 } from "./views/favicon.js";
 import {
+  renderApiDocs,
   renderBimiCard,
   renderDkimCard,
   renderDmarcCard,
@@ -49,6 +52,14 @@ import {
   renderLearnMtaSts,
   renderLearnSpf,
 } from "./views/learn.js";
+import {
+  renderApiDocsMarkdown,
+  renderErrorMarkdown,
+  renderLandingMarkdown,
+  renderLearnHubMarkdown,
+  renderReportMarkdown,
+  renderScoringRubricMarkdown,
+} from "./views/markdown.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
@@ -88,9 +99,22 @@ app.use("*", async (c, next) => {
 const NOINDEX_CONTENT_TYPES = [
   "application/json",
   "application/manifest+json",
+  "application/linkset+json",
+  "application/openapi+json",
   "text/csv",
   "text/event-stream",
+  "text/markdown",
 ];
+
+// Link header (RFC 8288) pointing agents to discovery resources.
+// Attached to HTML responses only — JSON/CSV/SSE consumers are already
+// using the API directly.
+const AGENT_DISCOVERY_LINK_HEADER = [
+  '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+  '</openapi.json>; rel="service-desc"; type="application/openapi+json"',
+  '</docs/api>; rel="service-doc"; type="text/html"',
+  '</health>; rel="status"',
+].join(", ");
 
 // Origins permitted to embed the HTML report in an iframe. Anything not listed
 // here (including subdomains) is blocked by the `frame-ancestors` directive
@@ -115,6 +139,9 @@ app.use("*", async (c, next) => {
       "Content-Security-Policy",
       `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors ${frameAncestors}`,
     );
+    if (!c.res.headers.has("Link")) {
+      c.res.headers.set("Link", AGENT_DISCOVERY_LINK_HEADER);
+    }
     // Short edge cache so Cloudflare can absorb landing/scoring/report traffic
     // without hitting the Worker on every request. Browsers still revalidate.
     if (!c.res.headers.has("Cache-Control")) {
@@ -154,6 +181,29 @@ app.onError((err, c) => {
 });
 
 app.use("/api/*", cors());
+
+function markdownResponse(c: Context, body: string, status = 200) {
+  return c.body(body, status as 200, {
+    "Content-Type": "text/markdown; charset=utf-8",
+  });
+}
+
+// Returns true when the client explicitly asked for markdown (via `?format=md`
+// or an `Accept` header that lists `text/markdown` before `text/html`). HTML
+// stays the default for browsers that send wildcards like `*/*`.
+function wantsMarkdown(c: Context): boolean {
+  const format = c.req.query("format");
+  if (format === "md" || format === "markdown") return true;
+  const accept = c.req.header("Accept");
+  if (!accept) return false;
+  const types = accept.toLowerCase().split(",");
+  const mdIndex = types.findIndex((t) => t.trim().startsWith("text/markdown"));
+  if (mdIndex === -1) return false;
+  const htmlIndex = types.findIndex((t) => t.trim().startsWith("text/html"));
+  // Agents that send `Accept: text/markdown` (and nothing else, or markdown
+  // first) get markdown. Browsers that prefer HTML keep getting HTML.
+  return htmlIndex === -1 || mdIndex < htmlIndex;
+}
 
 function getClientIp(c: Context): string {
   const cfIp = c.req.header("CF-Connecting-IP");
@@ -485,6 +535,27 @@ app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// RFC 9727 API catalog — agents discover this via the Link header on HTML
+// pages or by fetching a well-known URI directly.
+app.get("/.well-known/api-catalog", (c) => {
+  return c.body(API_CATALOG_JSON, 200, {
+    "Content-Type": "application/linkset+json",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/openapi.json", (c) => {
+  return c.body(OPENAPI_JSON, 200, {
+    "Content-Type": "application/openapi+json; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/docs/api", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderApiDocsMarkdown());
+  return c.html(renderApiDocs());
+});
+
 // Crawl guidance for search engines. Block the API namespace (Google was
 // logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
 // noise) and point to the sitemap.
@@ -536,14 +607,20 @@ ${urls}
 });
 
 app.get("/", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderLandingMarkdown());
   return c.html(renderLandingPage());
 });
 
 app.get("/scoring", (c) => {
+  if (wantsMarkdown(c))
+    return markdownResponse(c, renderScoringRubricMarkdown());
   return c.html(renderScoringRubric());
 });
 
-app.get("/learn", (c) => c.html(renderLearnHub()));
+app.get("/learn", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderLearnHubMarkdown());
+  return c.html(renderLearnHub());
+});
 app.get("/learn/dmarc", (c) => c.html(renderLearnDmarc()));
 app.get("/learn/spf", (c) => c.html(renderLearnSpf()));
 app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
@@ -629,6 +706,7 @@ app.get("/check", async (c) => {
   const wantsJson =
     format === "json" || c.req.header("Accept")?.includes("application/json");
   const wantsCsv = format === "csv";
+  const wantsMd = !wantsJson && !wantsCsv && wantsMarkdown(c);
 
   const domain = normalizeDomain(c.req.query("domain"));
   if (!domain) {
@@ -643,10 +721,42 @@ app.get("/check", async (c) => {
         "Content-Type": "text/csv; charset=utf-8",
       });
     }
+    if (wantsMd) {
+      return markdownResponse(
+        c,
+        renderErrorMarkdown("Missing or invalid domain parameter"),
+        400,
+      );
+    }
     return c.redirect("/", 302);
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+
+  if (wantsMd) {
+    try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
+      const cached = await getCachedScan(domain, selectors);
+      const result = cached ?? (await scan(domain, selectors));
+      tagScanResult(result);
+      if (!cached) {
+        const pendingCacheWrite = setCachedScan(domain, selectors, result);
+        if (pendingCacheWrite) {
+          c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+        }
+      }
+      return markdownResponse(c, renderReportMarkdown(result));
+    } catch (err) {
+      Sentry.captureException(err);
+      const message = err instanceof Error ? err.message : "Internal error";
+      return markdownResponse(c, renderErrorMarkdown(message), 500);
+    }
+  }
 
   if (wantsJson) {
     try {

@@ -664,3 +664,88 @@ export function renderError(message: string): string {
 </main>`,
   });
 }
+
+export function renderApiDocs(): string {
+  const body = `<main class="breakdown">
+  <div class="report-nav">
+    <a href="/">${generateCreature("sm")} Home</a>
+  </div>
+  <h1 class="rubric-title">dmarcheck API</h1>
+  <p class="rubric-intro">Public, unauthenticated HTTP API for grading a domain's email-security DNS posture. Rate limited to 10 requests per minute per IP.</p>
+
+  <div class="bd-card">
+    <div class="bd-card-title">Discovery</div>
+    <div class="bd-card-body">
+      <ul>
+        <li><a href="/.well-known/api-catalog"><code>/.well-known/api-catalog</code></a> — RFC 9727 linkset (<code>application/linkset+json</code>)</li>
+        <li><a href="/openapi.json"><code>/openapi.json</code></a> — OpenAPI 3.1 service description</li>
+        <li><a href="/health"><code>/health</code></a> — liveness probe</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">GET /api/check</div>
+    <div class="bd-card-body">
+      <p>Scan a domain and return the graded result as JSON.</p>
+      <p><strong>Query params:</strong></p>
+      <ul>
+        <li><code>domain</code> <em>(required)</em> — <code>[a-z0-9.-]+</code></li>
+        <li><code>selectors</code> <em>(optional)</em> — comma-separated extra DKIM selectors</li>
+        <li><code>format</code> <em>(optional)</em> — <code>json</code> (default) or <code>csv</code></li>
+      </ul>
+      <p><strong>Example:</strong></p>
+      <pre><code>curl -H 'Accept: application/json' '${SITE_ORIGIN}/api/check?domain=dmarc.mx'</code></pre>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">GET /api/check/stream</div>
+    <div class="bd-card-body">
+      <p>Same scan via Server-Sent Events. Emits a <code>protocol</code> event per analyzer, then a <code>done</code> event with header/footer HTML fragments.</p>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">GET /check</div>
+    <div class="bd-card-body">
+      <p>Content-negotiated human endpoint.</p>
+      <ul>
+        <li>Default: HTML</li>
+        <li><code>Accept: application/json</code> → JSON (same shape as <code>/api/check</code>)</li>
+        <li><code>Accept: text/markdown</code> → markdown for agents</li>
+        <li><code>format=csv</code> → CSV download</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">Response shape</div>
+    <div class="bd-card-body">
+      <p>See <code>ScanResult</code> in <a href="/openapi.json">openapi.json</a>. Top-level keys: <code>domain</code>, <code>timestamp</code>, <code>grade</code>, <code>breakdown</code>, <code>summary</code>, <code>protocols</code> (<code>mx</code>, <code>dmarc</code>, <code>spf</code>, <code>dkim</code>, <code>bimi</code>, <code>mta_sts</code>).</p>
+    </div>
+  </div>
+
+  <div class="bd-card">
+    <div class="bd-card-title">Errors</div>
+    <div class="bd-card-body">
+      <ul>
+        <li><code>400</code> — missing or invalid <code>domain</code> param</li>
+        <li><code>429</code> — rate limit exceeded</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foss-callout">
+    <a href="https://github.com/schmug/dmarcheck" class="foss-link">Source on GitHub</a>
+  </div>
+</main>`;
+
+  return page({
+    title: "API — dmarcheck",
+    path: "/docs/api",
+    description:
+      "dmarcheck public HTTP API: endpoints, parameters, response shape, and discovery (OpenAPI 3.1, RFC 9727 catalog).",
+    body,
+  });
+}
