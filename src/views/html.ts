@@ -144,6 +144,9 @@ export function renderLandingPage(): string {
             <input type="text" id="selectors" name="selectors"
                    placeholder="e.g. myselector, custom2"
                    autocomplete="off"
+                   autocapitalize="none"
+                   autocorrect="off"
+                   spellcheck="false"
                    aria-describedby="selectors-help" />
             <small id="selectors-help">Comma-separated. These are checked in addition to the 38 common selectors.</small>
           </div>
