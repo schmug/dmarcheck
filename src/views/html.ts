@@ -63,11 +63,11 @@ export function page(opts: PageOptions): string {
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${esc(canonical)}">
-<meta property="og:image" content="${SITE_ORIGIN}/og-image.svg">
+<meta property="og:image" content="${SITE_ORIGIN}/og-image.png">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
-<meta name="twitter:image" content="${SITE_ORIGIN}/og-image.svg">
+<meta name="twitter:image" content="${SITE_ORIGIN}/og-image.png">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">

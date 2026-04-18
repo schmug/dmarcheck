@@ -470,6 +470,19 @@ describe("favicon and icon routes", () => {
     expect(res.headers.get("Content-Type")).toBe("image/png");
   });
 
+  it("serves Open Graph PNG", async () => {
+    const res = await app.request("/og-image.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    const body = await res.arrayBuffer();
+    expect(body.byteLength).toBeGreaterThan(0);
+    const sig = new Uint8Array(body.slice(0, 8));
+    expect(Array.from(sig)).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+  });
+
   it("still serves existing logo SVG unchanged", async () => {
     const res = await app.request("/logo.svg");
     expect(res.status).toBe(200);
@@ -504,7 +517,7 @@ describe("HTML head tags", () => {
     expect(html).toContain('<link rel="canonical" href="https://dmarc.mx/">');
     expect(html).toContain('<meta name="theme-color" content="#f97316">');
     expect(html).toContain(
-      '<meta name="twitter:image" content="https://dmarc.mx/og-image.svg">',
+      '<meta name="twitter:image" content="https://dmarc.mx/og-image.png">',
     );
     expect(html).toContain(
       '<meta property="og:url" content="https://dmarc.mx/">',
