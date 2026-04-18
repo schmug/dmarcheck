@@ -192,8 +192,11 @@ app.use("/check", async (c, next) => {
 
   const headers = rateLimitHeaders(remaining);
   await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries() on hot paths.
+  // Avoids allocating an array of key-value tuples for headers on every request,
+  // reducing GC pressure for high-traffic middleware.
+  for (const key in headers) {
+    c.res.headers.set(key, headers[key]);
   }
 });
 
@@ -216,8 +219,8 @@ app.use("/check/score", async (c, next) => {
 
   const headers = rateLimitHeaders(remaining);
   await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
+  for (const key in headers) {
+    c.res.headers.set(key, headers[key]);
   }
 });
 
@@ -238,8 +241,8 @@ app.use("/api/check", async (c, next) => {
 
   const headers = rateLimitHeaders(remaining);
   await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
+  for (const key in headers) {
+    c.res.headers.set(key, headers[key]);
   }
 });
 
@@ -263,8 +266,8 @@ app.use("/api/check/stream", async (c, next) => {
 
   const headers = rateLimitHeaders(remaining);
   await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
+  for (const key in headers) {
+    c.res.headers.set(key, headers[key]);
   }
 });
 
