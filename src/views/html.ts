@@ -134,7 +134,7 @@ export function renderLandingPage(): string {
       <h1 class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</h1>
       <form action="/check" method="GET">
         <div class="search-box">
-          <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Enter a domain" autofocus required>
+          <input type="text" name="domain" placeholder="Enter a domain (e.g., google.com)" aria-label="Enter a domain" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus required>
           <button type="submit">Scan</button>
         </div>
         <details class="advanced-options">
@@ -144,6 +144,9 @@ export function renderLandingPage(): string {
             <input type="text" id="selectors" name="selectors"
                    placeholder="e.g. myselector, custom2"
                    autocomplete="off"
+                   autocapitalize="none"
+                   autocorrect="off"
+                   spellcheck="false"
                    aria-describedby="selectors-help" />
             <small id="selectors-help">Comma-separated. These are checked in addition to the 38 common selectors.</small>
           </div>
