@@ -31,9 +31,20 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - `src/shared/scoring.ts` — Grade computation (F if no DMARC or p=none)
 - `src/cache.ts` — SSE result caching
 - `src/csv.ts` — CSV export for scan results
+- `src/api/catalog.ts` + `src/api/openapi.ts` — Agent discovery (RFC 9727 linkset at `/.well-known/api-catalog`, OpenAPI 3.1 at `/openapi.json`)
 - `src/views/` — HTML generation via template literals (styles.ts, scripts.ts, components.ts, html.ts, favicon.ts)
   - `components.ts` — `generateCreature(size, mood, partyHat?)` helper and `gradeToMood()` mapping
+  - `markdown.ts` — markdown renderings served when `Accept: text/markdown` (landing, /check report, /scoring, /learn, /docs/api)
 - `src/rate-limit.ts` — Cache API-based rate limiter (10 req/IP/60s)
+
+## Agent discovery
+
+- `/.well-known/api-catalog` — RFC 9727 linkset (`application/linkset+json`) pointing to OpenAPI + docs + health
+- `/openapi.json` — OpenAPI 3.1 service description (`application/openapi+json`)
+- `/docs/api` — Human-readable API reference (HTML, or markdown with `Accept: text/markdown`)
+- Every HTML page ships a `Link` header advertising four relations (`api-catalog`, `service-desc`, `service-doc`, `status`)
+- Content negotiation: `Accept: text/markdown` (or `?format=md`) on `/`, `/check`, `/scoring`, `/learn`, `/docs/api` returns a markdown rendering (noindexed)
+- The client JS bundle registers a WebMCP `scan_domain` tool via `navigator.modelContext.provideContext()` when that API is available — silent no-op in browsers without WebMCP
 
 ## Conventions
 

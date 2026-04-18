@@ -627,4 +627,33 @@ if (!window.__dmarcheckBound) {
     isActive = false;
   }
 })();
+
+/* WebMCP: expose the domain scan as a tool to in-browser agents.
+   No-op in browsers without navigator.modelContext — silently does nothing. */
+if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.provideContext === 'function') {
+  try {
+    navigator.modelContext.provideContext({
+      tools: [{
+        name: 'scan_domain',
+        description: "Run a DNS email-security scan (DMARC, SPF, DKIM, BIMI, MTA-STS, MX) on a domain and return the graded JSON result.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            domain: { type: 'string', description: 'Domain to scan, e.g. example.com' },
+            selectors: { type: 'string', description: 'Optional comma-separated DKIM selectors' }
+          },
+          required: ['domain']
+        },
+        execute: async function(args) {
+          var url = new URL('/api/check', location.origin);
+          url.searchParams.set('domain', args.domain);
+          if (args.selectors) url.searchParams.set('selectors', args.selectors);
+          var r = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+          if (!r.ok) throw new Error('Scan failed: ' + r.status);
+          return await r.json();
+        }
+      }]
+    });
+  } catch (e) { /* ignore */ }
+}
 `;
