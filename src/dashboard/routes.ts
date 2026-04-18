@@ -1,0 +1,142 @@
+import { Hono } from "hono";
+import { requireAuth } from "../auth/middleware.js";
+import type { SessionPayload } from "../auth/session.js";
+import { getDomainByUserAndName, getDomainsByUser } from "../db/domains.js";
+import { getUserById, setApiKey } from "../db/users.js";
+import {
+  renderDashboardPage,
+  renderDomainDetailPage,
+  renderSettingsPage,
+} from "../views/dashboard.js";
+
+export const dashboardRoutes = new Hono();
+
+// All dashboard routes require auth
+dashboardRoutes.use("*", requireAuth);
+
+// Domain list
+dashboardRoutes.get("/", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const domains = await getDomainsByUser(db, session.sub);
+  return c.html(
+    renderDashboardPage({
+      email: session.email,
+      domains: domains.map((d) => ({
+        domain: d.domain,
+        grade: d.last_grade ?? "—",
+        frequency: d.scan_frequency,
+        lastScanned: d.last_scanned_at
+          ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
+          : null,
+        isFree: d.is_free === 1,
+      })),
+    }),
+  );
+});
+
+// Domain detail
+dashboardRoutes.get("/domain/:domain", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const domainName = c.req.param("domain");
+  const domain = await getDomainByUserAndName(db, session.sub, domainName);
+  if (!domain) {
+    return c.text("Domain not found", 404);
+  }
+  const history = await db
+    .prepare(
+      "SELECT grade, scanned_at FROM scan_history WHERE domain_id = ? ORDER BY scanned_at DESC LIMIT 12",
+    )
+    .bind(domain.id)
+    .all<{ grade: string; scanned_at: number }>();
+  return c.html(
+    renderDomainDetailPage({
+      email: session.email,
+      domain: domain.domain,
+      grade: domain.last_grade ?? "—",
+      lastScanned: domain.last_scanned_at
+        ? new Date(domain.last_scanned_at * 1000).toLocaleDateString()
+        : null,
+      isFree: domain.is_free === 1,
+      scanFrequency: domain.scan_frequency,
+      scanHistory: history.results.map((r) => ({
+        date: new Date(r.scanned_at * 1000).toLocaleDateString(),
+        grade: r.grade,
+      })),
+    }),
+  );
+});
+
+// Manual scan trigger (stub — Phase 2 will add full monitoring)
+dashboardRoutes.post("/domain/:domain/scan", async (c) => {
+  const domainName = c.req.param("domain");
+  return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`);
+});
+
+// Settings page
+dashboardRoutes.get("/settings", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const user = await getUserById(db, session.sub);
+  if (!user) {
+    return c.redirect("/auth/logout");
+  }
+  const webhook = await db
+    .prepare("SELECT url FROM webhooks WHERE user_id = ?")
+    .bind(session.sub)
+    .first<{ url: string }>();
+  return c.html(
+    renderSettingsPage({
+      email: user.email,
+      apiKey: user.api_key,
+      webhookUrl: webhook?.url ?? null,
+      hasStripe: !!user.stripe_customer_id,
+    }),
+  );
+});
+
+// Generate/regenerate API key
+dashboardRoutes.post("/settings/api-key", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const key = `dmarc_${crypto.randomUUID().replace(/-/g, "")}`;
+  await setApiKey(db, session.sub, key);
+  return c.redirect("/dashboard/settings");
+});
+
+// Save webhook URL
+dashboardRoutes.post("/settings/webhook", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const body = await c.req.parseBody();
+  const url = body.webhookUrl as string;
+
+  // Validate URL
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      return c.redirect("/dashboard/settings");
+    }
+  } catch {
+    return c.redirect("/dashboard/settings");
+  }
+
+  const existing = await db
+    .prepare("SELECT id FROM webhooks WHERE user_id = ?")
+    .bind(session.sub)
+    .first<{ id: number }>();
+  if (existing) {
+    await db
+      .prepare("UPDATE webhooks SET url = ? WHERE user_id = ?")
+      .bind(url, session.sub)
+      .run();
+  } else {
+    const secret = crypto.randomUUID();
+    await db
+      .prepare("INSERT INTO webhooks (user_id, url, secret) VALUES (?, ?, ?)")
+      .bind(session.sub, url, secret)
+      .run();
+  }
+  return c.redirect("/dashboard/settings");
+});
