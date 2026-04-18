@@ -48,7 +48,7 @@ function learnJsonLd(opts: {
             url: `${SITE_ORIGIN}/logo.svg`,
           },
         },
-        image: `${SITE_ORIGIN}/og-image.svg`,
+        image: `${SITE_ORIGIN}/og-image.png`,
         mainEntityOfPage: `${SITE_ORIGIN}/learn/${opts.slug}`,
       },
       {

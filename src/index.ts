@@ -25,6 +25,7 @@ import {
   FAVICON_SVG,
   ICON_192_BASE64,
   ICON_512_BASE64,
+  OG_IMAGE_PNG_BASE64,
   webManifest,
 } from "./views/favicon.js";
 import {
@@ -465,6 +466,16 @@ app.get("/og-image.svg", (c) => {
 </svg>`;
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/og-image.png", (c) => {
+  const buf = Uint8Array.from(atob(OG_IMAGE_PNG_BASE64), (ch) =>
+    ch.charCodeAt(0),
+  );
+  return c.body(buf, 200, {
+    "Content-Type": "image/png",
     "Cache-Control": "public, max-age=86400",
   });
 });

@@ -65,6 +65,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Appears in landing page, report header, loading state, error page, and nav
 - **Easter egg:** idle-triggered (60s) creature walks around eating page elements, panics on interaction; respects `prefers-reduced-motion`
 - Name appears in footer ("Guarded by DMarcus"), loading text, aria labels, and README
+- **Social preview / OG image:** `scripts/generate-icons.mjs` rasterizes the OG SVG into `OG_IMAGE_PNG_BASE64` (served at `/og-image.png`, referenced by `og:image` / `twitter:image`) and writes `docs/github-social-preview.png` (1280×640). When the OG design changes, re-run the script, paste the new base64 into `src/views/favicon.ts`, commit the regenerated PNG, and re-upload it at GitHub → Settings → General → Social preview (that field has no API).
 
 ## Quality Gates
 
