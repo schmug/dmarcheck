@@ -13,8 +13,11 @@ import type {
 } from "./analyzers/types.js";
 import { API_CATALOG_JSON } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
+import { authRoutes } from "./auth/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
 import { generateCsv } from "./csv.js";
+import { dashboardRoutes } from "./dashboard/routes.js";
+import type { Env } from "./env.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
 import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
@@ -64,7 +67,7 @@ import {
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
-const app = new Hono();
+const app = new Hono<{ Bindings: Env }>();
 
 // Set Sentry scope context for every request
 app.use("*", async (c, next) => {
@@ -182,6 +185,12 @@ app.onError((err, c) => {
 });
 
 app.use("/api/*", cors());
+
+// Auth routes (public) — login, WorkOS callback, logout
+app.route("/auth", authRoutes);
+
+// Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)
+app.route("/dashboard", dashboardRoutes);
 
 function markdownResponse(c: Context, body: string, status = 200) {
   return c.body(body, status as 200, {

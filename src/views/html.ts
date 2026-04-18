@@ -171,6 +171,7 @@ export function renderLandingPage(): string {
         </a>
       </div>
       <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
+      <div class="learn-link"><a href="/auth/login">Log in</a> to monitor a domain (free)</div>
     </div>
   </div>
   <section class="landing-explainer" id="what-we-check" aria-labelledby="explainer-heading">
