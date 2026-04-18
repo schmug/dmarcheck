@@ -23,6 +23,26 @@
             "statusMessage": "Running tests & typecheck..."
           }
         ]
+      },
+      {
+        "matcher": "Bash(npm run deploy*)|Bash(wrangler deploy*)|Bash(npx wrangler deploy*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Blocked: deploys run via Cloudflare Git integration on push to main. Running wrangler deploy manually causes intermittent stale deploys. See CLAUDE.md §Commands.' >&2; exit 2",
+            "statusMessage": "Blocking manual deploy..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r 'if ((.tool_input.file_path // \"\") | test(\"src/analyzers/mta-sts\\\\.ts$\")) then (.tool_input.new_string // .tool_input.content // \"\") else \"\" end' | grep -qE 'redirect:[[:space:]]*\"(error|follow)\"' && { echo 'Blocked: MTA-STS fetch must use redirect: \"manual\" (RFC 8461 §3.3). This regressed twice via PRs #58 and #92 — see CLAUDE.md §Security.' >&2; exit 2; } || exit 0",
+            "statusMessage": "Checking MTA-STS redirect mode..."
+          }
+        ]
       }
     ]
   }
