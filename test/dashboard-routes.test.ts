@@ -1,7 +1,38 @@
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSessionToken } from "../src/auth/session.js";
 import { dashboardRoutes } from "../src/dashboard/routes.js";
+
+vi.mock("../src/orchestrator.js", () => ({
+  scan: vi.fn(async (domain: string) => ({
+    domain,
+    timestamp: "2026-04-19T00:00:00.000Z",
+    grade: "B",
+    breakdown: {
+      grade: "B",
+      tier: "B",
+      tierReason: "test",
+      modifier: 0,
+      modifierLabel: "",
+      factors: [{ name: "dmarc", status: "pass", weight: 1 }],
+      recommendations: [],
+      protocolSummaries: {},
+    },
+    summary: {
+      mx_records: 0,
+      mx_providers: [],
+      dmarc_policy: "none",
+    },
+    protocols: {
+      mx: { status: "info" },
+      dmarc: { status: "pass" },
+      spf: { status: "pass" },
+      dkim: { status: "pass" },
+      bimi: { status: "pass" },
+      mta_sts: { status: "pass" },
+    },
+  })),
+}));
 
 const SECRET = "test-session-secret";
 
@@ -32,11 +63,13 @@ function createMockDB(data: {
     url: string;
     secret: string;
   }>;
+  writes?: Array<{ sql: string; bindings: unknown[] }>;
 }) {
   const domains = data.domains ?? [];
   const users = data.users ?? [];
   const scanHistory = data.scanHistory ?? [];
   const webhooks = data.webhooks ?? [];
+  const writes = data.writes;
 
   const makeStatement = (sql: string, bindings: unknown[]) => ({
     bind: (...args: unknown[]) => makeStatement(sql, args),
@@ -73,11 +106,23 @@ function createMockDB(data: {
       }
       return { results: [] as T[] };
     },
-    run: async () => ({ success: true }),
+    run: async () => {
+      writes?.push({ sql, bindings });
+      return { success: true };
+    },
   });
 
   return {
     prepare: (sql: string) => makeStatement(sql, []),
+    batch: async (
+      stmts: Array<{ run: () => Promise<{ success: boolean }> }>,
+    ) => {
+      const out = [];
+      for (const stmt of stmts) {
+        out.push(await stmt.run());
+      }
+      return out;
+    },
   };
 }
 
@@ -389,6 +434,71 @@ describe("dashboard/routes", () => {
       });
       expect(res.status).toBe(302);
       expect(res.headers.get("Location")).toBe("/dashboard/settings");
+    });
+  });
+
+  describe("POST /dashboard/domain/:domain/scan", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/example.com/scan", {
+        method: "POST",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 404 when domain does not belong to the user", async () => {
+      const db = createMockDB({ domains: [] });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/notmine.com/scan", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("runs the scan, persists history, and 303-redirects to the detail page", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({
+        domains: [
+          {
+            id: 7,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 1,
+            scan_frequency: "monthly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1700000000,
+          },
+        ],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const res = await app.request("/dashboard/domain/example.com/scan", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard/domain/example.com");
+
+      const insertSql = writes.find((w) =>
+        w.sql.includes("INSERT INTO scan_history"),
+      );
+      expect(insertSql).toBeDefined();
+      expect(insertSql?.bindings[0]).toBe(7); // domain_id
+      expect(insertSql?.bindings[1]).toBe("B"); // grade
+
+      const updateSql = writes.find((w) =>
+        w.sql.includes("UPDATE domains SET last_grade"),
+      );
+      expect(updateSql).toBeDefined();
+      expect(updateSql?.bindings[0]).toBe("B");
     });
   });
 
