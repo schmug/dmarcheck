@@ -4,4 +4,5 @@ export interface Env {
   WORKOS_CLIENT_SECRET: string;
   WORKOS_REDIRECT_URI: string;
   SESSION_SECRET: string;
+  SENTRY_DSN?: string;
 }

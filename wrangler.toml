@@ -11,6 +11,11 @@ routes = [
 [dev]
 port = 8790
 
+# Nightly rescan of monitored domains for authed users. 06:17 UTC chosen
+# off-peak and off-the-hour to spread DNS load away from :00 herd cycles.
+[triggers]
+crons = ["17 6 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "dmarcheck-db"

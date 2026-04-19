@@ -15,6 +15,7 @@ import { API_CATALOG_JSON } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { authRoutes } from "./auth/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
+import { runDueRescans } from "./cron/rescan.js";
 import { generateCsv } from "./csv.js";
 import { dashboardRoutes } from "./dashboard/routes.js";
 import type { Env } from "./env.js";
@@ -67,7 +68,10 @@ import {
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
-const app = new Hono<{ Bindings: Env }>();
+// The Hono app is exported for tests (which call `app.request(...)`).
+// Runtime Workers use the Sentry-wrapped default export below, which adds
+// cron (`scheduled`) alongside `fetch`.
+export const app = new Hono<{ Bindings: Env }>();
 
 // Set Sentry scope context for every request
 app.use("*", async (c, next) => {
@@ -911,8 +915,39 @@ export function parseSelectors(raw: string | undefined): string[] {
     .filter((s) => s.length > 0 && VALID_SELECTOR.test(s));
 }
 
-export default Sentry.withSentry(
-  (env?: { SENTRY_DSN?: string }) => ({
+// Cron handler — runs nightly per the `[triggers] crons` entry in wrangler.toml.
+// Rescans domains whose cadence has come due (monthly or weekly), persists
+// results, and records grade_drop / protocol_regression alerts. Fails soft
+// when DB is unbound so self-host deploys without D1 don't fault.
+async function scheduled(
+  _controller: ScheduledController,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void> {
+  if (!env.DB) return;
+  const work = runDueRescans({
+    db: env.DB,
+    now: Math.floor(Date.now() / 1000),
+  })
+    .then((result) => {
+      const scope = Sentry.getCurrentScope();
+      scope.setTag("cron.scanned", String(result.scanned));
+      scope.setTag("cron.alerts", String(result.alerts));
+      scope.setTag("cron.errors", String(result.errors));
+    })
+    .catch((err) => {
+      Sentry.captureException(err);
+    });
+  ctx.waitUntil(work);
+}
+
+const handler: ExportedHandler<Env> = {
+  fetch: app.fetch.bind(app),
+  scheduled,
+};
+
+export default Sentry.withSentry<Env>(
+  (env) => ({
     dsn: env?.SENTRY_DSN ?? "",
     tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
       if (samplingContext.parentSampled !== undefined)
@@ -920,5 +955,5 @@ export default Sentry.withSentry(
       return 0.3;
     },
   }),
-  app,
+  handler,
 );

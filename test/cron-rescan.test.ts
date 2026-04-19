@@ -1,0 +1,396 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runDueRescans } from "../src/cron/rescan.js";
+
+interface DomainRow {
+  id: number;
+  user_id: string;
+  domain: string;
+  is_free: number;
+  scan_frequency: string;
+  last_scanned_at: number | null;
+  last_grade: string | null;
+  created_at: number;
+}
+
+interface AlertRow {
+  id: number;
+  domain_id: number;
+  alert_type: string;
+  previous_value: string | null;
+  new_value: string | null;
+  notified_via: string | null;
+  created_at: number;
+}
+
+interface ScanHistoryRow {
+  id: number;
+  domain_id: number;
+  grade: string;
+  score_factors: string | null;
+  protocol_results: string | null;
+  scanned_at: number;
+}
+
+let domains: Map<number, DomainRow>;
+let alerts: Map<number, AlertRow>;
+let history: Map<number, ScanHistoryRow>;
+let nextScanId: number;
+let nextAlertId: number;
+
+function makeD1Mock(): D1Database {
+  const prepare = (sql: string) => ({
+    bind: (...params: unknown[]) => ({
+      run: async () => {
+        if (/^INSERT INTO scan_history/i.test(sql)) {
+          const [domainId, grade, scoreFactors, protocolResults, scannedAt] =
+            params as [number, string, string, string, number];
+          const id = nextScanId++;
+          history.set(id, {
+            id,
+            domain_id: domainId,
+            grade,
+            score_factors: scoreFactors,
+            protocol_results: protocolResults,
+            scanned_at: scannedAt,
+          });
+        } else if (/^UPDATE domains SET last_grade/i.test(sql)) {
+          const [grade, scannedAt, domainId] = params as [
+            string,
+            number,
+            number,
+          ];
+          const row = domains.get(domainId);
+          if (row) {
+            domains.set(domainId, {
+              ...row,
+              last_grade: grade,
+              last_scanned_at: scannedAt,
+            });
+          }
+        } else if (/^INSERT INTO alerts/i.test(sql)) {
+          const [domainId, type, prevVal, newVal, createdAt] = params as [
+            number,
+            string,
+            string,
+            string,
+            number,
+          ];
+          const id = nextAlertId++;
+          alerts.set(id, {
+            id,
+            domain_id: domainId,
+            alert_type: type,
+            previous_value: prevVal,
+            new_value: newVal,
+            notified_via: null,
+            created_at: createdAt,
+          });
+        }
+        return { success: true };
+      },
+      first: async <T>(): Promise<T | null> => {
+        if (/FROM scan_history WHERE domain_id = \? ORDER BY/i.test(sql)) {
+          const [domainId] = params as [number];
+          const rows = [...history.values()]
+            .filter((r) => r.domain_id === domainId)
+            .sort((a, b) => b.scanned_at - a.scanned_at);
+          return (rows[0] ?? null) as T | null;
+        }
+        return null;
+      },
+      all: async <T>(): Promise<{ results: T[] }> => {
+        if (/FROM domains[\s\S]*scan_frequency = 'monthly'/i.test(sql)) {
+          const [monthlyCutoff, weeklyCutoff, limit] = params as [
+            number,
+            number,
+            number,
+          ];
+          const due = [...domains.values()]
+            .filter((d) => {
+              if (d.scan_frequency === "monthly") {
+                return (
+                  d.last_scanned_at === null ||
+                  d.last_scanned_at < monthlyCutoff
+                );
+              }
+              if (d.scan_frequency === "weekly") {
+                return (
+                  d.last_scanned_at === null || d.last_scanned_at < weeklyCutoff
+                );
+              }
+              return false;
+            })
+            .sort((a, b) => (a.last_scanned_at ?? 0) - (b.last_scanned_at ?? 0))
+            .slice(0, limit);
+          return { results: due as T[] };
+        }
+        return { results: [] };
+      },
+    }),
+  });
+  return {
+    prepare,
+    batch: async (
+      stmts: Array<{ run: () => Promise<{ success: boolean }> }>,
+    ) => {
+      for (const stmt of stmts) await stmt.run();
+      return [];
+    },
+  } as unknown as D1Database;
+}
+
+// Minimal fake ScanResult shape — only what rescan reads.
+function makeScanResult(
+  domain: string,
+  grade: string,
+  statuses: Record<string, string>,
+) {
+  return {
+    domain,
+    timestamp: "2026-04-19T00:00:00Z",
+    grade,
+    breakdown: {
+      grade,
+      tier: grade,
+      tierReason: "",
+      modifier: 0,
+      modifierLabel: "",
+      factors: [],
+      recommendations: [],
+      protocolSummaries: {},
+    },
+    summary: { mx_records: 0, mx_providers: [], dmarc_policy: null },
+    protocols: {
+      mx: { status: "info" },
+      dmarc: { status: statuses.dmarc ?? "pass" },
+      spf: { status: statuses.spf ?? "pass" },
+      dkim: { status: statuses.dkim ?? "pass" },
+      bimi: { status: statuses.bimi ?? "pass" },
+      mta_sts: { status: statuses.mta_sts ?? "pass" },
+    },
+  };
+}
+
+describe("cron/runDueRescans", () => {
+  const now = 1_700_000_000;
+  const monthSeconds = 30 * 24 * 60 * 60;
+  const weekSeconds = 7 * 24 * 60 * 60;
+
+  beforeEach(() => {
+    domains = new Map();
+    alerts = new Map();
+    history = new Map();
+    nextScanId = 1;
+    nextAlertId = 1;
+  });
+
+  it("skips domains that are not yet due", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "recent.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: now - 1000,
+      last_grade: "A",
+      created_at: 0,
+    });
+
+    const scanFn = vi.fn();
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+
+    expect(result.scanned).toBe(0);
+    expect(scanFn).not.toHaveBeenCalled();
+  });
+
+  it("scans due monthly domains and persists scan_history", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "stale.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: now - monthSeconds - 100,
+      last_grade: "A",
+      created_at: 0,
+    });
+
+    const scanFn = vi
+      .fn()
+      .mockResolvedValue(makeScanResult("stale.com", "A", {}));
+
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+
+    expect(result).toEqual({ scanned: 1, alerts: 0, errors: 0 });
+    expect(scanFn).toHaveBeenCalledWith("stale.com");
+    expect(history.size).toBe(1);
+    expect([...history.values()][0].grade).toBe("A");
+    expect(domains.get(1)?.last_grade).toBe("A");
+    expect(domains.get(1)?.last_scanned_at).toBe(now);
+  });
+
+  it("skips weekly domains scanned within the last week", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "weekly.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: now - 100,
+      last_grade: "A",
+      created_at: 0,
+    });
+
+    const scanFn = vi.fn();
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+    expect(result.scanned).toBe(0);
+  });
+
+  it("includes never-scanned domains (last_scanned_at IS NULL)", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "brand-new.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: null,
+      last_grade: null,
+      created_at: 0,
+    });
+
+    const scanFn = vi
+      .fn()
+      .mockResolvedValue(makeScanResult("brand-new.com", "B", {}));
+
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+    expect(result.scanned).toBe(1);
+    expect(result.alerts).toBe(0); // first scan is not a "drop"
+  });
+
+  it("records a grade_drop alert when the grade falls", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "falling.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: now - monthSeconds - 1,
+      last_grade: "A",
+      created_at: 0,
+    });
+
+    const scanFn = vi
+      .fn()
+      .mockResolvedValue(makeScanResult("falling.com", "C", {}));
+
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+    expect(result.alerts).toBe(1);
+    expect([...alerts.values()][0]).toMatchObject({
+      domain_id: 1,
+      alert_type: "grade_drop",
+      previous_value: "A",
+      new_value: "C",
+    });
+  });
+
+  it("records protocol_regression alerts when statuses worsen", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "regress.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: now - weekSeconds - 1,
+      last_grade: "B",
+      created_at: 0,
+    });
+    // Seed previous history so protocol diff has a baseline
+    history.set(99, {
+      id: 99,
+      domain_id: 1,
+      grade: "B",
+      score_factors: null,
+      protocol_results: JSON.stringify({
+        dmarc: { status: "pass" },
+        spf: { status: "pass" },
+        dkim: { status: "pass" },
+        bimi: { status: "pass" },
+        mta_sts: { status: "pass" },
+      }),
+      scanned_at: now - weekSeconds - 1,
+    });
+
+    const scanFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeScanResult("regress.com", "B", { dmarc: "fail", spf: "warn" }),
+      );
+
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+
+    expect(result.scanned).toBe(1);
+    expect(result.alerts).toBe(2); // dmarc pass→fail, spf pass→warn
+    const types = [...alerts.values()].map((a) => a.alert_type);
+    expect(types.every((t) => t === "protocol_regression")).toBe(true);
+  });
+
+  it("counts errors but continues past a failing domain", async () => {
+    domains.set(1, {
+      id: 1,
+      user_id: "u",
+      domain: "broken.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: null,
+      last_grade: null,
+      created_at: 0,
+    });
+    domains.set(2, {
+      id: 2,
+      user_id: "u",
+      domain: "ok.com",
+      is_free: 1,
+      scan_frequency: "monthly",
+      last_scanned_at: null,
+      last_grade: null,
+      created_at: 1,
+    });
+
+    const scanFn = vi.fn(async (domain: string) => {
+      if (domain === "broken.com") throw new Error("DNS timeout");
+      return makeScanResult(domain, "A", {});
+    });
+
+    const result = await runDueRescans({
+      db: makeD1Mock(),
+      now,
+      scanFn: scanFn as never,
+    });
+    expect(result.errors).toBe(1);
+    expect(result.scanned).toBe(1);
+  });
+});
