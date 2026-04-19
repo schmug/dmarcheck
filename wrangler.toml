@@ -11,10 +11,11 @@ routes = [
 [dev]
 port = 8790
 
-# Nightly rescan of monitored domains for authed users. 06:17 UTC chosen
-# off-peak and off-the-hour to spread DNS load away from :00 herd cycles.
+# TEMPORARY test cron — primary fire at 23:33 UTC with a 23:50 UTC safety
+# net to validate the end-to-end alert email pipeline against a seeded
+# alerts row. Revert to ["17 6 * * *"] after verification.
 [triggers]
-crons = ["17 6 * * *"]
+crons = ["33 23 * * *", "50 23 * * *"]
 
 [[d1_databases]]
 binding = "DB"
