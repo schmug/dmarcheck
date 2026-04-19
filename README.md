@@ -137,6 +137,22 @@ npm test          # runs unit tests
 | Rate limit window | `src/rate-limit.ts` → `WINDOW_SECONDS` | 60s |
 | DKIM selectors | `src/analyzers/dkim.ts` → `COMMON_SELECTORS` | ~30 common selectors |
 
+### Optional: paid-tier env vars
+
+The free scanner, dashboard, and API work without any of the following. They
+only activate on the hosted tier at `dmarc.mx`; self-host deploys can ignore
+them entirely. Set any of these as wrangler secrets (`wrangler secret put NAME`):
+
+| Secret | Purpose |
+|--------|---------|
+| `STRIPE_SECRET_KEY` | Stripe API key for Checkout + Portal calls |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for the `/webhooks/stripe` endpoint |
+| `STRIPE_PRICE_ID_PRO` | Price ID for the Pro plan offered via Checkout |
+
+If any of the three are missing, `isBillingEnabled` returns false and all
+paid-tier routes return 404. This keeps a fresh `wrangler deploy` working
+end-to-end for self-hosters who only want the free scanner.
+
 ## Stack
 
 - [Hono](https://hono.dev) — lightweight web framework for Cloudflare Workers

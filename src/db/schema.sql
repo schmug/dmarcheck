@@ -52,8 +52,28 @@ CREATE TABLE IF NOT EXISTS webhooks (
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- Stripe subscription state (Phase 3 M2)
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  stripe_subscription_id TEXT NOT NULL UNIQUE,
+  stripe_price_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  current_period_end INTEGER,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Idempotency ledger for Stripe webhook events
+CREATE TABLE IF NOT EXISTS stripe_events (
+  event_id TEXT PRIMARY KEY,
+  received_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_domains_user_id ON domains(user_id);
 CREATE INDEX IF NOT EXISTS idx_scan_history_domain_id ON scan_history(domain_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_domain_id ON alerts(domain_id);
 CREATE INDEX IF NOT EXISTS idx_domains_last_scanned ON domains(last_scanned_at);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
