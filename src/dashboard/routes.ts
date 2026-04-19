@@ -3,7 +3,7 @@ import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
 import { getDomainByUserAndName, getDomainsByUser } from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
-import { getUserById, setApiKey } from "../db/users.js";
+import { getUserById, setApiKey, setEmailAlertsEnabled } from "../db/users.js";
 import { scan } from "../orchestrator.js";
 import {
   renderDashboardPage,
@@ -112,8 +112,20 @@ dashboardRoutes.get("/settings", async (c) => {
       apiKey: user.api_key,
       webhookUrl: webhook?.url ?? null,
       hasStripe: !!user.stripe_customer_id,
+      emailAlertsEnabled: user.email_alerts_enabled === 1,
     }),
   );
+});
+
+// Toggle email alert preference. Presence of a "enabled" form field means on,
+// absence means off (standard checkbox semantics from HTML forms).
+dashboardRoutes.post("/settings/email-alerts", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const body = await c.req.parseBody();
+  const enabled = body.enabled === "on" || body.enabled === "1";
+  await setEmailAlertsEnabled(db, session.sub, enabled);
+  return c.redirect("/dashboard/settings");
 });
 
 // Generate/regenerate API key

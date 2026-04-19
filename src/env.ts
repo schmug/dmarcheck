@@ -5,4 +5,7 @@ export interface Env {
   WORKOS_REDIRECT_URI: string;
   SESSION_SECRET: string;
   SENTRY_DSN?: string;
+  // Cloudflare Email Sending binding. Optional so self-host deploys without
+  // a verified sender still boot; the dispatcher no-ops when absent.
+  EMAIL?: SendEmail;
 }

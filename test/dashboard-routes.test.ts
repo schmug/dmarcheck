@@ -502,6 +502,63 @@ describe("dashboard/routes", () => {
     });
   });
 
+  describe("POST /dashboard/settings/email-alerts", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/settings/email-alerts", {
+        method: "POST",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("flips email_alerts_enabled to 0 when checkbox is unchecked", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const res = await app.request("/dashboard/settings/email-alerts", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard/settings");
+      const update = writes.find((w) =>
+        w.sql.includes("UPDATE users SET email_alerts_enabled"),
+      );
+      expect(update?.bindings[0]).toBe(0);
+    });
+
+    it("flips email_alerts_enabled to 1 when checkbox is checked", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const res = await app.request("/dashboard/settings/email-alerts", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "enabled=on",
+      });
+
+      expect(res.status).toBe(302);
+      const update = writes.find((w) =>
+        w.sql.includes("UPDATE users SET email_alerts_enabled"),
+      );
+      expect(update?.bindings[0]).toBe(1);
+    });
+  });
+
   describe("POST /dashboard/settings/webhook", () => {
     it("redirects to /auth/login without a session cookie", async () => {
       const db = createMockDB({});
