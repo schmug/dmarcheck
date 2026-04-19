@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
 import { getDomainByUserAndName, getDomainsByUser } from "../db/domains.js";
+import { recordScan } from "../db/scans.js";
 import { getUserById, setApiKey } from "../db/users.js";
+import { scan } from "../orchestrator.js";
 import {
   renderDashboardPage,
   renderDomainDetailPage,
@@ -68,10 +70,28 @@ dashboardRoutes.get("/domain/:domain", async (c) => {
   );
 });
 
-// Manual scan trigger (stub — Phase 2 will add full monitoring)
+// Manual scan trigger — runs the orchestrator for a user-owned domain and
+// persists the result to scan_history + domains.last_*. Rate-limiting comes
+// from the session cookie gating this path (plus D1 write volume per user).
 dashboardRoutes.post("/domain/:domain/scan", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
   const domainName = c.req.param("domain");
-  return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`);
+
+  const owned = await getDomainByUserAndName(db, session.sub, domainName);
+  if (!owned) {
+    return c.text("Domain not found", 404);
+  }
+
+  const result = await scan(owned.domain);
+  await recordScan(db, {
+    domainId: owned.id,
+    grade: result.grade,
+    scoreFactors: result.breakdown.factors,
+    protocolResults: result.protocols,
+  });
+
+  return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`, 303);
 });
 
 // Settings page
