@@ -8,4 +8,11 @@ export interface Env {
   // Cloudflare Email Sending binding. Optional so self-host deploys without
   // a verified sender still boot; the dispatcher no-ops when absent.
   EMAIL?: SendEmail;
+  // Stripe billing (Phase 3 M2). All three must be present for billing to
+  // activate; isBillingEnabled() in src/billing/feature-flag.ts gates paid
+  // code paths so self-hosters without Stripe keys still get a working
+  // free-tier deploy.
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_ID_PRO?: string;
 }
