@@ -55,6 +55,30 @@ export async function deleteDomain(
     .run();
 }
 
+// Returns domains whose cadence has come due: monthly domains scanned more
+// than 30 days ago (or never), weekly domains scanned more than 7 days ago.
+// The constants are defined inline because the schema only permits two
+// frequencies today; if we add more, split this into a per-frequency helper.
+export async function getDueDomains(
+  db: D1Database,
+  now: number,
+  limit = 500,
+): Promise<Domain[]> {
+  const monthlyCutoff = now - 30 * 24 * 60 * 60;
+  const weeklyCutoff = now - 7 * 24 * 60 * 60;
+  const result = await db
+    .prepare(
+      `SELECT * FROM domains
+       WHERE (scan_frequency = 'monthly' AND (last_scanned_at IS NULL OR last_scanned_at < ?))
+          OR (scan_frequency = 'weekly' AND (last_scanned_at IS NULL OR last_scanned_at < ?))
+       ORDER BY last_scanned_at ASC NULLS FIRST
+       LIMIT ?`,
+    )
+    .bind(monthlyCutoff, weeklyCutoff, limit)
+    .all<Domain>();
+  return result.results;
+}
+
 export async function updateLastScan(
   db: D1Database,
   domainId: number,

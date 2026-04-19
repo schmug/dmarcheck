@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import app, { normalizeDomain, parseSelectors } from "../src/index.js";
+import { app, normalizeDomain, parseSelectors } from "../src/index.js";
 import { _memoryStore } from "../src/rate-limit.js";
 
 vi.mock("../src/cache.js", () => ({
