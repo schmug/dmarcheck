@@ -191,6 +191,7 @@ describe("renderSettingsPage", () => {
       apiKey: null,
       webhookUrl: null,
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("Generate API Key");
     expect(html).not.toContain("Regenerate");
@@ -202,6 +203,7 @@ describe("renderSettingsPage", () => {
       apiKey: "dmx_abc123secret",
       webhookUrl: null,
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("dmx_abc123secret");
     expect(html).toContain("Regenerate");
@@ -213,6 +215,7 @@ describe("renderSettingsPage", () => {
       apiKey: null,
       webhookUrl: null,
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("admin@example.com");
     expect(html).toContain("Account");
@@ -224,6 +227,7 @@ describe("renderSettingsPage", () => {
       apiKey: null,
       webhookUrl: "https://hooks.example.com/dmarc",
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("https://hooks.example.com/dmarc");
     expect(html).toContain("Webhook");
@@ -235,6 +239,7 @@ describe("renderSettingsPage", () => {
       apiKey: null,
       webhookUrl: null,
       hasStripe: true,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("Manage Billing");
   });
@@ -245,6 +250,7 @@ describe("renderSettingsPage", () => {
       apiKey: null,
       webhookUrl: null,
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     expect(html).toContain("no active subscription");
     expect(html).toContain("Upgrade");
@@ -256,10 +262,36 @@ describe("renderSettingsPage", () => {
       apiKey: "<script>alert(1)</script>",
       webhookUrl: null,
       hasStripe: false,
+      emailAlertsEnabled: true,
     });
     // The escaped form must appear; raw user content must not be injected as HTML
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     // The api-key-display div must contain escaped content
     expect(html).toContain('class="api-key-display">&lt;script&gt;');
+  });
+
+  it("renders the email-alerts section with the checkbox checked when enabled", () => {
+    const html = renderSettingsPage({
+      email: "user@example.com",
+      apiKey: null,
+      webhookUrl: null,
+      hasStripe: false,
+      emailAlertsEnabled: true,
+    });
+    expect(html).toContain("Email Alerts");
+    expect(html).toContain('name="enabled" checked');
+    expect(html).toContain("/dashboard/settings/email-alerts");
+  });
+
+  it("renders the checkbox unchecked when email alerts are disabled", () => {
+    const html = renderSettingsPage({
+      email: "user@example.com",
+      apiKey: null,
+      webhookUrl: null,
+      hasStripe: false,
+      emailAlertsEnabled: false,
+    });
+    expect(html).toContain('name="enabled" >');
+    expect(html).not.toContain('name="enabled" checked');
   });
 });

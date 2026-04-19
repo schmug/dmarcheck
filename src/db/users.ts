@@ -4,6 +4,7 @@ export interface User {
   email_domain: string;
   stripe_customer_id: string | null;
   api_key: string | null;
+  email_alerts_enabled: number;
   created_at: number;
 }
 
@@ -53,5 +54,16 @@ export async function setApiKey(
   await db
     .prepare("UPDATE users SET api_key = ? WHERE id = ?")
     .bind(apiKey, userId)
+    .run();
+}
+
+export async function setEmailAlertsEnabled(
+  db: D1Database,
+  userId: string,
+  enabled: boolean,
+): Promise<void> {
+  await db
+    .prepare("UPDATE users SET email_alerts_enabled = ? WHERE id = ?")
+    .bind(enabled ? 1 : 0, userId)
     .run();
 }

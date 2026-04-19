@@ -2,6 +2,8 @@ import * as Sentry from "@sentry/cloudflare";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { dispatchPendingAlerts } from "./alerts/dispatcher.js";
+import { validateUnsubscribeToken } from "./alerts/unsubscribe.js";
 import type {
   BimiResult,
   DkimResult,
@@ -18,6 +20,7 @@ import { getCachedScan, setCachedScan } from "./cache.js";
 import { runDueRescans } from "./cron/rescan.js";
 import { generateCsv } from "./csv.js";
 import { dashboardRoutes } from "./dashboard/routes.js";
+import { setEmailAlertsEnabled } from "./db/users.js";
 import type { Env } from "./env.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
@@ -925,21 +928,46 @@ async function scheduled(
   ctx: ExecutionContext,
 ): Promise<void> {
   if (!env.DB) return;
-  const work = runDueRescans({
-    db: env.DB,
-    now: Math.floor(Date.now() / 1000),
-  })
-    .then((result) => {
-      const scope = Sentry.getCurrentScope();
-      scope.setTag("cron.scanned", String(result.scanned));
-      scope.setTag("cron.alerts", String(result.alerts));
-      scope.setTag("cron.errors", String(result.errors));
-    })
-    .catch((err) => {
-      Sentry.captureException(err);
+  const work = (async () => {
+    const rescanResult = await runDueRescans({
+      db: env.DB,
+      now: Math.floor(Date.now() / 1000),
     });
+    const scope = Sentry.getCurrentScope();
+    scope.setTag("cron.scanned", String(rescanResult.scanned));
+    scope.setTag("cron.alerts", String(rescanResult.alerts));
+    scope.setTag("cron.errors", String(rescanResult.errors));
+
+    // Dispatch runs unconditionally — alerts from prior cron runs may still
+    // be pending if the EMAIL binding was absent or failed previously.
+    const dispatchResult = await dispatchPendingAlerts(env);
+    scope.setTag("cron.emails_sent", String(dispatchResult.sent));
+    scope.setTag("cron.emails_skipped", String(dispatchResult.skipped));
+    scope.setTag("cron.emails_errors", String(dispatchResult.errors));
+  })().catch((err) => {
+    Sentry.captureException(err);
+  });
   ctx.waitUntil(work);
 }
+
+// Public unsubscribe endpoint reached from email links. The token is the
+// authentication — no session cookie required. Invalid / tampered tokens
+// return a 400. Successful unsubscribe flips users.email_alerts_enabled to 0
+// and renders a confirmation page.
+app.get("/alerts/unsubscribe", async (c) => {
+  const token = c.req.query("token");
+  if (!token) {
+    return c.html(renderError("Missing unsubscribe token."), 400);
+  }
+  const userId = await validateUnsubscribeToken(token, c.env.SESSION_SECRET);
+  if (!userId) {
+    return c.html(renderError("Invalid or expired unsubscribe link."), 400);
+  }
+  await setEmailAlertsEnabled(c.env.DB, userId, false);
+  return c.html(
+    `<!doctype html><html><head><meta charset="utf-8"><title>Unsubscribed</title></head><body style="font-family:system-ui;padding:32px;max-width:520px;margin:0 auto;line-height:1.5"><h1>Unsubscribed</h1><p>You will no longer receive grade-drop alerts from dmarc.mx.</p><p>You can re-enable alerts any time from <a href="/dashboard/settings">dashboard settings</a>.</p></body></html>`,
+  );
+});
 
 const handler: ExportedHandler<Env> = {
   fetch: app.fetch.bind(app),

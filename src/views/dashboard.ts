@@ -449,11 +449,13 @@ export function renderSettingsPage({
   apiKey,
   webhookUrl,
   hasStripe,
+  emailAlertsEnabled,
 }: {
   email: string;
   apiKey: string | null;
   webhookUrl: string | null;
   hasStripe: boolean;
+  emailAlertsEnabled: boolean;
 }): string {
   const apiKeySection = apiKey
     ? `<div class="api-key-display">${esc(apiKey)}</div>
@@ -495,6 +497,20 @@ export function renderSettingsPage({
       value="${webhookUrl ? esc(webhookUrl) : ""}"
     >
     <button type="submit" class="btn">Save Webhook</button>
+  </form>
+</div>
+
+<div class="settings-section">
+  <h2>Email Alerts</h2>
+  <p style="font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.75rem">
+    We email you when a monitored domain's grade drops or a protocol regresses.
+  </p>
+  <form method="POST" action="/dashboard/settings/email-alerts">
+    <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+      <input type="checkbox" name="enabled" ${emailAlertsEnabled ? "checked" : ""}>
+      <span>Send me grade-drop alerts by email</span>
+    </label>
+    <button type="submit" class="btn btn-secondary">Save Preference</button>
   </form>
 </div>
 

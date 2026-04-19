@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   email_domain TEXT NOT NULL,
   stripe_customer_id TEXT,
   api_key TEXT UNIQUE,
+  email_alerts_enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
