@@ -448,13 +448,15 @@ export function renderSettingsPage({
   email,
   apiKey,
   webhookUrl,
-  hasStripe,
+  plan,
+  billingEnabled,
   emailAlertsEnabled,
 }: {
   email: string;
   apiKey: string | null;
   webhookUrl: string | null;
-  hasStripe: boolean;
+  plan: "free" | "pro";
+  billingEnabled: boolean;
   emailAlertsEnabled: boolean;
 }): string {
   const apiKeySection = apiKey
@@ -467,10 +469,14 @@ export function renderSettingsPage({
   <button type="submit" class="btn">Generate API Key</button>
 </form>`;
 
-  const billingSection = hasStripe
-    ? `<a href="/dashboard/billing" class="btn btn-secondary">Manage Billing</a>`
-    : `<p>You have no active subscription.</p>
-<a href="/dashboard/billing/subscribe" class="btn">Upgrade</a>`;
+  const planLabel = plan === "pro" ? "Pro" : "Free";
+  const billingSection = !billingEnabled
+    ? `<p>Billing is not configured on this deployment.</p>`
+    : plan === "pro"
+      ? `<p>You're on the <strong>${planLabel}</strong> plan.</p>
+<a href="/dashboard/billing/portal" class="btn btn-secondary">Manage Billing</a>`
+      : `<p>You're on the <strong>${planLabel}</strong> plan.</p>
+<a href="/dashboard/billing/subscribe" class="btn">Upgrade to Pro</a>`;
 
   const body = `<h1 class="dashboard-title">Settings</h1>
 

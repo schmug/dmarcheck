@@ -16,6 +16,7 @@ import type {
 import { API_CATALOG_JSON } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { authRoutes } from "./auth/routes.js";
+import { stripeWebhookRoutes } from "./billing/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
 import { runDueRescans } from "./cron/rescan.js";
 import { generateCsv } from "./csv.js";
@@ -198,6 +199,10 @@ app.route("/auth", authRoutes);
 
 // Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)
 app.route("/dashboard", dashboardRoutes);
+
+// Stripe webhook (public — signature-verified). Self-gates on
+// isBillingEnabled so self-host deploys without Stripe env still boot.
+app.route("/webhooks", stripeWebhookRoutes);
 
 function markdownResponse(c: Context, body: string, status = 200) {
   return c.body(body, status as 200, {

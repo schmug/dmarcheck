@@ -57,6 +57,27 @@ export async function setApiKey(
     .run();
 }
 
+export async function getUserByStripeCustomerId(
+  db: D1Database,
+  stripeCustomerId: string,
+): Promise<User | null> {
+  return db
+    .prepare("SELECT * FROM users WHERE stripe_customer_id = ?")
+    .bind(stripeCustomerId)
+    .first<User>();
+}
+
+export async function setStripeCustomerId(
+  db: D1Database,
+  userId: string,
+  stripeCustomerId: string,
+): Promise<void> {
+  await db
+    .prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?")
+    .bind(stripeCustomerId, userId)
+    .run();
+}
+
 export async function setEmailAlertsEnabled(
   db: D1Database,
   userId: string,

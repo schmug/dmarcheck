@@ -190,7 +190,8 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("Generate API Key");
@@ -202,7 +203,8 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: "dmx_abc123secret",
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("dmx_abc123secret");
@@ -214,7 +216,8 @@ describe("renderSettingsPage", () => {
       email: "admin@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("admin@example.com");
@@ -226,34 +229,51 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: null,
       webhookUrl: "https://hooks.example.com/dmarc",
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("https://hooks.example.com/dmarc");
     expect(html).toContain("Webhook");
   });
 
-  it("renders manage billing link when hasStripe is true", () => {
+  it("renders the Pro badge and Manage Billing link for pro users", () => {
     const html = renderSettingsPage({
       email: "user@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: true,
+      plan: "pro",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("Manage Billing");
+    expect(html).toContain("<strong>Pro</strong>");
   });
 
-  it("renders no subscription message when hasStripe is false", () => {
+  it("renders the Free badge and an Upgrade link for free users", () => {
     const html = renderSettingsPage({
       email: "user@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
-    expect(html).toContain("no active subscription");
-    expect(html).toContain("Upgrade");
+    expect(html).toContain("<strong>Free</strong>");
+    expect(html).toContain("Upgrade to Pro");
+  });
+
+  it("shows a 'not configured' message when billing is disabled on this deployment", () => {
+    const html = renderSettingsPage({
+      email: "user@example.com",
+      apiKey: null,
+      webhookUrl: null,
+      plan: "free",
+      billingEnabled: false,
+      emailAlertsEnabled: true,
+    });
+    expect(html).toContain("not configured");
+    expect(html).not.toContain("Upgrade to Pro");
   });
 
   it("escapes API key to prevent XSS", () => {
@@ -261,7 +281,8 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: "<script>alert(1)</script>",
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     // The escaped form must appear; raw user content must not be injected as HTML
@@ -275,7 +296,8 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: true,
     });
     expect(html).toContain("Email Alerts");
@@ -288,7 +310,8 @@ describe("renderSettingsPage", () => {
       email: "user@example.com",
       apiKey: null,
       webhookUrl: null,
-      hasStripe: false,
+      plan: "free",
+      billingEnabled: true,
       emailAlertsEnabled: false,
     });
     expect(html).toContain('name="enabled" >');

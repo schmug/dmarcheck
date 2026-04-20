@@ -1,8 +1,10 @@
 import { Hono } from "hono";
 import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
+import { dashboardBillingRoutes } from "../billing/routes.js";
 import { getDomainByUserAndName, getDomainsByUser } from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
+import { getPlanForUser } from "../db/subscriptions.js";
 import { getUserById, setApiKey, setEmailAlertsEnabled } from "../db/users.js";
 import { scan } from "../orchestrator.js";
 import {
@@ -15,6 +17,10 @@ export const dashboardRoutes = new Hono();
 
 // All dashboard routes require auth
 dashboardRoutes.use("*", requireAuth);
+
+// Billing sub-routes (upgrade / portal). Self-gates on isBillingEnabled so a
+// self-host deploy without Stripe env vars still 404s these cleanly.
+dashboardRoutes.route("/billing", dashboardBillingRoutes);
 
 // Domain list
 dashboardRoutes.get("/", async (c) => {
@@ -106,12 +112,15 @@ dashboardRoutes.get("/settings", async (c) => {
     .prepare("SELECT url FROM webhooks WHERE user_id = ?")
     .bind(session.sub)
     .first<{ url: string }>();
+  const plan = await getPlanForUser(db, session.sub);
+  const env = c.env as { STRIPE_SECRET_KEY?: string };
   return c.html(
     renderSettingsPage({
       email: user.email,
       apiKey: user.api_key,
       webhookUrl: webhook?.url ?? null,
-      hasStripe: !!user.stripe_customer_id,
+      plan,
+      billingEnabled: Boolean(env.STRIPE_SECRET_KEY),
       emailAlertsEnabled: user.email_alerts_enabled === 1,
     }),
   );
