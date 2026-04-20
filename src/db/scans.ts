@@ -60,3 +60,62 @@ export async function getScanHistory(
     .all<ScanHistoryRow>();
   return result.results;
 }
+
+export type ProtocolStatus = "pass" | "warn" | "fail" | "info" | null;
+
+export interface ScanHistoryWithProtocols {
+  grade: string;
+  scannedAt: number;
+  protocols: {
+    dmarc: ProtocolStatus;
+    spf: ProtocolStatus;
+    dkim: ProtocolStatus;
+    bimi: ProtocolStatus;
+    mta_sts: ProtocolStatus;
+  };
+}
+
+function asStatus(value: unknown): ProtocolStatus {
+  return value === "pass" ||
+    value === "warn" ||
+    value === "fail" ||
+    value === "info"
+    ? value
+    : null;
+}
+
+// Parses the JSON blob in `protocol_results` into a flat per-protocol status
+// map so history views don't have to reach into the orchestrator shape. Any
+// protocol missing or unparseable is returned as null — the view renders that
+// as "—" rather than failing the whole row.
+export async function getScanHistoryWithProtocols(
+  db: D1Database,
+  domainId: number,
+  limit: number,
+): Promise<ScanHistoryWithProtocols[]> {
+  const rows = await getScanHistory(db, domainId, limit);
+  return rows.map((row) => {
+    let parsed: Record<string, { status?: unknown } | undefined> | null = null;
+    if (row.protocol_results) {
+      try {
+        parsed = JSON.parse(row.protocol_results) as Record<
+          string,
+          { status?: unknown } | undefined
+        >;
+      } catch {
+        parsed = null;
+      }
+    }
+    return {
+      grade: row.grade,
+      scannedAt: row.scanned_at,
+      protocols: {
+        dmarc: asStatus(parsed?.dmarc?.status),
+        spf: asStatus(parsed?.spf?.status),
+        dkim: asStatus(parsed?.dkim?.status),
+        bimi: asStatus(parsed?.bimi?.status),
+        mta_sts: asStatus(parsed?.mta_sts?.status),
+      },
+    };
+  });
+}
