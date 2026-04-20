@@ -131,6 +131,56 @@ code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-siz
   min-height: 100vh;
   min-height: 100dvh;
   padding: 2rem;
+  position: relative;
+}
+.landing-nav {
+  position: absolute; top: 1.25rem; right: 1.5rem;
+  z-index: 2;
+}
+
+/* Persistent login pill (landing + report nav) */
+.nav-login {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 12px 5px 5px;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: 999px;
+  color: var(--clr-text);
+  font-size: 0.82rem; font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.nav-login:hover {
+  background: var(--clr-bg);
+  border-color: var(--clr-border-hover);
+  text-decoration: none;
+}
+.nav-login:focus-visible {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: 2px;
+}
+.nav-login-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--clr-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.nav-login-avatar .creature { transform: scale(0.72); transform-origin: center; }
+.nav-login-arrow {
+  color: var(--clr-text-faint); font-size: 0.75rem;
+  transition: color 0.15s, transform 0.15s;
+}
+.nav-login:hover .nav-login-arrow {
+  color: var(--clr-accent);
+  transform: translate(1px, -1px);
+}
+@media (max-width: 480px) {
+  .nav-login-label { display: none; }
+  .nav-login { padding: 4px; }
+  .landing-nav { top: 0.75rem; right: 0.75rem; }
 }
 .landing-main {
   flex: 1; display: flex; flex-direction: column; align-items: center;
@@ -257,6 +307,8 @@ h1.tagline, .tagline { color: var(--clr-text-dim); font-size: 1.1rem; font-weigh
   display: flex; align-items: center; gap: 12px; margin-bottom: 2rem;
 }
 .report-nav a { font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
+.report-nav-spacer { flex: 1; }
+.report-nav .nav-login { font-size: 0.82rem; }
 .report-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
 .report-header .creature { margin-left: 8px; }
 h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
@@ -495,6 +547,75 @@ h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
   white-space: nowrap;
 }
 .snippet-link:hover { text-decoration: underline; }
+
+/* Post-scan monitor upsell */
+.monitor-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1.1fr);
+  gap: 22px;
+  align-items: stretch;
+  margin: 1.75rem 0 1rem;
+  padding: 18px 22px;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: 12px;
+}
+.monitor-snap { min-width: 0; }
+.monitor-eyebrow {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--clr-text-faint); font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.monitor-snap-heading {
+  font-size: 0.95rem; font-weight: 600; color: var(--clr-text);
+  margin-top: 4px;
+}
+.snap-list {
+  margin-top: 10px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem; line-height: 1.65;
+  color: var(--clr-text-muted);
+}
+.snap-row { display: grid; grid-template-columns: 14px auto 1fr; gap: 6px; }
+.snap-row-muted { opacity: 0.55; }
+.snap-mark { color: var(--clr-pass); font-weight: 700; text-align: center; }
+.snap-row-muted .snap-mark { color: var(--clr-text-faint); }
+.snap-label { color: var(--clr-text-dim); }
+.snap-val { color: var(--clr-text); }
+.monitor-divider { background: var(--clr-border); }
+.monitor-pitch {
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 12px; min-width: 0;
+}
+.monitor-pitch-lede {
+  margin: 0;
+  font-size: 0.92rem; line-height: 1.5;
+  color: var(--clr-text);
+}
+.monitor-pitch-lede strong { color: var(--clr-accent); font-weight: 600; }
+.monitor-cta-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.monitor-cta {
+  display: inline-flex; align-items: center;
+  padding: 9px 16px;
+  background: var(--clr-accent); color: var(--clr-on-accent);
+  border-radius: 8px;
+  font-size: 0.86rem; font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.monitor-cta:hover { background: var(--clr-accent-hover); text-decoration: none; }
+.monitor-cta-meta {
+  font-size: 0.72rem; color: var(--clr-text-faint);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+@media (max-width: 640px) {
+  .monitor-card {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .monitor-divider { display: none; }
+}
 
 /* Scoring breakdown page */
 .breakdown { max-width: 700px; margin: 0 auto; padding: 2rem; }
