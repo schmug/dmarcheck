@@ -60,13 +60,18 @@ describe("/.well-known/api-catalog", () => {
         status: Array<{ href: string }>;
       }>;
     };
-    expect(body.linkset).toHaveLength(1);
-    const [entry] = body.linkset;
-    expect(entry.anchor).toBe("https://dmarc.mx/api/check");
-    expect(entry["service-desc"][0].href).toBe("https://dmarc.mx/openapi.json");
-    expect(entry["service-desc"][0].type).toBe("application/openapi+json");
-    expect(entry["service-doc"][0].href).toBe("https://dmarc.mx/docs/api");
-    expect(entry.status[0].href).toBe("https://dmarc.mx/health");
+    expect(body.linkset).toHaveLength(2);
+    const anchors = body.linkset.map((e) => e.anchor);
+    expect(anchors).toContain("https://dmarc.mx/api/check");
+    expect(anchors).toContain("https://dmarc.mx/api/bulk-scan");
+    for (const entry of body.linkset) {
+      expect(entry["service-desc"][0].href).toBe(
+        "https://dmarc.mx/openapi.json",
+      );
+      expect(entry["service-desc"][0].type).toBe("application/openapi+json");
+      expect(entry["service-doc"][0].href).toBe("https://dmarc.mx/docs/api");
+      expect(entry.status[0].href).toBe("https://dmarc.mx/health");
+    }
   });
 });
 
@@ -85,6 +90,7 @@ describe("/openapi.json", () => {
     expect(doc.openapi).toBe("3.1.0");
     for (const path of [
       "/api/check",
+      "/api/bulk-scan",
       "/api/check/stream",
       "/check",
       "/health",
@@ -94,6 +100,7 @@ describe("/openapi.json", () => {
     }
     expect(doc.components.schemas.ScanResult).toBeDefined();
     expect(doc.components.schemas.DmarcResult).toBeDefined();
+    expect(doc.components.schemas.BulkScanResponse).toBeDefined();
   });
 });
 

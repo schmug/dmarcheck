@@ -13,7 +13,12 @@ import type {
   ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
-import { API_CATALOG_JSON } from "./api/catalog.js";
+import {
+  BULK_IN_BAND_CAP,
+  isCapExceeded,
+  processBulkScan,
+} from "./api/bulk-scan.js";
+import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
@@ -348,6 +353,18 @@ app.use(
 
 app.use(
   "/api/check",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
+
+// Bulk scan also runs N analyzers in-band per request — same rate-limit
+// posture as /api/check (Pro bearer → user bucket; everyone else → IP).
+// TODO(phase-4-pr3-followup): once per-plan limits expose a "weight" knob,
+// charge bulk requests proportionally to the in-band scan count instead of
+// counting as a single request.
+app.use(
+  "/api/bulk-scan",
   rateLimitMiddleware((c, result, headers) =>
     c.json({ error: blockedMessage(result) }, { status: 429, headers }),
   ),
@@ -744,6 +761,69 @@ app.get("/api/check", async (c) => {
     const message = err instanceof Error ? err.message : "Internal error";
     return c.json({ error: message }, 500);
   }
+});
+
+// Bulk scan — Pro-only, bearer-authenticated. Up to BULK_TOTAL_CAP submitted;
+// the first BULK_IN_BAND_CAP are scanned synchronously in batches and the
+// rest are queued by inserting `domains` rows for the next cron pickup. Per-
+// entry results let the caller distinguish scanned/queued/invalid/error.
+app.post("/api/bulk-scan", async (c) => {
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
+  if (!bearer) {
+    return c.json(
+      {
+        error:
+          "Bearer token required. Generate one at /dashboard/settings/api-keys.",
+      },
+      401,
+    );
+  }
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) {
+    return c.json({ error: "Database not configured" }, 500);
+  }
+  const plan = await getPlanForUser(db, bearer.userId);
+  if (plan !== "pro") {
+    return c.json(
+      {
+        error: "Bulk scan requires a Pro plan.",
+        upgrade: `${CANONICAL_ORIGIN}/dashboard/billing/subscribe`,
+      },
+      402,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const rawDomains = (body as { domains?: unknown })?.domains;
+  if (!Array.isArray(rawDomains)) {
+    return c.json({ error: "Body must be { domains: string[] }" }, 400);
+  }
+  if (!rawDomains.every((d): d is string => typeof d === "string")) {
+    return c.json({ error: "All domains must be strings" }, 400);
+  }
+
+  const outcome = await processBulkScan({
+    db,
+    userId: bearer.userId,
+    rawDomains,
+  });
+  if (isCapExceeded(outcome)) {
+    return c.json(
+      {
+        error: `Too many domains: ${outcome.submitted} > ${outcome.cap}`,
+        cap: outcome.cap,
+        in_band_cap: BULK_IN_BAND_CAP,
+      },
+      400,
+    );
+  }
+  return c.json(outcome);
 });
 
 // Fire-and-forget: look up the (user, domain) pair and record a scan_history

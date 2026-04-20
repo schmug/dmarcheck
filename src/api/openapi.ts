@@ -118,6 +118,78 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/bulk-scan": {
+      post: {
+        summary: "Bulk scan up to 100 domains (Pro)",
+        description:
+          "Bearer-authenticated, Pro-only. The first 30 domains are scanned synchronously in batches of 10; the rest are added to the watchlist and picked up by the next nightly cron. Each entry is normalized via the same rules as `/api/check`; invalid entries are reported per-row rather than rejecting the whole batch.",
+        operationId: "bulkScanDomains",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["domains"],
+                properties: {
+                  domains: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 100,
+                    items: { type: "string", maxLength: 253 },
+                  },
+                },
+              },
+              example: { domains: ["example.com", "another.org"] },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Bulk scan dispatched",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/BulkScanResponse" },
+              },
+            },
+          },
+          "400": {
+            description:
+              "Malformed body, non-string entries, or `domains.length > 100`",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" },
+              },
+            },
+          },
+          "401": {
+            description: "Bearer token missing or invalid",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" },
+              },
+            },
+          },
+          "402": {
+            description: "Bearer is on the Free plan; upgrade required",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" },
+              },
+            },
+          },
+          "429": {
+            description: "Rate limit exceeded",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" },
+              },
+            },
+          },
+        },
+      },
+    },
     "/api/check/stream": {
       get: {
         summary: "Stream scan results as Server-Sent Events",
@@ -242,6 +314,15 @@ export const OPENAPI_DOCUMENT = {
     },
   },
   components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "dmk_<32-hex>",
+        description:
+          "API key generated at /dashboard/settings/api-keys. Sent as `Authorization: Bearer dmk_…`.",
+      },
+    },
     schemas: {
       Status: statusEnum,
       Validation: validation,
@@ -249,6 +330,31 @@ export const OPENAPI_DOCUMENT = {
         type: "object",
         required: ["error"],
         properties: { error: { type: "string" } },
+      },
+      BulkScanResultEntry: {
+        type: "object",
+        required: ["domain", "status"],
+        properties: {
+          domain: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["scanned", "queued", "error", "invalid"],
+          },
+          grade: { type: "string" },
+          error: { type: "string" },
+        },
+      },
+      BulkScanResponse: {
+        type: "object",
+        required: ["accepted", "rejected", "results"],
+        properties: {
+          accepted: { type: "integer" },
+          rejected: { type: "integer" },
+          results: {
+            type: "array",
+            items: { $ref: "#/components/schemas/BulkScanResultEntry" },
+          },
+        },
       },
       DmarcResult: {
         type: "object",

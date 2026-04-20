@@ -367,6 +367,61 @@ const DASHBOARD_CSS = `
   margin-top: 0.5rem;
   flex-wrap: wrap;
 }
+.bulk-textarea {
+  display: block;
+  width: 100%;
+  min-height: 12rem;
+  padding: 0.75rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  font-family: monospace;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.bulk-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.bulk-results-table th,
+.bulk-results-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--clr-border);
+  text-align: left;
+}
+.bulk-results-table tr:last-child td {
+  border-bottom: none;
+}
+.bulk-status {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bulk-status.scanned { color: var(--clr-pass); background: var(--clr-pass-bg); }
+.bulk-status.queued { color: var(--clr-text-muted); background: var(--clr-bg); border: 1px solid var(--clr-border); }
+.bulk-status.invalid { color: var(--clr-warn); background: var(--clr-warn-bg); }
+.bulk-status.error { color: var(--clr-fail); background: var(--clr-fail-bg); }
+.bulk-summary {
+  font-size: 0.875rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 1rem;
+}
+.bulk-error {
+  background: var(--clr-fail-bg);
+  color: var(--clr-fail);
+  border: 1px solid var(--clr-fail);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
 .sparkline {
   width: 100%;
   height: 80px;
@@ -470,6 +525,7 @@ function dashboardPage(title: string, body: string, email: string): string {
   <a href="/" class="nav-logo">${generateCreature("sm")} dmarc.mx</a>
   <div class="nav-links">
     <a href="/dashboard">Domains</a>
+    <a href="/dashboard/bulk">Bulk Scan</a>
     <a href="/dashboard/settings">Settings</a>
   </div>
   <div class="nav-user">
@@ -891,6 +947,119 @@ ${errorBlock}
 </form>`;
 
   return dashboardPage("Add Domain — dmarc.mx", body, email);
+}
+
+export interface BulkResultRow {
+  domain: string;
+  status: "scanned" | "queued" | "error" | "invalid";
+  grade?: string;
+  error?: string;
+}
+
+export interface BulkRenderResults {
+  accepted: number;
+  rejected: number;
+  results: BulkResultRow[];
+}
+
+export function renderBulkScanPage({
+  email,
+  plan,
+  submitted,
+  results,
+  error,
+  totalCap,
+  inBandCap,
+}: {
+  email: string;
+  plan: "free" | "pro";
+  submitted: number | null;
+  results: BulkRenderResults | null;
+  error: string | null;
+  totalCap: number;
+  inBandCap: number;
+}): string {
+  if (plan !== "pro") {
+    const body = `<h1 class="dashboard-title">Bulk Scan</h1>
+<div class="upgrade-prompt">
+  <h2>Pro feature</h2>
+  <p>Bulk scan accepts up to ${totalCap} domains per request and runs the first ${inBandCap} immediately. Available on the Pro plan.</p>
+  <a href="/dashboard/billing/subscribe" class="btn">Upgrade to Pro</a>
+</div>
+${error ? `<div class="bulk-error">${esc(error)}</div>` : ""}`;
+    return dashboardPage("Bulk Scan — dmarc.mx", body, email);
+  }
+
+  const errorBlock = error ? `<div class="bulk-error">${esc(error)}</div>` : "";
+
+  const resultsBlock = results
+    ? `<div class="section-card">
+  <h2>Results</h2>
+  <p class="bulk-summary">
+    ${submitted ?? results.results.length} submitted —
+    <strong>${results.accepted}</strong> accepted,
+    <strong>${results.rejected}</strong> rejected.
+    First ${inBandCap} scanned in-band; the rest queued for the next nightly cron pass.
+  </p>
+  ${
+    results.results.length === 0
+      ? `<p class="bulk-summary">No domains parsed from the submission.</p>`
+      : `<table class="bulk-results-table">
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Status</th>
+        <th>Grade / Error</th>
+      </tr>
+    </thead>
+    <tbody>${results.results.map(renderBulkRow).join("")}</tbody>
+  </table>`
+  }
+</div>`
+    : "";
+
+  const body = `<h1 class="dashboard-title">Bulk Scan</h1>
+<p class="bulk-summary">
+  Paste up to <strong>${totalCap}</strong> domains (one per line, or comma-separated). The first
+  <strong>${inBandCap}</strong> will be scanned immediately; the rest queue for the next cron pass.
+</p>
+${errorBlock}
+<form method="POST" action="/dashboard/bulk" class="settings-section">
+  <label for="bulk-input" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Domains</label>
+  <textarea
+    id="bulk-input"
+    class="bulk-textarea"
+    name="domains"
+    placeholder="example.com&#10;another.org&#10;corp.example"
+    autocapitalize="none"
+    autocorrect="off"
+    spellcheck="false"
+    required
+  ></textarea>
+  <div class="action-row">
+    <button type="submit" class="btn">Scan</button>
+    <a href="/dashboard" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+${resultsBlock}`;
+
+  return dashboardPage("Bulk Scan — dmarc.mx", body, email);
+}
+
+function renderBulkRow(row: BulkResultRow): string {
+  const detail =
+    row.status === "scanned" && row.grade
+      ? `<span class="inline-grade ${gradeClass(row.grade)}">${esc(row.grade)}</span>`
+      : row.error
+        ? esc(row.error)
+        : row.status === "queued"
+          ? '<span style="color:var(--clr-text-muted)">Queued for cron</span>'
+          : "";
+  return `<tr>
+  <td><a href="/dashboard/domain/${encodeURIComponent(row.domain)}">${esc(row.domain)}</a></td>
+  <td><span class="bulk-status ${row.status}">${row.status}</span></td>
+  <td>${detail}</td>
+</tr>`;
 }
 
 export function renderSettingsPage({

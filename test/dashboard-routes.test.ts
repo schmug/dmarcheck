@@ -205,6 +205,9 @@ function createMockDB(data: {
     },
     run: async () => {
       writes?.push({ sql, bindings });
+      // Phase 4b — IDOR-scoped acknowledge UPDATE that the route's POST flow
+      // sends. The mock applies it only when the alert's owning domain
+      // belongs to the supplied user_id, mirroring the SQL.
       if (/^\s*UPDATE alerts\s+SET acknowledged_at/i.test(sql)) {
         const [now, alertId, userId] = bindings as [number, number, string];
         const alert = alerts.find((a) => a.id === alertId);
@@ -217,6 +220,28 @@ function createMockDB(data: {
         }
         alert.acknowledged_at = now;
         return { success: true, meta: { changes: 1 } };
+      }
+      // Phase 4c — apply INSERT INTO domains so processBulkScan's "create
+      // then re-fetch" pattern (avoids relying on last_row_id) finds the new
+      // row when it does the SELECT lookup right after.
+      if (/^INSERT INTO domains/i.test(sql)) {
+        const [userId, domain, isFree, frequency] = bindings as [
+          string,
+          string,
+          number,
+          string,
+        ];
+        domains.push({
+          id:
+            domains.length > 0 ? Math.max(...domains.map((d) => d.id)) + 1 : 1,
+          user_id: userId,
+          domain,
+          is_free: isFree,
+          scan_frequency: frequency,
+          last_scanned_at: null,
+          last_grade: null,
+          created_at: 1700000000,
+        });
       }
       return { success: true, meta: { changes: 1 } };
     },
@@ -1276,7 +1301,6 @@ describe("dashboard/routes", () => {
       expect(body).toContain("Needs attention");
       expect(body).toContain("Grade dropped from A to C");
       expect(body).toContain("/dashboard/alerts/11/acknowledge");
-      // Per-domain badge appears in the table row.
       expect(body).toContain("badge-alert");
       expect(body).toContain("1 alert");
     });
@@ -1448,6 +1472,127 @@ describe("dashboard/routes", () => {
         headers: { Cookie: cookie },
       });
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET /dashboard/bulk", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/bulk");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("renders an upgrade prompt for free users", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/bulk", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Pro feature");
+      expect(body).toContain("Upgrade to Pro");
+      expect(body).toContain("/dashboard/billing/subscribe");
+      // Form must NOT render for free users.
+      expect(body).not.toContain('name="domains"');
+    });
+
+    it("renders the bulk-scan textarea for Pro users", async () => {
+      const db = createMockDB({
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/bulk", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Bulk Scan");
+      expect(body).toContain('name="domains"');
+      expect(body).not.toContain("Pro feature");
+    });
+  });
+
+  describe("POST /dashboard/bulk", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/bulk", { method: "POST" });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 402 for free users (gates the action, not the route)", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/bulk", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "domains=example.com",
+      });
+      expect(res.status).toBe(402);
+      const body = await res.text();
+      expect(body).toContain("Bulk scan is a Pro feature.");
+    });
+
+    it("renders results with status badges for a Pro submission", async () => {
+      const db = createMockDB({
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      // 32 valid domains → 30 scanned, 2 queued.
+      const inputDomains = Array.from(
+        { length: 32 },
+        (_, i) => `d${i}.example`,
+      ).join("\n");
+      const body = new URLSearchParams({ domains: inputDomains });
+      const res = await app.request("/dashboard/bulk", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('class="bulk-status scanned"');
+      expect(html).toContain('class="bulk-status queued"');
+      expect(html).toContain("Results");
+      expect(html).toMatch(/32 submitted/);
+    });
+
+    it("returns 400 when more than 100 domains are submitted", async () => {
+      const db = createMockDB({
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const inputDomains = Array.from(
+        { length: 101 },
+        (_, i) => `d${i}.example`,
+      ).join("\n");
+      const body = new URLSearchParams({ domains: inputDomains });
+      const res = await app.request("/dashboard/bulk", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(html).toContain("Too many domains");
     });
   });
 });
