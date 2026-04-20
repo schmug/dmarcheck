@@ -103,7 +103,9 @@ describe("auth/routes", () => {
 
     it("returns 400 when oauth_state cookie is missing", async () => {
       const app = createTestApp();
-      const req = new Request("http://localhost/auth/callback?code=test-code&state=test-state");
+      const req = new Request(
+        "http://localhost/auth/callback?code=test-code&state=test-state",
+      );
       const res = await app.request(req, ENV);
       expect(res.status).toBe(400);
       const body = await res.text();
@@ -112,7 +114,9 @@ describe("auth/routes", () => {
 
     it("returns 400 when state values do not match", async () => {
       const app = createTestApp();
-      const req = new Request("http://localhost/auth/callback?code=test-code&state=query-state");
+      const req = new Request(
+        "http://localhost/auth/callback?code=test-code&state=query-state",
+      );
       req.headers.set("Cookie", "oauth_state=cookie-state");
       const res = await app.request(req, ENV);
       expect(res.status).toBe(400);
