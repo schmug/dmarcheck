@@ -485,28 +485,26 @@ ${errorBlock}
 
 export function renderSettingsPage({
   email,
-  apiKey,
   webhookUrl,
   plan,
   billingEnabled,
   emailAlertsEnabled,
+  showRetirementBanner,
 }: {
   email: string;
-  apiKey: string | null;
   webhookUrl: string | null;
   plan: "free" | "pro";
   billingEnabled: boolean;
   emailAlertsEnabled: boolean;
+  showRetirementBanner: boolean;
 }): string {
-  const apiKeySection = apiKey
-    ? `<div class="api-key-display">${esc(apiKey)}</div>
-<form method="POST" action="/dashboard/settings/api-key">
-  <button type="submit" class="btn btn-secondary">Regenerate API Key</button>
-</form>`
-    : `<p>No API key yet. Generate one to use the dmarc.mx API.</p>
-<form method="POST" action="/dashboard/settings/api-key">
-  <button type="submit" class="btn">Generate API Key</button>
-</form>`;
+  const retirementBanner = showRetirementBanner
+    ? `<div class="settings-section" style="border-color:var(--clr-accent);background:var(--clr-accent-muted, rgba(249,115,22,0.08))">
+  <h2 style="color:var(--clr-accent)">Your API key was retired</h2>
+  <p>We rebuilt API keys to store only a hash, so any key you had before has been invalidated. Generate a new one to keep using the dmarc.mx API.</p>
+  <a href="/dashboard/settings/api-keys" class="btn">Manage API Keys</a>
+</div>`
+    : "";
 
   const planLabel = plan === "pro" ? "Pro" : "Free";
   const billingSection = !billingEnabled
@@ -518,15 +516,16 @@ export function renderSettingsPage({
 <a href="/dashboard/billing/subscribe" class="btn">Upgrade to Pro</a>`;
 
   const body = `<h1 class="dashboard-title">Settings</h1>
-
+${retirementBanner}
 <div class="settings-section">
   <h2>Account</h2>
   <p>Signed in as <strong>${esc(email)}</strong></p>
 </div>
 
 <div class="settings-section">
-  <h2>API Key</h2>
-  ${apiKeySection}
+  <h2>API Keys</h2>
+  <p>Generate a bearer token to call the dmarc.mx API. Keys are hashed at rest; the raw value is shown only once at creation.</p>
+  <a href="/dashboard/settings/api-keys" class="btn btn-secondary">Manage API Keys</a>
 </div>
 
 <div class="settings-section">
@@ -565,4 +564,136 @@ export function renderSettingsPage({
 </div>`;
 
   return dashboardPage("Settings — dmarc.mx", body, email);
+}
+
+export interface ApiKeyListEntry {
+  id: string;
+  name: string | null;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revoked: boolean;
+}
+
+function formatEpochSeconds(ts: number | null | undefined): string | null {
+  if (ts === null || ts === undefined) return null;
+  return new Date(ts * 1000).toLocaleDateString();
+}
+
+export function toApiKeyListEntry(row: {
+  id: string;
+  name: string | null;
+  prefix: string;
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+}): ApiKeyListEntry {
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix,
+    createdAt: formatEpochSeconds(row.created_at) ?? "—",
+    lastUsedAt: formatEpochSeconds(row.last_used_at),
+    revoked: row.revoked_at !== null,
+  };
+}
+
+export function renderApiKeysPage({
+  email,
+  keys,
+  justCreated,
+  showRetirementBanner,
+}: {
+  email: string;
+  keys: ApiKeyListEntry[];
+  justCreated: string | null;
+  showRetirementBanner: boolean;
+}): string {
+  const retirementBanner = showRetirementBanner
+    ? `<div class="settings-section" style="border-color:var(--clr-accent);background:var(--clr-accent-muted, rgba(249,115,22,0.08))">
+  <h2 style="color:var(--clr-accent)">Your old API key was retired</h2>
+  <p>We now store only a hash of each key, so anything you generated before has been invalidated. Generate a replacement below.</p>
+</div>`
+    : "";
+
+  // The raw key is shown exactly once — reload and it's gone. Copy button
+  // reuses the `.copy-btn[data-copy]` handler in src/views/scripts.ts.
+  const justCreatedBanner = justCreated
+    ? `<div class="settings-section" style="border-color:var(--clr-accent);background:var(--clr-accent-muted, rgba(249,115,22,0.08))">
+  <h2 style="color:var(--clr-accent)">Save this key now</h2>
+  <p>This is the only time the full key will be shown. Copy it somewhere safe before navigating away.</p>
+  <div class="api-key-display" style="display:flex;gap:0.5rem;align-items:center">
+    <span style="flex:1;overflow-x:auto">${esc(justCreated)}</span>
+    <button type="button" class="copy-btn" data-copy="${esc(justCreated)}">Copy</button>
+  </div>
+</div>`
+    : "";
+
+  let table: string;
+  if (keys.length === 0) {
+    table = `<p style="color:var(--clr-text-muted);font-size:0.875rem">No API keys yet.</p>`;
+  } else {
+    const rows = keys
+      .map((k) => {
+        const name = k.name ? esc(k.name) : "<em>(unnamed)</em>";
+        const status = k.revoked
+          ? '<span style="color:var(--clr-fail)">Revoked</span>'
+          : '<span style="color:var(--clr-pass)">Active</span>';
+        const lastUsed = k.lastUsedAt
+          ? esc(k.lastUsedAt)
+          : '<span style="color:var(--clr-text-muted)">Never</span>';
+        const actions = k.revoked
+          ? ""
+          : `<form method="POST" action="/dashboard/settings/api-keys/revoke" style="display:inline" onsubmit="return confirm('Revoke this key? Requests using it will start failing.');">
+              <input type="hidden" name="id" value="${esc(k.id)}">
+              <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.6rem;font-size:0.8125rem">Revoke</button>
+            </form>`;
+        return `<tr>
+  <td>${name}</td>
+  <td><code>${esc(k.prefix)}…</code></td>
+  <td>${esc(k.createdAt)}</td>
+  <td>${lastUsed}</td>
+  <td>${status}</td>
+  <td>${actions}</td>
+</tr>`;
+      })
+      .join("");
+
+    table = `<table class="domain-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Prefix</th>
+      <th>Created</th>
+      <th>Last Used</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>`;
+  }
+
+  const body = `<h1 class="dashboard-title">API Keys</h1>
+${retirementBanner}
+${justCreatedBanner}
+<div class="settings-section">
+  <h2>Generate a new key</h2>
+  <p>Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
+  <form method="POST" action="/dashboard/settings/api-keys/generate">
+    <label for="api-key-name" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Label (optional)</label>
+    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60">
+    <div class="action-row">
+      <button type="submit" class="btn">Generate API Key</button>
+      <a href="/dashboard/settings" class="btn btn-secondary">Back to Settings</a>
+    </div>
+  </form>
+</div>
+
+<div class="settings-section">
+  <h2>Your keys</h2>
+  ${table}
+</div>`;
+
+  return dashboardPage("API Keys — dmarc.mx", body, email);
 }

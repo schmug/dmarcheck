@@ -19,8 +19,8 @@ interface UserRow {
   email: string;
   email_domain: string;
   stripe_customer_id: string | null;
-  api_key: string | null;
   email_alerts_enabled: number;
+  api_key_retirement_acknowledged_at: number | null;
   created_at: number;
 }
 
@@ -104,8 +104,8 @@ function seedUser(overrides: Partial<UserRow> = {}): void {
     email: "alice@example.com",
     email_domain: "example.com",
     stripe_customer_id: null,
-    api_key: null,
     email_alerts_enabled: 1,
+    api_key_retirement_acknowledged_at: 1,
     created_at: 1,
     ...overrides,
   });

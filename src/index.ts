@@ -15,12 +15,15 @@ import type {
 } from "./analyzers/types.js";
 import { API_CATALOG_JSON } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
+import { resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
 import { stripeWebhookRoutes } from "./billing/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
 import { runDueRescans } from "./cron/rescan.js";
 import { generateCsv } from "./csv.js";
 import { dashboardRoutes } from "./dashboard/routes.js";
+import { getDomainByUserAndName } from "./db/domains.js";
+import { recordScan } from "./db/scans.js";
 import { setEmailAlertsEnabled } from "./db/users.js";
 import type { Env } from "./env.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
@@ -373,6 +376,7 @@ app.get("/api/check/stream", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+  const bearer = await resolveBearer(c);
 
   return streamSSE(c, async (stream) => {
     Sentry.addBreadcrumb({
@@ -433,6 +437,10 @@ app.get("/api/check/stream", async (c) => {
     const pendingCacheWrite = setCachedScan(domain, selectors, result);
     if (pendingCacheWrite) {
       c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+    }
+
+    if (bearer) {
+      persistBearerScanIfWatched(c, bearer.userId, domain, result);
     }
 
     stream.writeSSE({
@@ -670,6 +678,7 @@ app.get("/api/check", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+  const bearer = await resolveBearer(c);
 
   try {
     Sentry.addBreadcrumb({
@@ -694,6 +703,13 @@ app.get("/api/check", async (c) => {
       }
     }
 
+    // Persist to scan_history only when the bearer's user already watches
+    // this domain — mirrors the dashboard "Scan Now" contract and avoids
+    // silently growing the watchlist on ad-hoc API requests.
+    if (bearer) {
+      persistBearerScanIfWatched(c, bearer.userId, domain, result);
+    }
+
     if (c.req.query("format") === "csv") {
       return c.body(generateCsv(result), 200, {
         "Content-Type": "text/csv; charset=utf-8",
@@ -711,6 +727,34 @@ app.get("/api/check", async (c) => {
     return c.json({ error: message }, 500);
   }
 });
+
+// Fire-and-forget: look up the (user, domain) pair and record a scan_history
+// row if the user watches this domain. The orchestrator result structure is
+// the same shape consumed by dashboard "Scan Now".
+function persistBearerScanIfWatched(
+  c: Context,
+  userId: string,
+  domain: string,
+  result: {
+    grade: string;
+    breakdown: { factors: unknown };
+    protocols: unknown;
+  },
+): void {
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) return;
+  const task = (async () => {
+    const owned = await getDomainByUserAndName(db, userId, domain);
+    if (!owned) return;
+    await recordScan(db, {
+      domainId: owned.id,
+      grade: result.grade,
+      scoreFactors: result.breakdown.factors,
+      protocolResults: result.protocols,
+    });
+  })();
+  c.executionCtx.waitUntil(task.catch(() => {}));
+}
 
 app.get("/check/score", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));

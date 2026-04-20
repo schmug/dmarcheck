@@ -1,7 +1,13 @@
 import { Hono } from "hono";
+import { generateApiKey } from "../auth/api-key.js";
 import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
 import { dashboardBillingRoutes } from "../billing/routes.js";
+import {
+  createApiKey,
+  listApiKeysByUser,
+  revokeApiKey,
+} from "../db/api-keys.js";
 import {
   createDomain,
   deleteDomain,
@@ -10,14 +16,20 @@ import {
 } from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
-import { getUserById, setApiKey, setEmailAlertsEnabled } from "../db/users.js";
+import {
+  acknowledgeApiKeyRetirement,
+  getUserById,
+  setEmailAlertsEnabled,
+} from "../db/users.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
 import {
   renderAddDomainPage,
+  renderApiKeysPage,
   renderDashboardPage,
   renderDomainDetailPage,
   renderSettingsPage,
+  toApiKeyListEntry,
 } from "../views/dashboard.js";
 
 export const dashboardRoutes = new Hono();
@@ -177,11 +189,11 @@ dashboardRoutes.get("/settings", async (c) => {
   return c.html(
     renderSettingsPage({
       email: user.email,
-      apiKey: user.api_key,
       webhookUrl: webhook?.url ?? null,
       plan,
       billingEnabled: Boolean(env.STRIPE_SECRET_KEY),
       emailAlertsEnabled: user.email_alerts_enabled === 1,
+      showRetirementBanner: user.api_key_retirement_acknowledged_at === null,
     }),
   );
 });
@@ -197,13 +209,74 @@ dashboardRoutes.post("/settings/email-alerts", async (c) => {
   return c.redirect("/dashboard/settings");
 });
 
-// Generate/regenerate API key
-dashboardRoutes.post("/settings/api-key", async (c) => {
+// API keys: list / generate / revoke. The cleartext `POST /settings/api-key`
+// handler from Phase 1 is intentionally gone — keys are now hashed server-side
+// and the raw value is surfaced only at generation time on this page.
+dashboardRoutes.get("/settings/api-keys", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
-  const key = `dmarc_${crypto.randomUUID().replace(/-/g, "")}`;
-  await setApiKey(db, session.sub, key);
-  return c.redirect("/dashboard/settings");
+  const user = await getUserById(db, session.sub);
+  if (!user) {
+    return c.redirect("/auth/logout");
+  }
+  const showRetirementBanner = user.api_key_retirement_acknowledged_at === null;
+  // First visit dismisses the banner — the user has now seen the explanation
+  // and can generate a replacement on this same page.
+  if (showRetirementBanner) {
+    c.executionCtx.waitUntil(
+      acknowledgeApiKeyRetirement(db, session.sub).catch(() => {}),
+    );
+  }
+  const rows = await listApiKeysByUser(db, session.sub);
+  const justCreated =
+    c.req.query("created") === "1" ? (c.req.query("raw") ?? null) : null;
+  return c.html(
+    renderApiKeysPage({
+      email: user.email,
+      keys: rows.map(toApiKeyListEntry),
+      justCreated,
+      showRetirementBanner,
+    }),
+  );
+});
+
+dashboardRoutes.post("/settings/api-keys/generate", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const body = await c.req.parseBody();
+  const nameRaw =
+    typeof body.name === "string" ? body.name.trim().slice(0, 60) : "";
+  const name = nameRaw.length > 0 ? nameRaw : null;
+
+  const generated = await generateApiKey();
+  const id = crypto.randomUUID();
+  await createApiKey(db, {
+    id,
+    userId: session.sub,
+    name,
+    prefix: generated.prefix,
+    hash: generated.hash,
+  });
+
+  // Shuttle the raw value through a redirect URL so the GET renders it once.
+  // Anyone capable of reading the user's browser history already owns the key,
+  // so this is no weaker than rendering it inline after the POST.
+  const params = new URLSearchParams({
+    created: "1",
+    raw: generated.raw,
+  });
+  return c.redirect(`/dashboard/settings/api-keys?${params.toString()}`, 303);
+});
+
+dashboardRoutes.post("/settings/api-keys/revoke", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const body = await c.req.parseBody();
+  const id = typeof body.id === "string" ? body.id : null;
+  if (id) {
+    await revokeApiKey(db, id, session.sub);
+  }
+  return c.redirect("/dashboard/settings/api-keys", 303);
 });
 
 // Save webhook URL

@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   email_domain TEXT NOT NULL,
   stripe_customer_id TEXT,
-  api_key TEXT UNIQUE,
   email_alerts_enabled INTEGER NOT NULL DEFAULT 1,
+  api_key_retirement_acknowledged_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -71,9 +71,24 @@ CREATE TABLE IF NOT EXISTS stripe_events (
   received_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- Hashed API keys (Phase 3 M3). Bearer tokens authenticate against the `hash`
+-- column; raw values are shown once at generation time and never stored.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT,
+  prefix TEXT NOT NULL,
+  hash TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_domains_user_id ON domains(user_id);
 CREATE INDEX IF NOT EXISTS idx_scan_history_domain_id ON scan_history(domain_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_domain_id ON alerts(domain_id);
 CREATE INDEX IF NOT EXISTS idx_domains_last_scanned ON domains(last_scanned_at);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
