@@ -2,12 +2,19 @@ import { Hono } from "hono";
 import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
 import { dashboardBillingRoutes } from "../billing/routes.js";
-import { getDomainByUserAndName, getDomainsByUser } from "../db/domains.js";
+import {
+  createDomain,
+  deleteDomain,
+  getDomainByUserAndName,
+  getDomainsByUser,
+} from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
 import { getUserById, setApiKey, setEmailAlertsEnabled } from "../db/users.js";
 import { scan } from "../orchestrator.js";
+import { normalizeDomain } from "../shared/domain.js";
 import {
+  renderAddDomainPage,
   renderDashboardPage,
   renderDomainDetailPage,
   renderSettingsPage,
@@ -41,6 +48,47 @@ dashboardRoutes.get("/", async (c) => {
       })),
     }),
   );
+});
+
+// Add-domain form. Simple GET → form; POST → validate + insert.
+// `/domain/add` is matched before `/domain/:domain` because Hono picks routes
+// in registration order for literal-vs-param collisions.
+dashboardRoutes.get("/domain/add", (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  return c.html(renderAddDomainPage({ email: session.email, error: null }));
+});
+
+dashboardRoutes.post("/domain/add", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const body = await c.req.parseBody();
+  const normalized = normalizeDomain(body.domain as string | undefined);
+  if (!normalized) {
+    return c.html(
+      renderAddDomainPage({
+        email: session.email,
+        error: "Enter a valid domain (e.g. example.com).",
+      }),
+      400,
+    );
+  }
+
+  // Prevent duplicates per-user cleanly rather than surfacing the raw
+  // UNIQUE(user_id, domain) constraint violation from D1.
+  const existing = await getDomainByUserAndName(db, session.sub, normalized);
+  if (existing) {
+    return c.redirect(
+      `/dashboard/domain/${encodeURIComponent(normalized)}`,
+      303,
+    );
+  }
+
+  await createDomain(db, {
+    userId: session.sub,
+    domain: normalized,
+    isFree: false,
+  });
+  return c.redirect(`/dashboard/domain/${encodeURIComponent(normalized)}`, 303);
 });
 
 // Domain detail
@@ -98,6 +146,18 @@ dashboardRoutes.post("/domain/:domain/scan", async (c) => {
   });
 
   return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`, 303);
+});
+
+// Delete monitored domain. POST-only (no idempotent DELETE since HTML forms
+// can't send DELETE without JS). Ownership check is inherent: the SQL WHERE
+// clause in deleteDomain keys on user_id, so one user can't delete another's
+// row even if they guess the domain name.
+dashboardRoutes.post("/domain/:domain/delete", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const domainName = c.req.param("domain");
+  await deleteDomain(db, session.sub, domainName);
+  return c.redirect("/dashboard", 303);
 });
 
 // Settings page

@@ -589,4 +589,173 @@ describe("dashboard/routes", () => {
       expect(res.headers.get("Location")).toBe("/dashboard/settings");
     });
   });
+
+  describe("GET /dashboard/domain/add", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/add");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("renders the add-domain form with a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/add", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Add Domain");
+      expect(body).toContain('name="domain"');
+    });
+  });
+
+  describe("POST /dashboard/domain/add", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("rejects an invalid domain with 400 and re-renders the form", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "not a domain" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(html).toContain("valid domain");
+    });
+
+    it("creates the domain and 303-redirects to the detail page", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "example.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard/domain/example.com");
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeDefined();
+      expect(inserted?.bindings).toEqual([
+        "user_1",
+        "example.com",
+        0, // isFree=false → 0
+        "weekly",
+      ]);
+    });
+
+    it("does not create a duplicate when the user already owns the domain", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1_700_000_000,
+          },
+        ],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "example.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard/domain/example.com");
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("normalizes protocol-prefixed input to a bare domain", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({
+        domain: "https://Example.COM/path",
+      });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard/domain/example.com");
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted?.bindings[1]).toBe("example.com");
+    });
+  });
+
+  describe("POST /dashboard/domain/:domain/delete", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/example.com/delete", {
+        method: "POST",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("deletes the domain and 303-redirects to /dashboard", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/delete", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      const deleted = writes.find((w) => w.sql.includes("DELETE FROM domains"));
+      expect(deleted).toBeDefined();
+      expect(deleted?.bindings).toEqual(["user_1", "example.com"]);
+    });
+  });
 });

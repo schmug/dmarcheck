@@ -435,6 +435,9 @@ export function renderDomainDetailPage({
     <button type="submit" class="btn">Scan Now</button>
   </form>
   <a href="/check?domain=${encodeURIComponent(domain)}" class="btn btn-secondary">View Full Report</a>
+  <form method="POST" action="/dashboard/domain/${encodeURIComponent(domain)}/delete" style="display:inline" onsubmit="return confirm('Stop monitoring ${esc(domain)}?');">
+    <button type="submit" class="btn btn-secondary">Delete</button>
+  </form>
 </div>
 <div class="section-card">
   <h2>Grade History</h2>
@@ -442,6 +445,42 @@ export function renderDomainDetailPage({
 </div>`;
 
   return dashboardPage(`${domain} — dmarc.mx`, body, email);
+}
+
+export function renderAddDomainPage({
+  email,
+  error,
+}: {
+  email: string;
+  error: string | null;
+}): string {
+  const errorBlock = error
+    ? `<div class="settings-section" style="border-color:var(--clr-danger, #b91c1c);color:var(--clr-danger, #b91c1c)">${esc(error)}</div>`
+    : "";
+
+  const body = `<h1 class="dashboard-title">Add Domain</h1>
+${errorBlock}
+<form method="POST" action="/dashboard/domain/add" class="settings-section">
+  <label for="domain-input" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Domain to monitor</label>
+  <input
+    id="domain-input"
+    class="settings-input"
+    type="text"
+    name="domain"
+    placeholder="example.com"
+    autofocus
+    required
+  >
+  <p style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0.5rem 0 1rem">
+    We'll run a full DMARC/SPF/DKIM/BIMI/MTA-STS scan and notify you if the grade drops.
+  </p>
+  <div class="action-row">
+    <button type="submit" class="btn">Add Domain</button>
+    <a href="/dashboard" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>`;
+
+  return dashboardPage("Add Domain — dmarc.mx", body, email);
 }
 
 export function renderSettingsPage({
