@@ -137,6 +137,22 @@ npm test          # runs unit tests
 | Rate limit window | `src/rate-limit.ts` → `WINDOW_SECONDS` | 60s |
 | DKIM selectors | `src/analyzers/dkim.ts` → `COMMON_SELECTORS` | ~30 common selectors |
 
+### Database migrations
+
+The dashboard, history, and alerts features use Cloudflare D1. Migrations live
+in `src/db/migrations/` and apply automatically via
+`.github/workflows/migrate.yml` after CI passes on `main`. The workflow
+expects two GitHub repo secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|-------|
+| `CLOUDFLARE_D1_TOKEN` | API token scoped to **D1:Edit** only (separate from the Workers deploy token so a leak in one doesn't widen into the other) |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+
+If you skip the secrets, the workflow will fail and you can either delete
+`.github/workflows/migrate.yml` from your fork or apply migrations manually
+with `npx wrangler d1 migrations apply dmarcheck-db --remote`.
+
 ### Optional: paid-tier env vars
 
 The free scanner, dashboard, and API work without any of the following. They

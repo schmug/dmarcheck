@@ -21,6 +21,7 @@ crons = ["33 23 * * *", "50 23 * * *"]
 binding = "DB"
 database_name = "dmarcheck-db"
 database_id = "7e6e7e64-5477-458f-b206-941ea58b7dba"
+migrations_dir = "src/db/migrations"
 
 # Cloudflare Email Sending for grade-drop alerts. alerts@dmarc.mx must be a
 # verified sender in the Cloudflare dashboard before this binding delivers
