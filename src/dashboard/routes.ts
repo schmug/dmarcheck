@@ -14,7 +14,7 @@ import {
   getDomainByUserAndName,
   getDomainsByUser,
 } from "../db/domains.js";
-import { recordScan } from "../db/scans.js";
+import { getScanHistoryWithProtocols, recordScan } from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
 import {
   acknowledgeApiKeyRetirement,
@@ -28,9 +28,13 @@ import {
   renderApiKeysPage,
   renderDashboardPage,
   renderDomainDetailPage,
+  renderDomainHistoryPage,
   renderSettingsPage,
   toApiKeyListEntry,
 } from "../views/dashboard.js";
+
+const HISTORY_LIMIT_PRO = 30;
+const HISTORY_LIMIT_FREE = 5;
 
 export const dashboardRoutes = new Hono();
 
@@ -131,6 +135,36 @@ dashboardRoutes.get("/domain/:domain", async (c) => {
       scanHistory: history.results.map((r) => ({
         date: new Date(r.scanned_at * 1000).toLocaleDateString(),
         grade: r.grade,
+      })),
+    }),
+  );
+});
+
+// Full scan history for a domain. Pro users see up to 30 entries with a
+// sparkline + protocol-drift matrix; free users get a 5-entry teaser + an
+// upgrade CTA. Route is not hidden for free users — we gate the payload, not
+// the URL, so the upgrade prompt has somewhere to land.
+dashboardRoutes.get("/domain/:domain/history", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const domainName = c.req.param("domain");
+  const domain = await getDomainByUserAndName(db, session.sub, domainName);
+  if (!domain) {
+    return c.text("Domain not found", 404);
+  }
+  const plan = await getPlanForUser(db, session.sub);
+  const limit = plan === "pro" ? HISTORY_LIMIT_PRO : HISTORY_LIMIT_FREE;
+  const rows = await getScanHistoryWithProtocols(db, domain.id, limit);
+  return c.html(
+    renderDomainHistoryPage({
+      email: session.email,
+      domain: domain.domain,
+      plan,
+      history: rows.map((row) => ({
+        date: new Date(row.scannedAt * 1000).toLocaleDateString(),
+        scannedAt: row.scannedAt,
+        grade: row.grade,
+        protocols: row.protocols,
       })),
     }),
   );

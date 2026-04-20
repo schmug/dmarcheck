@@ -289,6 +289,88 @@ const DASHBOARD_CSS = `
   margin-top: 0.5rem;
   flex-wrap: wrap;
 }
+.sparkline {
+  width: 100%;
+  height: 80px;
+  display: block;
+}
+.sparkline .sparkline-line {
+  fill: none;
+  stroke: var(--clr-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sparkline .sparkline-dot {
+  fill: var(--clr-accent);
+}
+.sparkline .sparkline-grid {
+  stroke: var(--clr-border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.drift-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.drift-table th,
+.drift-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--clr-border);
+  text-align: left;
+}
+.drift-table th {
+  font-weight: 600;
+  color: var(--clr-text-muted);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  background: var(--clr-bg);
+}
+.drift-table td.drift-date {
+  color: var(--clr-text-muted);
+  white-space: nowrap;
+}
+.drift-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.drift-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--clr-text-muted);
+}
+.drift-dot.status-pass { background: var(--clr-pass); }
+.drift-dot.status-warn { background: var(--clr-warn); }
+.drift-dot.status-fail { background: var(--clr-fail); }
+.drift-dot.status-info { background: var(--clr-text-muted); }
+.drift-changed {
+  border-left: 2px solid var(--clr-accent);
+  padding-left: 0.5rem;
+}
+.upgrade-prompt {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-accent);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin-top: 1.5rem;
+  text-align: center;
+}
+.upgrade-prompt h2 {
+  color: var(--clr-accent);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.upgrade-prompt p {
+  color: var(--clr-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
 `;
 
 function dashboardPage(title: string, body: string, email: string): string {
@@ -442,9 +524,176 @@ export function renderDomainDetailPage({
 <div class="section-card">
   <h2>Grade History</h2>
   ${historySection}
+  <div style="margin-top:0.75rem">
+    <a href="/dashboard/domain/${encodeURIComponent(domain)}/history" style="color:var(--clr-accent);font-size:0.875rem;text-decoration:none">See full history &rarr;</a>
+  </div>
 </div>`;
 
   return dashboardPage(`${domain} — dmarc.mx`, body, email);
+}
+
+export type HistoryProtocolStatus = "pass" | "warn" | "fail" | "info" | null;
+
+export interface HistoryScanEntry {
+  date: string;
+  scannedAt: number;
+  grade: string;
+  protocols: {
+    dmarc: HistoryProtocolStatus;
+    spf: HistoryProtocolStatus;
+    dkim: HistoryProtocolStatus;
+    bimi: HistoryProtocolStatus;
+    mta_sts: HistoryProtocolStatus;
+  };
+}
+
+// Higher = better. Matches src/alerts/detector.ts GRADE_RANK. Duplicated here
+// because the detector file is policy; the view is presentation — keeping
+// them decoupled avoids pulling a dep chain through the render path.
+const GRADE_RANK_FOR_SPARKLINE: Record<string, number> = {
+  F: 0,
+  "D-": 1,
+  D: 2,
+  "D+": 3,
+  "C-": 4,
+  C: 5,
+  "C+": 6,
+  "B-": 7,
+  B: 8,
+  "B+": 9,
+  "A-": 10,
+  A: 11,
+  "A+": 12,
+  S: 13,
+};
+
+function renderSparkline(entries: HistoryScanEntry[]): string {
+  if (entries.length === 0) {
+    return `<p style="color:var(--clr-text-muted);font-size:0.875rem;padding:0.75rem 0">No scans yet to chart.</p>`;
+  }
+  const width = 600;
+  const height = 80;
+  const pad = 8;
+  // Chart oldest → newest left-to-right, so reverse the newest-first input.
+  const ordered = [...entries].reverse();
+  const n = ordered.length;
+  const maxRank = 13;
+  const points = ordered.map((entry, i) => {
+    const rank = GRADE_RANK_FOR_SPARKLINE[entry.grade] ?? 0;
+    const x = n === 1 ? width / 2 : pad + (i * (width - pad * 2)) / (n - 1);
+    const y = pad + (1 - rank / maxRank) * (height - pad * 2);
+    return { x, y };
+  });
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
+  const dots = points
+    .map(
+      (p) =>
+        `<circle class="sparkline-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" />`,
+    )
+    .join("");
+  const midY = pad + (height - pad * 2) / 2;
+  return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Grade trend sparkline">
+  <line class="sparkline-grid" x1="${pad}" y1="${midY}" x2="${width - pad}" y2="${midY}" />
+  <path class="sparkline-line" d="${path}" />
+  ${dots}
+</svg>`;
+}
+
+function statusLabel(status: HistoryProtocolStatus): string {
+  if (status === null) return "—";
+  return status;
+}
+
+function renderDriftCell(
+  status: HistoryProtocolStatus,
+  previous: HistoryProtocolStatus,
+): string {
+  const changed = previous !== null && status !== previous;
+  const cls = `drift-cell${changed ? " drift-changed" : ""}`;
+  const dotCls = status ? `drift-dot status-${status}` : "drift-dot";
+  const title = changed ? ` title="changed from ${previous}"` : "";
+  return `<span class="${cls}"${title}><span class="${dotCls}"></span>${esc(statusLabel(status))}</span>`;
+}
+
+function renderDriftTable(entries: HistoryScanEntry[]): string {
+  if (entries.length === 0) {
+    return `<p style="color:var(--clr-text-muted);font-size:0.875rem;padding:0.75rem 0">No scans yet.</p>`;
+  }
+  // Rows are newest-first. To highlight "changed vs the prior (older) scan",
+  // we compare each row to the NEXT row in the list (which is chronologically
+  // older). The oldest row has no "previous" — its cells never highlight.
+  const rows = entries
+    .map((entry, i) => {
+      const prev: HistoryScanEntry["protocols"] | null =
+        i + 1 < entries.length ? entries[i + 1].protocols : null;
+      const protos = entry.protocols;
+      return `<tr>
+  <td class="drift-date">${esc(entry.date)}</td>
+  <td><span class="inline-grade ${gradeClass(entry.grade)}">${esc(entry.grade)}</span></td>
+  <td>${renderDriftCell(protos.dmarc, prev?.dmarc ?? null)}</td>
+  <td>${renderDriftCell(protos.spf, prev?.spf ?? null)}</td>
+  <td>${renderDriftCell(protos.dkim, prev?.dkim ?? null)}</td>
+  <td>${renderDriftCell(protos.bimi, prev?.bimi ?? null)}</td>
+  <td>${renderDriftCell(protos.mta_sts, prev?.mta_sts ?? null)}</td>
+</tr>`;
+    })
+    .join("");
+  return `<table class="drift-table">
+  <thead>
+    <tr>
+      <th>Scanned</th>
+      <th>Grade</th>
+      <th>DMARC</th>
+      <th>SPF</th>
+      <th>DKIM</th>
+      <th>BIMI</th>
+      <th>MTA-STS</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>`;
+}
+
+export function renderDomainHistoryPage({
+  email,
+  domain,
+  plan,
+  history,
+}: {
+  email: string;
+  domain: string;
+  plan: "free" | "pro";
+  history: HistoryScanEntry[];
+}): string {
+  const sparkline = renderSparkline(history);
+  const drift = renderDriftTable(history);
+
+  const upgradePrompt =
+    plan === "free"
+      ? `<div class="upgrade-prompt">
+  <h2>Upgrade to see the full history</h2>
+  <p>Pro unlocks 30 scans of grade-trend and protocol-drift detail per domain, plus nightly monitoring and higher API rate limits.</p>
+  <a href="/dashboard/billing/subscribe" class="btn">Upgrade to Pro</a>
+</div>`
+      : "";
+
+  const body = `<h1 class="dashboard-title">History — ${esc(domain)}</h1>
+<div class="section-card">
+  <h2>Grade trend</h2>
+  ${sparkline}
+</div>
+<div class="section-card">
+  <h2>Protocol drift</h2>
+  ${drift}
+</div>
+${upgradePrompt}
+<div style="margin-top:1rem">
+  <a href="/dashboard/domain/${encodeURIComponent(domain)}" style="color:var(--clr-accent);font-size:0.875rem;text-decoration:none">&larr; Back to ${esc(domain)}</a>
+</div>`;
+
+  return dashboardPage(`History — ${domain} — dmarc.mx`, body, email);
 }
 
 export function renderAddDomainPage({

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getScanHistory,
+  getScanHistoryWithProtocols,
   recordScan,
   type ScanHistoryRow,
 } from "../src/db/scans.js";
@@ -175,6 +176,69 @@ describe("db/scans", () => {
       });
       const history = await getScanHistory(db, 42);
       expect(history).toHaveLength(0);
+    });
+  });
+
+  describe("getScanHistoryWithProtocols", () => {
+    it("parses protocol_results JSON into a flat status map", async () => {
+      await recordScan(db, {
+        domainId: 42,
+        grade: "B",
+        scoreFactors: null,
+        protocolResults: {
+          dmarc: { status: "pass" },
+          spf: { status: "warn" },
+          dkim: { status: "pass" },
+          bimi: { status: "fail" },
+          mta_sts: { status: "pass" },
+        },
+        scannedAt: 1000,
+      });
+
+      const rows = await getScanHistoryWithProtocols(db, 42, 10);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual({
+        grade: "B",
+        scannedAt: 1000,
+        protocols: {
+          dmarc: "pass",
+          spf: "warn",
+          dkim: "pass",
+          bimi: "fail",
+          mta_sts: "pass",
+        },
+      });
+    });
+
+    it("returns null statuses for unknown protocol shapes", async () => {
+      await recordScan(db, {
+        domainId: 42,
+        grade: "A",
+        scoreFactors: null,
+        protocolResults: { dmarc: { status: "bogus" } }, // unknown value
+        scannedAt: 1000,
+      });
+      const rows = await getScanHistoryWithProtocols(db, 42, 10);
+      expect(rows[0].protocols.dmarc).toBeNull();
+      expect(rows[0].protocols.spf).toBeNull(); // missing key
+    });
+
+    it("yields all-null protocols when protocol_results is null", async () => {
+      await recordScan(db, {
+        domainId: 42,
+        grade: "F",
+        scoreFactors: null,
+        protocolResults: null,
+        scannedAt: 1000,
+      });
+      const rows = await getScanHistoryWithProtocols(db, 42, 10);
+      expect(rows[0].protocols).toEqual({
+        dmarc: null,
+        spf: null,
+        dkim: null,
+        bimi: null,
+        mta_sts: null,
+      });
     });
   });
 });

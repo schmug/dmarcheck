@@ -57,7 +57,18 @@ function createMockDB(data: {
     api_key_retirement_acknowledged_at: number | null;
     created_at: number;
   }>;
-  scanHistory?: Array<{ grade: string; scanned_at: number }>;
+  scanHistory?: Array<{
+    grade: string;
+    scanned_at: number;
+    protocol_results?: string | null;
+    score_factors?: string | null;
+    id?: number;
+    domain_id?: number;
+  }>;
+  subscriptions?: Array<{
+    user_id: string;
+    status: string;
+  }>;
   webhooks?: Array<{
     id: number;
     user_id: string;
@@ -81,6 +92,7 @@ function createMockDB(data: {
   const scanHistory = data.scanHistory ?? [];
   const webhooks = data.webhooks ?? [];
   const apiKeys = data.apiKeys ?? [];
+  const subscriptions = data.subscriptions ?? [];
   const writes = data.writes;
 
   const makeStatement = (sql: string, bindings: unknown[]) => ({
@@ -105,6 +117,10 @@ function createMockDB(data: {
         const wh = webhooks.find((w) => w.user_id === bindings[0]);
         return (wh ? { id: wh.id } : null) as T | null;
       }
+      if (sql.includes("SELECT status FROM subscriptions")) {
+        const sub = subscriptions.find((s) => s.user_id === bindings[0]);
+        return (sub ? { status: sub.status } : null) as T | null;
+      }
       return null as T | null;
     },
     all: async <T>() => {
@@ -115,6 +131,22 @@ function createMockDB(data: {
       }
       if (sql.includes("SELECT grade, scanned_at FROM scan_history")) {
         return { results: scanHistory as T[] };
+      }
+      if (sql.includes("SELECT * FROM scan_history")) {
+        const [, limit] = bindings as [number, number];
+        const sorted = [...scanHistory].sort(
+          (a, b) => b.scanned_at - a.scanned_at,
+        );
+        return {
+          results: sorted.slice(0, limit).map((r, i) => ({
+            id: r.id ?? i + 1,
+            domain_id: r.domain_id ?? 1,
+            grade: r.grade,
+            score_factors: r.score_factors ?? null,
+            protocol_results: r.protocol_results ?? null,
+            scanned_at: r.scanned_at,
+          })) as T[],
+        };
       }
       if (sql.includes("SELECT * FROM api_keys WHERE user_id")) {
         return {
@@ -318,6 +350,187 @@ describe("dashboard/routes", () => {
       });
       const body = await res.text();
       expect(body).toContain("Grade History");
+    });
+  });
+
+  describe("GET /dashboard/domain/:domain/history", () => {
+    const domainFixture = {
+      id: 1,
+      user_id: "user_1",
+      domain: "example.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700000000,
+      last_grade: "B",
+      created_at: 1700000000,
+    };
+
+    const makeScan = (
+      at: number,
+      grade: string,
+      statuses: Record<string, string>,
+    ) => ({
+      grade,
+      scanned_at: at,
+      protocol_results: JSON.stringify(
+        Object.fromEntries(
+          Object.entries(statuses).map(([k, v]) => [k, { status: v }]),
+        ),
+      ),
+    });
+
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/example.com/history");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 404 when the domain does not belong to the user", async () => {
+      const db = createMockDB({ domains: [] });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/notmine.com/history", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("renders the full 30-row table and no upgrade prompt for Pro users", async () => {
+      const scans = Array.from({ length: 12 }, (_, i) =>
+        makeScan(1_700_000_000 + i * 86_400, "B", {
+          dmarc: "pass",
+          spf: "pass",
+          dkim: "pass",
+          bimi: "warn",
+          mta_sts: "pass",
+        }),
+      );
+      const db = createMockDB({
+        domains: [domainFixture],
+        scanHistory: scans,
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/history", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("History — example.com");
+      expect(body).toContain("Protocol drift");
+      expect(body).toContain("Grade trend");
+      expect(body).not.toContain("Upgrade to see the full history");
+      // Should render a sparkline SVG
+      expect(body).toContain("sparkline-line");
+      // All 12 scans show up (there's at least 12 distinct status-pass dots
+      // since every scan has multiple pass protocols).
+      const rowCount = (body.match(/class="drift-date"/g) || []).length;
+      expect(rowCount).toBe(12);
+    });
+
+    it("shows an upgrade prompt for free users", async () => {
+      const scans = Array.from({ length: 10 }, (_, i) =>
+        makeScan(1_700_000_000 + i * 86_400, "C", {
+          dmarc: "warn",
+          spf: "pass",
+          dkim: "pass",
+          bimi: "fail",
+          mta_sts: "pass",
+        }),
+      );
+      const db = createMockDB({
+        domains: [domainFixture],
+        scanHistory: scans,
+        // no subscriptions row → free plan
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/history", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Upgrade to see the full history");
+      expect(body).toContain("/dashboard/billing/subscribe");
+      // Free users get only 5 rows even when 10 scans exist.
+      const rowCount = (body.match(/class="drift-date"/g) || []).length;
+      expect(rowCount).toBe(5);
+    });
+
+    it("treats a cancelled subscription as free", async () => {
+      const db = createMockDB({
+        domains: [domainFixture],
+        scanHistory: [
+          makeScan(1_700_000_000, "A", {
+            dmarc: "pass",
+            spf: "pass",
+            dkim: "pass",
+            bimi: "pass",
+            mta_sts: "pass",
+          }),
+        ],
+        subscriptions: [{ user_id: "user_1", status: "canceled" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/history", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Upgrade to see the full history");
+    });
+
+    it("handles domains with no scans yet without crashing", async () => {
+      const db = createMockDB({
+        domains: [domainFixture],
+        scanHistory: [],
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/history", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("No scans yet to chart");
+      expect(body).toContain("No scans yet.");
+    });
+
+    it("marks protocol-status transitions with drift-changed", async () => {
+      const db = createMockDB({
+        domains: [domainFixture],
+        scanHistory: [
+          // newest first: dmarc regressed pass→fail between the two scans
+          makeScan(1_700_000_100, "F", {
+            dmarc: "fail",
+            spf: "pass",
+            dkim: "pass",
+            bimi: "pass",
+            mta_sts: "pass",
+          }),
+          makeScan(1_700_000_000, "A", {
+            dmarc: "pass",
+            spf: "pass",
+            dkim: "pass",
+            bimi: "pass",
+            mta_sts: "pass",
+          }),
+        ],
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com/history", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).toContain("drift-changed");
+      expect(body).toContain('title="changed from pass"');
     });
   });
 
