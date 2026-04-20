@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type AlertRow,
+  acknowledgeAlert,
+  countUnacknowledgedByDomain,
+  listUnacknowledgedForUser,
   listUnsentAlerts,
   markAlertNotified,
   recordAlert,
@@ -30,17 +33,75 @@ function makeD1Mock(): D1Database {
             previous_value: prevVal,
             new_value: newVal,
             notified_via: null,
+            acknowledged_at: null,
             created_at: createdAt,
           });
-        } else if (/^UPDATE alerts SET notified_via/i.test(sql)) {
+          return { success: true, meta: { changes: 1 } };
+        }
+        if (/^UPDATE alerts SET notified_via/i.test(sql)) {
           const [channel, id] = params as [string, number];
           const row = alertStore.get(id);
           if (row) alertStore.set(id, { ...row, notified_via: channel });
+          return { success: true, meta: { changes: row ? 1 : 0 } };
         }
-        return { success: true };
+        if (/^\s*UPDATE alerts\s+SET acknowledged_at/i.test(sql)) {
+          const [now, alertId, userId] = params as [number, number, string];
+          const row = alertStore.get(alertId);
+          if (!row || row.acknowledged_at !== null) {
+            return { success: true, meta: { changes: 0 } };
+          }
+          const ownerDomain = domainStore.get(row.domain_id);
+          if (!ownerDomain || ownerDomain.user_id !== userId) {
+            return { success: true, meta: { changes: 0 } };
+          }
+          alertStore.set(alertId, { ...row, acknowledged_at: now });
+          return { success: true, meta: { changes: 1 } };
+        }
+        return { success: true, meta: { changes: 0 } };
       },
       all: async <T>(): Promise<{ results: T[] }> => {
-        if (/FROM alerts[\s\S]*JOIN domains/i.test(sql)) {
+        // listUnacknowledgedForUser: filters on user_id + acknowledged_at
+        if (
+          /acknowledged_at IS NULL[\s\S]*ORDER BY a\.created_at DESC/i.test(sql)
+        ) {
+          const [userId, limit] = params as [string, number];
+          const rows = [...alertStore.values()]
+            .filter((a) => {
+              const d = domainStore.get(a.domain_id);
+              return (
+                a.acknowledged_at === null &&
+                d !== undefined &&
+                d.user_id === userId
+              );
+            })
+            .sort((a, b) => b.created_at - a.created_at)
+            .slice(0, limit)
+            .map((a) => ({
+              ...a,
+              domain: domainStore.get(a.domain_id)?.domain ?? "",
+            }));
+          return { results: rows as T[] };
+        }
+        // countUnacknowledgedByDomain: GROUP BY a.domain_id
+        if (/GROUP BY a\.domain_id/i.test(sql)) {
+          const [userId] = params as [string];
+          const counts = new Map<number, number>();
+          for (const a of alertStore.values()) {
+            if (a.acknowledged_at !== null) continue;
+            const d = domainStore.get(a.domain_id);
+            if (!d || d.user_id !== userId) continue;
+            counts.set(a.domain_id, (counts.get(a.domain_id) ?? 0) + 1);
+          }
+          const rows = [...counts.entries()].map(([domain_id, count]) => ({
+            domain_id,
+            count,
+          }));
+          return { results: rows as T[] };
+        }
+        // listUnsentAlerts (legacy): filters on notified_via
+        if (
+          /notified_via IS NULL[\s\S]*ORDER BY a\.created_at ASC/i.test(sql)
+        ) {
           const [limit] = params as [number];
           const rows = [...alertStore.values()]
             .filter((a) => a.notified_via === null)
@@ -93,6 +154,7 @@ describe("db/alerts", () => {
       expect(row.previous_value).toBe("A");
       expect(row.new_value).toBe("C");
       expect(row.notified_via).toBeNull();
+      expect(row.acknowledged_at).toBeNull();
       expect(row.created_at).toBe(1_700_000_000);
     });
 
@@ -179,6 +241,151 @@ describe("db/alerts", () => {
 
       expect(alertStore.get(1)?.notified_via).toBe("email");
       expect(alertStore.get(2)?.notified_via).toBeNull();
+    });
+  });
+
+  describe("listUnacknowledgedForUser", () => {
+    it("returns only the requesting user's unacknowledged alerts, newest first", async () => {
+      await recordAlert(db, {
+        domainId: 7, // user_1
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "B",
+        createdAt: 100,
+      });
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "B",
+        newValue: "C",
+        createdAt: 200,
+      });
+      await recordAlert(db, {
+        domainId: 9, // user_2 — must NOT appear for user_1
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "F",
+        createdAt: 300,
+      });
+
+      const rows = await listUnacknowledgedForUser(db, "user_1");
+      expect(rows.map((r) => r.id)).toEqual([2, 1]); // DESC by created_at
+      expect(rows.every((r) => r.domain === "example.com")).toBe(true);
+    });
+
+    it("excludes already-acknowledged alerts", async () => {
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "B",
+        createdAt: 100,
+      });
+      await acknowledgeAlert(db, "user_1", 1, 999);
+
+      const rows = await listUnacknowledgedForUser(db, "user_1");
+      expect(rows).toEqual([]);
+    });
+
+    it("respects the limit", async () => {
+      for (let i = 0; i < 5; i++) {
+        await recordAlert(db, {
+          domainId: 7,
+          type: "grade_drop",
+          previousValue: "A",
+          newValue: "B",
+          createdAt: 100 + i,
+        });
+      }
+      const rows = await listUnacknowledgedForUser(db, "user_1", 2);
+      expect(rows).toHaveLength(2);
+    });
+  });
+
+  describe("acknowledgeAlert", () => {
+    beforeEach(async () => {
+      await recordAlert(db, {
+        domainId: 7, // user_1
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "C",
+        createdAt: 100,
+      });
+    });
+
+    it("returns true and sets acknowledged_at on first call", async () => {
+      const ok = await acknowledgeAlert(db, "user_1", 1, 555);
+      expect(ok).toBe(true);
+      expect(alertStore.get(1)?.acknowledged_at).toBe(555);
+    });
+
+    it("is idempotent: second call returns false without overwriting timestamp", async () => {
+      await acknowledgeAlert(db, "user_1", 1, 555);
+      const second = await acknowledgeAlert(db, "user_1", 1, 999);
+      expect(second).toBe(false);
+      expect(alertStore.get(1)?.acknowledged_at).toBe(555);
+    });
+
+    it("returns false for another user's alert id (IDOR)", async () => {
+      const ok = await acknowledgeAlert(db, "user_2", 1, 555);
+      expect(ok).toBe(false);
+      expect(alertStore.get(1)?.acknowledged_at).toBeNull();
+    });
+
+    it("returns false for a nonexistent alert id", async () => {
+      const ok = await acknowledgeAlert(db, "user_1", 999, 555);
+      expect(ok).toBe(false);
+    });
+  });
+
+  describe("countUnacknowledgedByDomain", () => {
+    it("groups unacknowledged alerts by domain id and excludes other users", async () => {
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "B",
+        createdAt: 100,
+      });
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "B",
+        newValue: "C",
+        createdAt: 200,
+      });
+      await recordAlert(db, {
+        domainId: 9, // user_2's domain — must not appear
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "F",
+        createdAt: 300,
+      });
+
+      const counts = await countUnacknowledgedByDomain(db, "user_1");
+      expect(counts.get(7)).toBe(2);
+      expect(counts.has(9)).toBe(false);
+    });
+
+    it("excludes acknowledged alerts from the count", async () => {
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "A",
+        newValue: "B",
+        createdAt: 100,
+      });
+      await recordAlert(db, {
+        domainId: 7,
+        type: "grade_drop",
+        previousValue: "B",
+        newValue: "C",
+        createdAt: 200,
+      });
+      await acknowledgeAlert(db, "user_1", 1, 999);
+
+      const counts = await countUnacknowledgedByDomain(db, "user_1");
+      expect(counts.get(7)).toBe(1);
     });
   });
 });

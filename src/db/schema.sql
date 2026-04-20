@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   previous_value TEXT,
   new_value TEXT,
   notified_via TEXT,
+  acknowledged_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -88,6 +89,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX IF NOT EXISTS idx_domains_user_id ON domains(user_id);
 CREATE INDEX IF NOT EXISTS idx_scan_history_domain_id ON scan_history(domain_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_domain_id ON alerts(domain_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_unacked
+  ON alerts(domain_id, created_at)
+  WHERE acknowledged_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_domains_last_scanned ON domains(last_scanned_at);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hash);

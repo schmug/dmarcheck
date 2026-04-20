@@ -4,6 +4,11 @@ import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
 import { dashboardBillingRoutes } from "../billing/routes.js";
 import {
+  acknowledgeAlert,
+  countUnacknowledgedByDomain,
+  listUnacknowledgedForUser,
+} from "../db/alerts.js";
+import {
   createApiKey,
   listApiKeysByUser,
   revokeApiKey,
@@ -45,14 +50,28 @@ dashboardRoutes.use("*", requireAuth);
 // self-host deploy without Stripe env vars still 404s these cleanly.
 dashboardRoutes.route("/billing", dashboardBillingRoutes);
 
-// Domain list
+// Domain list. Surfaces nightly-detected regressions ("Needs attention" section)
+// above the table so logged-in users see them between cron fires without having
+// to wait for the email.
 dashboardRoutes.get("/", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
-  const domains = await getDomainsByUser(db, session.sub);
+  const [domains, alerts, unackCounts] = await Promise.all([
+    getDomainsByUser(db, session.sub),
+    listUnacknowledgedForUser(db, session.sub, 20),
+    countUnacknowledgedByDomain(db, session.sub),
+  ]);
   return c.html(
     renderDashboardPage({
       email: session.email,
+      alerts: alerts.map((a) => ({
+        id: a.id,
+        domain: a.domain,
+        alertType: a.alert_type,
+        previousValue: a.previous_value,
+        newValue: a.new_value,
+        createdAt: a.created_at,
+      })),
       domains: domains.map((d) => ({
         domain: d.domain,
         grade: d.last_grade ?? "—",
@@ -61,9 +80,28 @@ dashboardRoutes.get("/", async (c) => {
           ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
           : null,
         isFree: d.is_free === 1,
+        unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
       })),
     }),
   );
+});
+
+// Dismiss a regression alert. IDOR-safe via SQL: acknowledgeAlert only updates
+// rows whose domain belongs to the session user. Returns 404 (not 500, not 303)
+// for invalid / cross-user / already-acked ids so the caller can distinguish.
+dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const idParam = c.req.param("id");
+  const alertId = Number.parseInt(idParam, 10);
+  if (!Number.isFinite(alertId) || alertId <= 0) {
+    return c.text("Invalid alert id", 400);
+  }
+  const ok = await acknowledgeAlert(db, session.sub, alertId);
+  if (!ok) {
+    return c.text("Alert not found", 404);
+  }
+  return c.redirect("/dashboard", 303);
 });
 
 // Add-domain form. Simple GET → form; POST → validate + insert.
