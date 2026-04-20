@@ -61,6 +61,25 @@ describe("auth/routes", () => {
       const url = new URL(location);
       expect(url.searchParams.get("provider")).toBe("authkit");
     });
+
+    it("sets oauth_state cookie and includes state in authorization URL", async () => {
+      const app = createTestApp();
+      const res = await app.request("/auth/login", {}, ENV);
+
+      const setCookieHeader = res.headers.get("Set-Cookie");
+      expect(setCookieHeader).not.toBeNull();
+      expect(setCookieHeader).toMatch(/oauth_state=[a-f0-9-]+;/);
+
+      const cookieMatch = setCookieHeader?.match(/oauth_state=([a-f0-9-]+);/);
+      const cookieState = cookieMatch?.[1];
+      expect(cookieState).toBeDefined();
+
+      const location = res.headers.get("Location") as string;
+      const url = new URL(location);
+      const urlState = url.searchParams.get("state");
+      expect(urlState).toBeDefined();
+      expect(urlState).toBe(cookieState);
+    });
   });
 
   describe("GET /auth/callback", () => {
@@ -70,6 +89,35 @@ describe("auth/routes", () => {
       expect(res.status).toBe(400);
       const body = await res.text();
       expect(body).toBe("Missing authorization code");
+    });
+
+    it("returns 400 when state query param is missing", async () => {
+      const app = createTestApp();
+      const req = new Request("http://localhost/auth/callback?code=test-code");
+      req.headers.set("Cookie", "oauth_state=test-state");
+      const res = await app.request(req, ENV);
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toBe("Invalid or missing state parameter");
+    });
+
+    it("returns 400 when oauth_state cookie is missing", async () => {
+      const app = createTestApp();
+      const req = new Request("http://localhost/auth/callback?code=test-code&state=test-state");
+      const res = await app.request(req, ENV);
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toBe("Invalid or missing state parameter");
+    });
+
+    it("returns 400 when state values do not match", async () => {
+      const app = createTestApp();
+      const req = new Request("http://localhost/auth/callback?code=test-code&state=query-state");
+      req.headers.set("Cookie", "oauth_state=cookie-state");
+      const res = await app.request(req, ENV);
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toBe("Invalid or missing state parameter");
     });
   });
 
