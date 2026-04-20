@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { deleteCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createDomain } from "../db/domains.js";
 import { createUser, getUserByEmail } from "../db/users.js";
 import { createSessionToken } from "./session.js";
@@ -11,11 +11,20 @@ authRoutes.get("/login", (c) => {
     WORKOS_CLIENT_ID: string;
     WORKOS_REDIRECT_URI: string;
   };
+  const state = crypto.randomUUID();
+  setCookie(c, "oauth_state", state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/",
+    maxAge: 10 * 60, // 10 minutes
+  });
   const params = new URLSearchParams({
     client_id: env.WORKOS_CLIENT_ID,
     redirect_uri: env.WORKOS_REDIRECT_URI,
     response_type: "code",
     provider: "authkit",
+    state,
   });
   return c.redirect(
     `https://api.workos.com/user_management/authorize?${params}`,
@@ -27,6 +36,16 @@ authRoutes.get("/callback", async (c) => {
   if (!code) {
     return c.text("Missing authorization code", 400);
   }
+
+  const queryState = c.req.query("state");
+  const cookieState = getCookie(c, "oauth_state");
+
+  if (!queryState || !cookieState || queryState !== cookieState) {
+    return c.text("Invalid or missing state parameter", 400);
+  }
+
+  // Clear the state cookie after successful validation
+  deleteCookie(c, "oauth_state", { path: "/" });
 
   const env = c.env as {
     WORKOS_CLIENT_ID: string;
