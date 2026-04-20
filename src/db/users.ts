@@ -3,8 +3,8 @@ export interface User {
   email: string;
   email_domain: string;
   stripe_customer_id: string | null;
-  api_key: string | null;
   email_alerts_enabled: number;
+  api_key_retirement_acknowledged_at: number | null;
   created_at: number;
 }
 
@@ -13,9 +13,14 @@ export async function createUser(
   input: { id: string; email: string },
 ): Promise<void> {
   const emailDomain = input.email.split("@")[1];
+  // New users created after the Phase 3 M3 migration never had a legacy
+  // cleartext API key, so pre-ack the retirement banner for them.
+  const nowSeconds = Math.floor(Date.now() / 1000);
   await db
-    .prepare("INSERT INTO users (id, email, email_domain) VALUES (?, ?, ?)")
-    .bind(input.id, input.email, emailDomain)
+    .prepare(
+      "INSERT INTO users (id, email, email_domain, api_key_retirement_acknowledged_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(input.id, input.email, emailDomain, nowSeconds)
     .run();
 }
 
@@ -34,27 +39,6 @@ export async function getUserByEmail(
     .prepare("SELECT * FROM users WHERE email = ?")
     .bind(email)
     .first<User>();
-}
-
-export async function getUserByApiKey(
-  db: D1Database,
-  apiKey: string,
-): Promise<User | null> {
-  return db
-    .prepare("SELECT * FROM users WHERE api_key = ?")
-    .bind(apiKey)
-    .first<User>();
-}
-
-export async function setApiKey(
-  db: D1Database,
-  userId: string,
-  apiKey: string,
-): Promise<void> {
-  await db
-    .prepare("UPDATE users SET api_key = ? WHERE id = ?")
-    .bind(apiKey, userId)
-    .run();
 }
 
 export async function getUserByStripeCustomerId(
@@ -86,5 +70,19 @@ export async function setEmailAlertsEnabled(
   await db
     .prepare("UPDATE users SET email_alerts_enabled = ? WHERE id = ?")
     .bind(enabled ? 1 : 0, userId)
+    .run();
+}
+
+// Dismisses the one-time "your old cleartext API key was retired" banner by
+// stamping `now`. Called on first visit to the API keys settings page.
+export async function acknowledgeApiKeyRetirement(
+  db: D1Database,
+  userId: string,
+): Promise<void> {
+  await db
+    .prepare(
+      "UPDATE users SET api_key_retirement_acknowledged_at = ? WHERE id = ?",
+    )
+    .bind(Math.floor(Date.now() / 1000), userId)
     .run();
 }

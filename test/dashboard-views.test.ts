@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  renderApiKeysPage,
   renderDashboardPage,
   renderDomainDetailPage,
   renderSettingsPage,
@@ -185,40 +186,28 @@ describe("renderDomainDetailPage", () => {
 });
 
 describe("renderSettingsPage", () => {
-  it("renders Generate API Key when no key exists", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
-    });
-    expect(html).toContain("Generate API Key");
-    expect(html).not.toContain("Regenerate");
-  });
+  const defaults = {
+    email: "user@example.com",
+    webhookUrl: null,
+    plan: "free" as const,
+    billingEnabled: true,
+    emailAlertsEnabled: true,
+    showRetirementBanner: false,
+  };
 
-  it("renders Regenerate and existing key when apiKey is set", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: "dmx_abc123secret",
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
-    });
-    expect(html).toContain("dmx_abc123secret");
-    expect(html).toContain("Regenerate");
+  it("links to the API Keys page instead of rendering the raw key inline", () => {
+    const html = renderSettingsPage(defaults);
+    expect(html).toContain("/dashboard/settings/api-keys");
+    expect(html).toContain("Manage API Keys");
+    // No `.api-key-display` element on this page — the shared CSS class still
+    // appears in the <style> block, but it shouldn't be used in the body.
+    expect(html).not.toContain('class="api-key-display"');
   });
 
   it("renders email in account section", () => {
     const html = renderSettingsPage({
+      ...defaults,
       email: "admin@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
     });
     expect(html).toContain("admin@example.com");
     expect(html).toContain("Account");
@@ -226,80 +215,46 @@ describe("renderSettingsPage", () => {
 
   it("renders webhook input with existing URL prefilled", () => {
     const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
+      ...defaults,
       webhookUrl: "https://hooks.example.com/dmarc",
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
     });
     expect(html).toContain("https://hooks.example.com/dmarc");
     expect(html).toContain("Webhook");
   });
 
   it("renders the Pro badge and Manage Billing link for pro users", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "pro",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
-    });
+    const html = renderSettingsPage({ ...defaults, plan: "pro" });
     expect(html).toContain("Manage Billing");
     expect(html).toContain("<strong>Pro</strong>");
   });
 
   it("renders the Free badge and an Upgrade link for free users", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
-    });
+    const html = renderSettingsPage(defaults);
     expect(html).toContain("<strong>Free</strong>");
     expect(html).toContain("Upgrade to Pro");
   });
 
   it("shows a 'not configured' message when billing is disabled on this deployment", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: false,
-      emailAlertsEnabled: true,
-    });
+    const html = renderSettingsPage({ ...defaults, billingEnabled: false });
     expect(html).toContain("not configured");
     expect(html).not.toContain("Upgrade to Pro");
   });
 
-  it("escapes API key to prevent XSS", () => {
+  it("renders the retirement banner when showRetirementBanner is true", () => {
     const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: "<script>alert(1)</script>",
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
+      ...defaults,
+      showRetirementBanner: true,
     });
-    // The escaped form must appear; raw user content must not be injected as HTML
-    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-    // The api-key-display div must contain escaped content
-    expect(html).toContain('class="api-key-display">&lt;script&gt;');
+    expect(html).toContain("API key was retired");
+  });
+
+  it("omits the retirement banner by default", () => {
+    const html = renderSettingsPage(defaults);
+    expect(html).not.toContain("API key was retired");
   });
 
   it("renders the email-alerts section with the checkbox checked when enabled", () => {
-    const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
-      emailAlertsEnabled: true,
-    });
+    const html = renderSettingsPage(defaults);
     expect(html).toContain("Email Alerts");
     expect(html).toContain('name="enabled" checked');
     expect(html).toContain("/dashboard/settings/email-alerts");
@@ -307,14 +262,84 @@ describe("renderSettingsPage", () => {
 
   it("renders the checkbox unchecked when email alerts are disabled", () => {
     const html = renderSettingsPage({
-      email: "user@example.com",
-      apiKey: null,
-      webhookUrl: null,
-      plan: "free",
-      billingEnabled: true,
+      ...defaults,
       emailAlertsEnabled: false,
     });
     expect(html).toContain('name="enabled" >');
     expect(html).not.toContain('name="enabled" checked');
+  });
+});
+
+describe("renderApiKeysPage", () => {
+  const baseProps = {
+    email: "user@example.com",
+    keys: [],
+    justCreated: null as string | null,
+    showRetirementBanner: false,
+  };
+
+  it("renders an empty-state message when the user has no keys", () => {
+    const html = renderApiKeysPage(baseProps);
+    expect(html).toContain("No API keys yet");
+    expect(html).toContain("Generate API Key");
+  });
+
+  it("lists keys by prefix + name + status", () => {
+    const html = renderApiKeysPage({
+      ...baseProps,
+      keys: [
+        {
+          id: "k1",
+          name: "ci-pipeline",
+          prefix: "dmk_abcd1234",
+          createdAt: "2026-04-01",
+          lastUsedAt: "2026-04-18",
+          revoked: false,
+        },
+      ],
+    });
+    expect(html).toContain("ci-pipeline");
+    expect(html).toContain("dmk_abcd1234");
+    expect(html).toContain("Active");
+    expect(html).toContain("Revoke");
+  });
+
+  it("renders revoked keys without a Revoke button", () => {
+    const html = renderApiKeysPage({
+      ...baseProps,
+      keys: [
+        {
+          id: "k1",
+          name: null,
+          prefix: "dmk_abcd1234",
+          createdAt: "2026-04-01",
+          lastUsedAt: null,
+          revoked: true,
+        },
+      ],
+    });
+    expect(html).toContain("Revoked");
+    expect(html).not.toContain("/api-keys/revoke");
+  });
+
+  it("shows the just-created banner only when justCreated is set", () => {
+    const raw = `dmk_${"x".repeat(32)}`;
+    const html = renderApiKeysPage({ ...baseProps, justCreated: raw });
+    expect(html).toContain("Save this key now");
+    expect(html).toContain(raw);
+  });
+
+  it("escapes the raw key in the banner to prevent HTML injection", () => {
+    const raw = "dmk_<script>";
+    const html = renderApiKeysPage({ ...baseProps, justCreated: raw });
+    expect(html).toContain("dmk_&lt;script&gt;");
+  });
+
+  it("renders the retirement banner when showRetirementBanner is true", () => {
+    const html = renderApiKeysPage({
+      ...baseProps,
+      showRetirementBanner: true,
+    });
+    expect(html).toContain("old API key was retired");
   });
 });

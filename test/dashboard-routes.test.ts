@@ -53,7 +53,8 @@ function createMockDB(data: {
     email: string;
     email_domain: string;
     stripe_customer_id: string | null;
-    api_key: string | null;
+    email_alerts_enabled: number;
+    api_key_retirement_acknowledged_at: number | null;
     created_at: number;
   }>;
   scanHistory?: Array<{ grade: string; scanned_at: number }>;
@@ -63,12 +64,23 @@ function createMockDB(data: {
     url: string;
     secret: string;
   }>;
+  apiKeys?: Array<{
+    id: string;
+    user_id: string;
+    name: string | null;
+    prefix: string;
+    hash: string;
+    created_at: number;
+    last_used_at: number | null;
+    revoked_at: number | null;
+  }>;
   writes?: Array<{ sql: string; bindings: unknown[] }>;
 }) {
   const domains = data.domains ?? [];
   const users = data.users ?? [];
   const scanHistory = data.scanHistory ?? [];
   const webhooks = data.webhooks ?? [];
+  const apiKeys = data.apiKeys ?? [];
   const writes = data.writes;
 
   const makeStatement = (sql: string, bindings: unknown[]) => ({
@@ -104,6 +116,11 @@ function createMockDB(data: {
       if (sql.includes("SELECT grade, scanned_at FROM scan_history")) {
         return { results: scanHistory as T[] };
       }
+      if (sql.includes("SELECT * FROM api_keys WHERE user_id")) {
+        return {
+          results: apiKeys.filter((k) => k.user_id === bindings[0]) as T[],
+        };
+      }
       return { results: [] as T[] };
     },
     run: async () => {
@@ -132,10 +149,17 @@ function createTestApp(db: ReturnType<typeof createMockDB>) {
   // Inject the mock DB into requests via env
   return {
     request: (url: string, init?: RequestInit) =>
-      app.request(url, init, {
-        SESSION_SECRET: SECRET,
-        DB: db,
-      }),
+      app.request(
+        url,
+        init,
+        { SESSION_SECRET: SECRET, DB: db },
+        // Stub ExecutionContext so handlers that fire-and-forget writes via
+        // `c.executionCtx.waitUntil(...)` don't blow up in tests.
+        {
+          waitUntil: () => {},
+          passThroughOnException: () => {},
+        } as ExecutionContext,
+      ),
   };
 }
 
@@ -162,7 +186,8 @@ describe("dashboard/routes", () => {
             email: "alice@example.com",
             email_domain: "example.com",
             stripe_customer_id: null,
-            api_key: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
             created_at: 1700000000,
           },
         ],
@@ -313,7 +338,8 @@ describe("dashboard/routes", () => {
             email: "alice@example.com",
             email_domain: "example.com",
             stripe_customer_id: null,
-            api_key: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
             created_at: 1700000000,
           },
         ],
@@ -329,7 +355,7 @@ describe("dashboard/routes", () => {
       expect(body).toContain("alice@example.com");
     });
 
-    it("shows API key when one exists", async () => {
+    it("links to the API keys management page (hashed-key flow)", async () => {
       const db = createMockDB({
         users: [
           {
@@ -337,7 +363,8 @@ describe("dashboard/routes", () => {
             email: "alice@example.com",
             email_domain: "example.com",
             stripe_customer_id: null,
-            api_key: "dmarc_abc123",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
             created_at: 1700000000,
           },
         ],
@@ -348,8 +375,31 @@ describe("dashboard/routes", () => {
         headers: { Cookie: cookie },
       });
       const body = await res.text();
-      expect(body).toContain("dmarc_abc123");
-      expect(body).toContain("Regenerate");
+      expect(body).toContain("/dashboard/settings/api-keys");
+      expect(body).toContain("Manage API Keys");
+    });
+
+    it("renders the retirement banner when the user has not acked", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_1",
+            email: "alice@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: null,
+            created_at: 1700000000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/settings", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).toContain("API key was retired");
     });
 
     it("shows webhook URL when one is configured", async () => {
@@ -360,7 +410,8 @@ describe("dashboard/routes", () => {
             email: "alice@example.com",
             email_domain: "example.com",
             stripe_customer_id: null,
-            api_key: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
             created_at: 1700000000,
           },
         ],
@@ -394,46 +445,200 @@ describe("dashboard/routes", () => {
     });
   });
 
-  describe("POST /dashboard/settings/api-key", () => {
+  describe("GET /dashboard/settings/api-keys", () => {
     it("redirects to /auth/login without a session cookie", async () => {
       const db = createMockDB({});
       const app = createTestApp(db);
-      const res = await app.request("/dashboard/settings/api-key", {
+      const res = await app.request("/dashboard/settings/api-keys");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("lists existing keys by prefix and omits raw values on a normal visit", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_1",
+            email: "alice@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        apiKeys: [
+          {
+            id: "k1",
+            user_id: "user_1",
+            name: "ci-pipeline",
+            prefix: "dmk_abcd1234",
+            hash: "a".repeat(64),
+            created_at: 1700000000,
+            last_used_at: null,
+            revoked_at: null,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/settings/api-keys", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("ci-pipeline");
+      expect(body).toContain("dmk_abcd1234");
+      expect(body).toContain("Active");
+      expect(body).not.toContain("Save this key now");
+    });
+
+    it("shows the raw key banner only on the created=1 redirect", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_1",
+            email: "alice@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        apiKeys: [],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const raw = `dmk_${"a".repeat(32)}`;
+      const res = await app.request(
+        `/dashboard/settings/api-keys?created=1&raw=${encodeURIComponent(raw)}`,
+        { headers: { Cookie: cookie } },
+      );
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Save this key now");
+      expect(body).toContain(raw);
+    });
+
+    it("acks the retirement banner via waitUntil on first visit", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_1",
+            email: "alice@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: null,
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: null,
+            created_at: 1700000000,
+          },
+        ],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/settings/api-keys", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("old API key was retired");
+      // Ack is scheduled via waitUntil; in tests we can observe the write.
+      const ack = writes.find((w) =>
+        w.sql.includes("UPDATE users SET api_key_retirement_acknowledged_at"),
+      );
+      expect(ack).toBeDefined();
+    });
+  });
+
+  describe("POST /dashboard/settings/api-keys/generate", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/settings/api-keys/generate", {
         method: "POST",
       });
       expect(res.status).toBe(302);
       expect(res.headers.get("Location")).toBe("/auth/login");
     });
 
-    it("redirects to /dashboard/settings after generating a key", async () => {
-      const updatedKey: { value: string | null } = { value: null };
-      const db = createMockDB({});
-      // Override run to capture the key
-      const origPrepare = db.prepare.bind(db);
-      db.prepare = (sql: string) => {
-        const stmt = origPrepare(sql);
-        if (sql.includes("UPDATE users SET api_key")) {
-          return {
-            ...stmt,
-            bind: (...args: unknown[]) => ({
-              ...stmt,
-              run: async () => {
-                updatedKey.value = args[0] as string;
-                return { success: true };
-              },
-            }),
-          };
-        }
-        return stmt;
-      };
+    it("creates an api_keys row and redirects with the raw key in the query string (shown once)", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
       const app = createTestApp(db);
       const cookie = await makeSessionCookie("user_1", "alice@example.com");
-      const res = await app.request("/dashboard/settings/api-key", {
+
+      const res = await app.request("/dashboard/settings/api-keys/generate", {
         method: "POST",
-        headers: { Cookie: cookie },
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "name=ci-pipeline",
       });
-      expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/dashboard/settings");
+
+      expect(res.status).toBe(303);
+      const loc = res.headers.get("Location") ?? "";
+      expect(loc.startsWith("/dashboard/settings/api-keys?")).toBe(true);
+      expect(loc).toContain("created=1");
+      expect(loc).toContain("raw=dmk_");
+
+      const insert = writes.find((w) => w.sql.includes("INSERT INTO api_keys"));
+      expect(insert).toBeDefined();
+      // bindings: id, userId, name, prefix, hash
+      expect(insert?.bindings[1]).toBe("user_1");
+      expect(insert?.bindings[2]).toBe("ci-pipeline");
+      expect(String(insert?.bindings[3] ?? "")).toMatch(/^dmk_.{8}$/);
+      expect(String(insert?.bindings[4] ?? "")).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it("stores name as null when the form field is blank", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const res = await app.request("/dashboard/settings/api-keys/generate", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "name=",
+      });
+      expect(res.status).toBe(303);
+
+      const insert = writes.find((w) => w.sql.includes("INSERT INTO api_keys"));
+      expect(insert?.bindings[2]).toBeNull();
+    });
+  });
+
+  describe("POST /dashboard/settings/api-keys/revoke", () => {
+    it("writes UPDATE api_keys SET revoked_at keyed on id + user_id", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const res = await app.request("/dashboard/settings/api-keys/revoke", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "id=some-key-id",
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard/settings/api-keys");
+
+      const update = writes.find(
+        (w) =>
+          w.sql.includes("UPDATE api_keys") && w.sql.includes("revoked_at"),
+      );
+      expect(update).toBeDefined();
+      expect(update?.bindings).toEqual(["some-key-id", "user_1"]);
     });
   });
 

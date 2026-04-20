@@ -24,8 +24,8 @@ interface MockState {
       email: string;
       email_domain: string;
       stripe_customer_id: string | null;
-      api_key: string | null;
       email_alerts_enabled: number;
+      api_key_retirement_acknowledged_at: number | null;
       created_at: number;
     }
   >;
@@ -188,8 +188,8 @@ describe("stripeWebhookRoutes POST /webhooks/stripe", () => {
       email: "pro@example.com",
       email_domain: "example.com",
       stripe_customer_id: "cus_pro",
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const app = new Hono();
@@ -232,8 +232,8 @@ describe("stripeWebhookRoutes POST /webhooks/stripe", () => {
       email: "pro@example.com",
       email_domain: "example.com",
       stripe_customer_id: "cus_pro",
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     state.subscriptions.set("u1", {
@@ -276,8 +276,8 @@ describe("stripeWebhookRoutes POST /webhooks/stripe", () => {
       email: "pro@example.com",
       email_domain: "example.com",
       stripe_customer_id: "cus_pro",
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const app = new Hono();
@@ -439,8 +439,8 @@ describe("dashboardBillingRoutes GET /subscribe", () => {
       email: "upgrade@example.com",
       email_domain: "example.com",
       stripe_customer_id: null,
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const cookie = await sessionCookie("u1", "upgrade@example.com");
@@ -469,8 +469,8 @@ describe("dashboardBillingRoutes GET /subscribe", () => {
       email: "upgrade@example.com",
       email_domain: "example.com",
       stripe_customer_id: "cus_existing",
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const cookie = await sessionCookie("u1", "upgrade@example.com");
@@ -519,8 +519,8 @@ describe("dashboardBillingRoutes GET /portal", () => {
       email: "free@example.com",
       email_domain: "example.com",
       stripe_customer_id: null,
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const token = await createSessionToken(
@@ -545,8 +545,8 @@ describe("dashboardBillingRoutes GET /portal", () => {
       email: "pro@example.com",
       email_domain: "example.com",
       stripe_customer_id: "cus_pro",
-      api_key: null,
       email_alerts_enabled: 1,
+      api_key_retirement_acknowledged_at: 0,
       created_at: 0,
     });
     const token = await createSessionToken(

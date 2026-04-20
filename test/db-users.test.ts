@@ -1,43 +1,46 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  acknowledgeApiKeyRetirement,
   createUser,
-  getUserByApiKey,
   getUserByEmail,
   getUserById,
-  setApiKey,
   type User,
 } from "../src/db/users.js";
 
-// In-memory store for mock D1
 let store: Map<string, User>;
 
 function makeD1Mock(): D1Database {
-  // Each call to prepare returns a statement builder.
-  // We track the SQL and implement bind/run/first against the in-memory store.
   const prepare = (sql: string) => {
     return {
       bind: (...params: unknown[]) => {
         return {
           run: async () => {
             if (/^INSERT INTO users/i.test(sql)) {
-              const [id, email, email_domain] = params as [
+              const [id, email, email_domain, ackAt] = params as [
                 string,
                 string,
                 string,
+                number,
               ];
               store.set(id, {
                 id,
                 email,
                 email_domain,
                 stripe_customer_id: null,
-                api_key: null,
+                email_alerts_enabled: 1,
+                api_key_retirement_acknowledged_at: ackAt,
                 created_at: Math.floor(Date.now() / 1000),
               });
-            } else if (/^UPDATE users SET api_key/i.test(sql)) {
-              const [apiKey, userId] = params as [string, string];
+            } else if (
+              /^UPDATE users SET api_key_retirement_acknowledged_at/i.test(sql)
+            ) {
+              const [ackAt, userId] = params as [number, string];
               const user = store.get(userId);
               if (user) {
-                store.set(userId, { ...user, api_key: apiKey });
+                store.set(userId, {
+                  ...user,
+                  api_key_retirement_acknowledged_at: ackAt,
+                });
               }
             }
             return { success: true };
@@ -54,13 +57,6 @@ function makeD1Mock(): D1Database {
               }
               return null;
             }
-            if (/WHERE api_key = \?/i.test(sql)) {
-              const [apiKey] = params as [string];
-              for (const user of store.values()) {
-                if (user.api_key === apiKey) return user as T;
-              }
-              return null;
-            }
             return null;
           },
         };
@@ -68,7 +64,6 @@ function makeD1Mock(): D1Database {
     };
   };
 
-  // Cast to D1Database — we only use prepare/bind/run/first in our module
   return { prepare } as unknown as D1Database;
 }
 
@@ -97,12 +92,16 @@ describe("db/users", () => {
       expect(user?.email_domain).toBe("dmarc.mx");
     });
 
-    it("initialises stripe_customer_id and api_key as null", async () => {
+    it("pre-acks API-key retirement for new users so the banner doesn't show for them", async () => {
+      const before = Math.floor(Date.now() / 1000);
       await createUser(db, { id: "user-3", email: "carol@test.org" });
       const user = await getUserById(db, "user-3");
 
       expect(user?.stripe_customer_id).toBeNull();
-      expect(user?.api_key).toBeNull();
+      expect(user?.api_key_retirement_acknowledged_at).not.toBeNull();
+      expect(user?.api_key_retirement_acknowledged_at).toBeGreaterThanOrEqual(
+        before,
+      );
     });
   });
 
@@ -128,20 +127,26 @@ describe("db/users", () => {
     });
   });
 
-  describe("setApiKey + getUserByApiKey", () => {
-    it("sets an api key and retrieves the user by that key", async () => {
+  describe("acknowledgeApiKeyRetirement", () => {
+    it("stamps api_key_retirement_acknowledged_at with a unix-second timestamp", async () => {
       await createUser(db, { id: "user-5", email: "eve@example.com" });
-      await setApiKey(db, "user-5", "sk-test-abc123");
+      // Force the ack to null (simulating a pre-migration legacy user)
+      const user = store.get("user-5");
+      if (user) {
+        store.set("user-5", {
+          ...user,
+          api_key_retirement_acknowledged_at: null,
+        });
+      }
 
-      const user = await getUserByApiKey(db, "sk-test-abc123");
-      expect(user).not.toBeNull();
-      expect(user?.id).toBe("user-5");
-      expect(user?.api_key).toBe("sk-test-abc123");
-    });
+      const before = Math.floor(Date.now() / 1000);
+      await acknowledgeApiKeyRetirement(db, "user-5");
+      const after = await getUserById(db, "user-5");
 
-    it("returns null when no user has that api key", async () => {
-      const user = await getUserByApiKey(db, "sk-unknown");
-      expect(user).toBeNull();
+      expect(after?.api_key_retirement_acknowledged_at).not.toBeNull();
+      expect(after?.api_key_retirement_acknowledged_at).toBeGreaterThanOrEqual(
+        before,
+      );
     });
   });
 });
