@@ -85,6 +85,16 @@ function createMockDB(data: {
     last_used_at: number | null;
     revoked_at: number | null;
   }>;
+  alerts?: Array<{
+    id: number;
+    domain_id: number;
+    alert_type: string;
+    previous_value: string | null;
+    new_value: string | null;
+    notified_via: string | null;
+    acknowledged_at: number | null;
+    created_at: number;
+  }>;
   writes?: Array<{ sql: string; bindings: unknown[] }>;
 }) {
   const domains = data.domains ?? [];
@@ -93,6 +103,7 @@ function createMockDB(data: {
   const webhooks = data.webhooks ?? [];
   const apiKeys = data.apiKeys ?? [];
   const subscriptions = data.subscriptions ?? [];
+  const alerts = data.alerts ?? [];
   const writes = data.writes;
 
   const makeStatement = (sql: string, bindings: unknown[]) => ({
@@ -153,11 +164,61 @@ function createMockDB(data: {
           results: apiKeys.filter((k) => k.user_id === bindings[0]) as T[],
         };
       }
+      if (
+        /acknowledged_at IS NULL[\s\S]*ORDER BY a\.created_at DESC/i.test(sql)
+      ) {
+        const [userId, limit] = bindings as [string, number];
+        const ownedDomainIds = new Set(
+          domains.filter((d) => d.user_id === userId).map((d) => d.id),
+        );
+        const rows = alerts
+          .filter(
+            (a) =>
+              a.acknowledged_at === null && ownedDomainIds.has(a.domain_id),
+          )
+          .sort((a, b) => b.created_at - a.created_at)
+          .slice(0, limit)
+          .map((a) => ({
+            ...a,
+            domain: domains.find((d) => d.id === a.domain_id)?.domain ?? "",
+          }));
+        return { results: rows as T[] };
+      }
+      if (/GROUP BY a\.domain_id/i.test(sql)) {
+        const [userId] = bindings as [string];
+        const ownedDomainIds = new Set(
+          domains.filter((d) => d.user_id === userId).map((d) => d.id),
+        );
+        const counts = new Map<number, number>();
+        for (const a of alerts) {
+          if (a.acknowledged_at !== null) continue;
+          if (!ownedDomainIds.has(a.domain_id)) continue;
+          counts.set(a.domain_id, (counts.get(a.domain_id) ?? 0) + 1);
+        }
+        const rows = [...counts.entries()].map(([domain_id, count]) => ({
+          domain_id,
+          count,
+        }));
+        return { results: rows as T[] };
+      }
       return { results: [] as T[] };
     },
     run: async () => {
       writes?.push({ sql, bindings });
-      return { success: true };
+      if (/^\s*UPDATE alerts\s+SET acknowledged_at/i.test(sql)) {
+        const [now, alertId, userId] = bindings as [number, number, string];
+        const alert = alerts.find((a) => a.id === alertId);
+        if (!alert || alert.acknowledged_at !== null) {
+          return { success: true, meta: { changes: 0 } };
+        }
+        const owner = domains.find((d) => d.id === alert.domain_id);
+        if (!owner || owner.user_id !== userId) {
+          return { success: true, meta: { changes: 0 } };
+        }
+        alert.acknowledged_at = now;
+        return { success: true, meta: { changes: 1 } };
+      }
+      return { success: true, meta: { changes: 1 } };
     },
   });
 
@@ -1174,6 +1235,219 @@ describe("dashboard/routes", () => {
       const deleted = writes.find((w) => w.sql.includes("DELETE FROM domains"));
       expect(deleted).toBeDefined();
       expect(deleted?.bindings).toEqual(["user_1", "example.com"]);
+    });
+  });
+
+  describe("GET /dashboard alerts surface", () => {
+    const userDomain = {
+      id: 1,
+      user_id: "user_1",
+      domain: "example.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700000000,
+      last_grade: "C",
+      created_at: 1700000000,
+    };
+
+    it("renders the Needs attention section when the user has unacknowledged alerts", async () => {
+      const db = createMockDB({
+        domains: [userDomain],
+        alerts: [
+          {
+            id: 11,
+            domain_id: 1,
+            alert_type: "grade_drop",
+            previous_value: "A",
+            new_value: "C",
+            notified_via: null,
+            acknowledged_at: null,
+            created_at: 1_700_000_500,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Needs attention");
+      expect(body).toContain("Grade dropped from A to C");
+      expect(body).toContain("/dashboard/alerts/11/acknowledge");
+      // Per-domain badge appears in the table row.
+      expect(body).toContain("badge-alert");
+      expect(body).toContain("1 alert");
+    });
+
+    it("omits the Needs attention section when no alerts exist", async () => {
+      const db = createMockDB({
+        domains: [userDomain],
+        alerts: [],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).not.toContain("Needs attention");
+      // Markup-level usage; .badge-alert exists in DASHBOARD_CSS unconditionally.
+      expect(body).not.toContain('class="badge-alert"');
+    });
+
+    it("does not surface another user's alerts", async () => {
+      const db = createMockDB({
+        domains: [
+          userDomain,
+          {
+            id: 2,
+            user_id: "user_2",
+            domain: "other.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1700000000,
+          },
+        ],
+        alerts: [
+          {
+            id: 22,
+            domain_id: 2,
+            alert_type: "grade_drop",
+            previous_value: "A",
+            new_value: "F",
+            notified_via: null,
+            acknowledged_at: null,
+            created_at: 1_700_000_500,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).not.toContain("Needs attention");
+      expect(body).not.toContain("/dashboard/alerts/22/acknowledge");
+    });
+  });
+
+  describe("POST /dashboard/alerts/:id/acknowledge", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/alerts/1/acknowledge", {
+        method: "POST",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 400 when the id is not numeric", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/alerts/abc/acknowledge", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("303-redirects to /dashboard for the user's own alert and persists the ack", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "C",
+            created_at: 1700000000,
+          },
+        ],
+        alerts: [
+          {
+            id: 42,
+            domain_id: 1,
+            alert_type: "grade_drop",
+            previous_value: "A",
+            new_value: "C",
+            notified_via: null,
+            acknowledged_at: null,
+            created_at: 1_700_000_500,
+          },
+        ],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/alerts/42/acknowledge", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe("/dashboard");
+      const ack = writes.find((w) =>
+        /UPDATE alerts\s+SET acknowledged_at/i.test(w.sql),
+      );
+      expect(ack).toBeDefined();
+      expect(ack?.bindings[1]).toBe(42); // alertId
+      expect(ack?.bindings[2]).toBe("user_1"); // userId
+    });
+
+    it("returns 404 for another user's alert id (IDOR)", async () => {
+      const db = createMockDB({
+        domains: [
+          {
+            id: 2,
+            user_id: "user_2",
+            domain: "other.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1700000000,
+          },
+        ],
+        alerts: [
+          {
+            id: 99,
+            domain_id: 2,
+            alert_type: "grade_drop",
+            previous_value: "A",
+            new_value: "F",
+            notified_via: null,
+            acknowledged_at: null,
+            created_at: 1_700_000_500,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/alerts/99/acknowledge", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for a nonexistent alert id (no 500, no redirect to dashboard)", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/alerts/99999/acknowledge", {
+        method: "POST",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(404);
     });
   });
 });

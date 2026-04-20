@@ -119,6 +119,84 @@ const DASHBOARD_CSS = `
   margin-left: 0.4rem;
   vertical-align: middle;
 }
+.badge-alert {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  background: var(--clr-fail);
+  color: white;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+.alerts-needs-attention {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-fail);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.alerts-needs-attention h2 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--clr-fail);
+}
+.alerts-needs-attention ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.alerts-needs-attention li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--clr-border);
+  font-size: 0.875rem;
+  flex-wrap: wrap;
+}
+.alerts-needs-attention li:first-child {
+  border-top: none;
+}
+.alerts-needs-attention .alert-domain {
+  font-weight: 600;
+}
+.alerts-needs-attention .alert-domain a {
+  color: var(--clr-accent);
+  text-decoration: none;
+}
+.alerts-needs-attention .alert-domain a:hover {
+  text-decoration: underline;
+}
+.alerts-needs-attention .alert-message {
+  color: var(--clr-text);
+  flex: 1;
+  min-width: 200px;
+}
+.alerts-needs-attention .alert-time {
+  color: var(--clr-text-muted);
+  font-size: 0.75rem;
+}
+.alerts-needs-attention form {
+  margin: 0;
+}
+.alerts-needs-attention .btn-dismiss {
+  background: transparent;
+  border: 1px solid var(--clr-border);
+  color: var(--clr-text-muted);
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.alerts-needs-attention .btn-dismiss:hover {
+  border-color: var(--clr-fail);
+  color: var(--clr-fail);
+}
 .grade-badge {
   display: inline-flex;
   align-items: center;
@@ -414,6 +492,16 @@ export interface DashboardDomain {
   frequency: string;
   lastScanned: string | null;
   isFree: boolean;
+  unacknowledgedAlerts?: number;
+}
+
+export interface DashboardAlert {
+  id: number;
+  domain: string;
+  alertType: string;
+  previousValue: string | null;
+  newValue: string | null;
+  createdAt: number;
 }
 
 export interface ScanHistoryEntry {
@@ -421,11 +509,73 @@ export interface ScanHistoryEntry {
   grade: string;
 }
 
+function describeAlert(alert: DashboardAlert): string {
+  const prev = alert.previousValue ?? "";
+  const next = alert.newValue ?? "";
+  if (alert.alertType === "grade_drop") {
+    return `Grade dropped from ${prev || "—"} to ${next || "—"}`;
+  }
+  if (alert.alertType === "protocol_regression") {
+    // Detector writes values shaped as "${proto}:${status}" — strip protocol
+    // names to keep the message scannable, fall back to raw if shape changes.
+    const prevColon = prev.indexOf(":");
+    const nextColon = next.indexOf(":");
+    const proto =
+      prevColon > 0
+        ? prev.slice(0, prevColon)
+        : nextColon > 0
+          ? next.slice(0, nextColon)
+          : "";
+    const prevStatus = prevColon > 0 ? prev.slice(prevColon + 1) : prev;
+    const nextStatus = nextColon > 0 ? next.slice(nextColon + 1) : next;
+    const protoLabel = proto
+      ? proto.toUpperCase().replace(/_/g, "-")
+      : "Protocol";
+    return `${protoLabel} regressed: ${prevStatus || "—"} → ${nextStatus || "—"}`;
+  }
+  return `${alert.alertType}: ${prev} → ${next}`;
+}
+
+function relativeTime(unixSeconds: number, now: number): string {
+  const deltaSec = Math.max(0, now - unixSeconds);
+  if (deltaSec < 60) return "just now";
+  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)}m ago`;
+  if (deltaSec < 86400) return `${Math.floor(deltaSec / 3600)}h ago`;
+  return `${Math.floor(deltaSec / 86400)}d ago`;
+}
+
+export function renderAlertsSection(
+  alerts: DashboardAlert[],
+  now: number = Math.floor(Date.now() / 1000),
+): string {
+  if (alerts.length === 0) return "";
+  const items = alerts
+    .map((a) => {
+      const domainHref = `/dashboard/domain/${encodeURIComponent(a.domain)}`;
+      const ackHref = `/dashboard/alerts/${a.id}/acknowledge`;
+      return `<li>
+  <span class="alert-domain"><a href="${domainHref}">${esc(a.domain)}</a></span>
+  <span class="alert-message">${esc(describeAlert(a))}</span>
+  <span class="alert-time">${esc(relativeTime(a.createdAt, now))}</span>
+  <form method="post" action="${ackHref}">
+    <button type="submit" class="btn-dismiss">Dismiss</button>
+  </form>
+</li>`;
+    })
+    .join("");
+  return `<section class="alerts-needs-attention" aria-label="Domain regressions needing attention">
+  <h2>Needs attention</h2>
+  <ul>${items}</ul>
+</section>`;
+}
+
 export function renderDashboardPage({
   email,
+  alerts = [],
   domains,
 }: {
   email: string;
+  alerts?: DashboardAlert[];
   domains: DashboardDomain[];
 }): string {
   let tableBody: string;
@@ -437,17 +587,23 @@ export function renderDashboardPage({
 </div>`;
   } else {
     const rows = domains
-      .map(
-        (d) => `<tr>
+      .map((d) => {
+        const alertCount = d.unacknowledgedAlerts ?? 0;
+        const alertBadge =
+          alertCount > 0
+            ? `<span class="badge-alert">${alertCount} alert${alertCount === 1 ? "" : "s"}</span>`
+            : "";
+        return `<tr>
   <td>
     <a href="/dashboard/domain/${encodeURIComponent(d.domain)}">${esc(d.domain)}</a>
     ${d.isFree ? '<span class="badge-free">Free</span>' : ""}
+    ${alertBadge}
   </td>
   <td><span class="inline-grade ${gradeClass(d.grade)}">${esc(d.grade)}</span></td>
   <td>${esc(d.frequency)}</td>
   <td>${d.lastScanned ? esc(d.lastScanned) : '<span style="color:var(--clr-text-muted)">Never</span>'}</td>
-</tr>`,
-      )
+</tr>`;
+      })
       .join("");
 
     tableBody = `<table class="domain-table">
@@ -466,6 +622,7 @@ export function renderDashboardPage({
   return dashboardPage(
     "Domains — dmarc.mx",
     `<h1 class="dashboard-title">Your Domains</h1>
+${renderAlertsSection(alerts)}
 ${tableBody}`,
     email,
   );
