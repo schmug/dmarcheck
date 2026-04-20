@@ -470,8 +470,12 @@ ${errorBlock}
     placeholder="example.com"
     autofocus
     required
+    autocapitalize="none"
+    autocorrect="off"
+    spellcheck="false"
+    aria-describedby="domain-help"
   >
-  <p style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0.5rem 0 1rem">
+  <p id="domain-help" style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0.5rem 0 1rem">
     We'll run a full DMARC/SPF/DKIM/BIMI/MTA-STS scan and notify you if the grade drops.
   </p>
   <div class="action-row">
@@ -539,6 +543,9 @@ ${retirementBanner}
       name="webhookUrl"
       placeholder="https://your-server.example/webhook"
       value="${webhookUrl ? esc(webhookUrl) : ""}"
+      autocapitalize="none"
+      autocorrect="off"
+      spellcheck="false"
     >
     <button type="submit" class="btn">Save Webhook</button>
   </form>
@@ -624,7 +631,7 @@ export function renderApiKeysPage({
   <p>This is the only time the full key will be shown. Copy it somewhere safe before navigating away.</p>
   <div class="api-key-display" style="display:flex;gap:0.5rem;align-items:center">
     <span style="flex:1;overflow-x:auto">${esc(justCreated)}</span>
-    <button type="button" class="copy-btn" data-copy="${esc(justCreated)}">Copy</button>
+    <button type="button" class="copy-btn" data-copy="${esc(justCreated)}" aria-label="Copy API key">Copy</button>
   </div>
 </div>`
     : "";
@@ -682,7 +689,7 @@ ${justCreatedBanner}
   <p>Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
   <form method="POST" action="/dashboard/settings/api-keys/generate">
     <label for="api-key-name" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Label (optional)</label>
-    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60">
+    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60" autocapitalize="none" autocorrect="off" spellcheck="false">
     <div class="action-row">
       <button type="submit" class="btn">Generate API Key</button>
       <a href="/dashboard/settings" class="btn btn-secondary">Back to Settings</a>
