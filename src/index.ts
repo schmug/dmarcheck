@@ -15,7 +15,7 @@ import type {
 } from "./analyzers/types.js";
 import { API_CATALOG_JSON } from "./api/catalog.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
-import { resolveBearer } from "./auth/api-key.js";
+import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
 import { stripeWebhookRoutes } from "./billing/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
@@ -24,11 +24,17 @@ import { generateCsv } from "./csv.js";
 import { dashboardRoutes } from "./dashboard/routes.js";
 import { getDomainByUserAndName } from "./db/domains.js";
 import { recordScan } from "./db/scans.js";
+import { getPlanForUser } from "./db/subscriptions.js";
 import { setEmailAlertsEnabled } from "./db/users.js";
 import type { Env } from "./env.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
-import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
+import {
+  checkRateLimit,
+  getRateLimitConfig,
+  type RateLimitResult,
+  rateLimitHeaders,
+} from "./rate-limit.js";
 import { normalizeDomain } from "./shared/domain.js";
 import { CSS_PATH, JS_PATH } from "./views/assets.js";
 import {
@@ -238,23 +244,84 @@ function getClientIp(c: Context): string {
   return "unknown";
 }
 
-// Rate limit scan endpoints (not the landing page)
-app.use("/check", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+// Resolves rate-limit identity + config for a request. Pro-authed bearers
+// lift to the per-user bucket (60/hour). Everyone else — anonymous callers,
+// bearers whose subscription isn't active, free-plan bearers — falls through
+// to the per-IP anon bucket (10/60s). Free-authed keeps on IP on purpose: a
+// free bearer hitting from two IPs gets two anon buckets, which matches what
+// anonymous scanners already see and avoids making a free account worse than
+// no account. Bearer identity is stashed on context so downstream handlers
+// (/api/check scan-history persistence) can read it without re-verifying.
+export async function resolveRateLimitScope(c: Context): Promise<{
+  identity: string;
+  config: ReturnType<typeof getRateLimitConfig>;
+}> {
+  const bearer = await resolveBearer(c);
+  if (bearer) {
+    c.set("bearer" as never, bearer);
+    const db = (c.env as { DB?: D1Database }).DB;
+    if (db) {
+      const plan = await getPlanForUser(db, bearer.userId);
+      if (plan === "pro") {
+        return {
+          identity: `user:${bearer.userId}`,
+          config: getRateLimitConfig("pro"),
+        };
+      }
+    }
   }
+  return {
+    identity: `ip:${getClientIp(c)}`,
+    config: getRateLimitConfig("free"),
+  };
+}
 
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
+type RateLimitBlockedResponder = (
+  c: Context,
+  result: RateLimitResult,
+  headers: Record<string, string>,
+) => Response | Promise<Response>;
+
+export function rateLimitMiddleware(onBlocked: RateLimitBlockedResponder) {
+  return async (c: Context, next: () => Promise<void>) => {
+    const { identity, config } = await resolveRateLimitScope(c);
+    const result = await checkRateLimit(identity, config);
+    if (result.pendingWrite) {
+      c.executionCtx.waitUntil(result.pendingWrite.catch(() => {}));
+    }
+
+    const headers = rateLimitHeaders(result);
+
+    if (!result.allowed) {
+      return onBlocked(c, result, headers);
+    }
+
+    await next();
+    // ⚡ Bolt Optimization: Use for...in instead of Object.entries() on hot paths.
+    // Avoids allocating an array of key-value tuples for headers on every request,
+    // reducing GC pressure for high-traffic middleware.
+    for (const key in headers) {
+      c.res.headers.set(key, headers[key]);
+    }
+  };
+}
+
+function blockedMessage(result: RateLimitResult): string {
+  const waitSec = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
+  return `Rate limit exceeded. Try again in ${waitSec} seconds.`;
+}
+
+// Rate limit scan endpoints (not the landing page)
+app.use(
+  "/check",
+  rateLimitMiddleware((c, result, headers) => {
     const format = c.req.query("format");
     const wantsJson =
       format === "json" || c.req.header("Accept")?.includes("application/json");
 
     if (wantsJson || format === "csv") {
       return c.json(
-        { error: "Rate limit exceeded. Try again in 60 seconds." },
+        { error: blockedMessage(result) },
         { status: 429, headers },
       );
     }
@@ -264,88 +331,37 @@ app.use("/check", async (c, next) => {
       ),
       { status: 429, headers },
     );
-  }
+  }),
+);
 
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  // ⚡ Bolt Optimization: Use for...in instead of Object.entries() on hot paths.
-  // Avoids allocating an array of key-value tuples for headers on every request,
-  // reducing GC pressure for high-traffic middleware.
-  for (const key in headers) {
-    c.res.headers.set(key, headers[key]);
-  }
-});
-
-app.use("/check/score", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
-
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.html(
+app.use(
+  "/check/score",
+  rateLimitMiddleware((_c, _result, headers) =>
+    _c.html(
       renderError(
         "Rate limit exceeded. Please wait a minute before scanning again.",
       ),
       { status: 429, headers },
-    );
-  }
+    ),
+  ),
+);
 
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const key in headers) {
-    c.res.headers.set(key, headers[key]);
-  }
-});
-
-app.use("/api/check", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
-
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.json(
-      { error: "Rate limit exceeded. Try again in 60 seconds." },
-      { status: 429, headers },
-    );
-  }
-
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const key in headers) {
-    c.res.headers.set(key, headers[key]);
-  }
-});
+app.use(
+  "/api/check",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
 // The SSE streaming endpoint fans out ~50 DNS lookups per request and is
 // bypassed by the `/api/check` middleware above (Hono matches exact paths).
 // Give it its own limiter so it cannot be used as a DNS amplification vector.
-app.use("/api/check/stream", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
-
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.json(
-      { error: "Rate limit exceeded. Try again in 60 seconds." },
-      { status: 429, headers },
-    );
-  }
-
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const key in headers) {
-    c.res.headers.set(key, headers[key]);
-  }
-});
+app.use(
+  "/api/check/stream",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
 const protocolRenderers: Record<
   ProtocolId,
@@ -376,7 +392,8 @@ app.get("/api/check/stream", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
-  const bearer = await resolveBearer(c);
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
 
   return streamSSE(c, async (stream) => {
     Sentry.addBreadcrumb({
@@ -678,7 +695,8 @@ app.get("/api/check", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
-  const bearer = await resolveBearer(c);
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
 
   try {
     Sentry.addBreadcrumb({
