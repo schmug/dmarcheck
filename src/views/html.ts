@@ -14,8 +14,10 @@ import {
   generateCreature,
   gradeClass,
   lookupCounter,
+  monitorSnapshotCard,
   mtaStsPolicyTable,
   mxTable,
+  navLoginButton,
   protocolCard,
   protocolContributionGrid,
   rawRecord,
@@ -129,6 +131,7 @@ export function renderLandingPage(): string {
     jsonLd: LANDING_JSON_LD,
     body: `<main class="landing">
   <div class="landing-hero">
+    <div class="landing-nav">${navLoginButton()}</div>
     <div class="landing-main">
       <div class="logo">${generateCreature("lg")}<span class="logo-text">dmar<span>check</span></span></div>
       <h1 class="tagline">DNS email security analyzer &mdash; DMARC, SPF, DKIM, BIMI &amp; MTA-STS</h1>
@@ -171,7 +174,6 @@ export function renderLandingPage(): string {
         </a>
       </div>
       <div class="dmarcus-credit">Guarded by DMarcus ${generateCreature("sm", "content")}</div>
-      <div class="learn-link"><a href="/auth/login">Log in</a> to monitor a domain (free)</div>
     </div>
   </div>
   <section class="landing-explainer" id="what-we-check" aria-labelledby="explainer-heading">
@@ -268,6 +270,8 @@ function reportBody(result: ScanResult): string {
   return `<main class="report">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
+    <span class="report-nav-spacer"></span>
+    ${navLoginButton()}
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>
@@ -288,6 +292,7 @@ function reportBody(result: ScanResult): string {
   ${renderDkimCard(dkim)}
   ${renderBimiCard(bimi)}
   ${renderMtaStsCard(mta_sts)}
+  ${monitorSnapshotCard(result)}
   <div class="learn-link" style="margin-top:2.5rem">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
   <div class="learn-link" style="margin-top:0.4rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
   <div class="foss-callout">
@@ -324,8 +329,9 @@ export function renderReportHeader(result: ScanResult): string {
   </div>`;
 }
 
-export function renderReportFooter(): string {
-  return `<div class="learn-link" style="margin-top:2.5rem">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
+export function renderReportFooter(result: ScanResult): string {
+  return `${monitorSnapshotCard(result)}
+  <div class="learn-link" style="margin-top:2.5rem">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
   <div class="learn-link" style="margin-top:0.4rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
   <div class="foss-callout">
     <a href="https://github.com/schmug/dmarcheck" class="foss-link">
@@ -371,6 +377,8 @@ export function renderStreamingLoading(
     body: `<main class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
+    <span class="report-nav-spacer"></span>
+    ${navLoginButton()}
   </div>
   <div class="stream-header">
     <div class="grade-skeleton" style="margin:0 auto"></div>
@@ -453,6 +461,8 @@ export function renderScoreBreakdown(result: ScanResult): string {
   const body = `<main class="breakdown">
   <div class="report-nav">
     <a href="${backUrl}">${generateCreature("sm")} Back to results</a>
+    <span class="report-nav-spacer"></span>
+    ${navLoginButton()}
   </div>
   <div class="report-header">
     <div class="overall-grade ${gradeClass(result.grade)}">${esc(result.grade)}</div>

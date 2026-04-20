@@ -91,6 +91,71 @@ export function themeToggle(): string {
   return '<button class="theme-toggle" aria-label="Toggle theme" title="Toggle theme"></button>';
 }
 
+// TODO: gate on session state once a request-scoped session helper exists
+// outside src/auth/middleware.ts.
+export function navLoginButton(): string {
+  return `<a href="/auth/login" class="nav-login" aria-label="Log in to monitor a domain (free)">
+  <span class="nav-login-avatar">${generateCreature("sm")}</span>
+  <span class="nav-login-label">Log in to monitor</span>
+  <span class="nav-login-arrow" aria-hidden="true">&#8599;</span>
+</a>`;
+}
+
+export function monitorSnapshotCard(result: ScanResult): string {
+  const { domain, protocols, timestamp } = result;
+  const policy = protocols.dmarc.tags?.p;
+  const dmarcOk = policy === "reject" || policy === "quarantine";
+  const spfOk = protocols.spf.status === "pass";
+  const dkimCount = Object.values(protocols.dkim.selectors).filter(
+    (s) => s.found,
+  ).length;
+  const bimiOk = !!protocols.bimi.tags;
+  const nextUrl = `/auth/login?next=/dashboard&prompt=monitor:${encodeURIComponent(domain)}`;
+  const stamp = new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const row = (ok: boolean, label: string, value: string): string =>
+    `<div class="snap-row${ok ? "" : " snap-row-muted"}">
+      <span class="snap-mark">${ok ? "+" : "\u00b7"}</span>
+      <span class="snap-label">${esc(label)}</span>
+      <span class="snap-val">${esc(value)}</span>
+    </div>`;
+
+  const spfValue = protocols.spf.record
+    ? `${protocols.spf.lookups_used}/${protocols.spf.lookup_limit} lookups`
+    : "not set";
+  const dkimValue =
+    dkimCount > 0
+      ? `${dkimCount} selector${dkimCount > 1 ? "s" : ""}`
+      : "none found";
+  const bimiValue = bimiOk ? "configured" : "not configured";
+  const dmarcValue = policy ? `p=${policy}` : "not set";
+
+  return `<section class="monitor-card" aria-labelledby="monitor-card-title">
+  <div class="monitor-snap">
+    <div class="monitor-eyebrow">Snapshot &middot; ${esc(stamp)}</div>
+    <div id="monitor-card-title" class="monitor-snap-heading">We'd tell you if any of this changed:</div>
+    <div class="snap-list">
+      ${row(dmarcOk, "DMARC policy", dmarcValue)}
+      ${row(spfOk, "SPF", spfValue)}
+      ${row(dkimCount > 0, "DKIM", dkimValue)}
+      ${row(bimiOk, "BIMI", bimiValue)}
+    </div>
+  </div>
+  <div class="monitor-divider" aria-hidden="true"></div>
+  <div class="monitor-pitch">
+    <p class="monitor-pitch-lede">Monitor <strong>${esc(domain)}</strong> and we'll re-run this check every 24 hours. You'll get an email the moment anything drifts.</p>
+    <div class="monitor-cta-row">
+      <a href="${esc(nextUrl)}" class="monitor-cta">Start monitoring</a>
+      <span class="monitor-cta-meta">free &middot; no card &middot; MIT open source</span>
+    </div>
+  </div>
+</section>`;
+}
+
 export function gradeToMood(grade: string): CreatureMood {
   if (grade === "S") return "celebrating";
   const letter = grade.charAt(0).toUpperCase();

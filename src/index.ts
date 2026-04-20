@@ -432,7 +432,7 @@ app.get("/api/check/stream", async (c) => {
         data: JSON.stringify({
           grade: cached.grade,
           headerHtml: renderReportHeader(cached),
-          footerHtml: renderReportFooter(),
+          footerHtml: renderReportFooter(cached),
         }),
       });
       return;
@@ -465,7 +465,7 @@ app.get("/api/check/stream", async (c) => {
       data: JSON.stringify({
         grade: result.grade,
         headerHtml: renderReportHeader(result),
-        footerHtml: renderReportFooter(),
+        footerHtml: renderReportFooter(result),
       }),
     });
   });
