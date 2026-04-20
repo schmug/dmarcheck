@@ -127,8 +127,7 @@ function constantTimeEqualHex(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// Thin POST helper for future Checkout / Portal calls (PR 2 wires these up).
-// Exported now so PR 2 is additive, not a rewrite.
+// Thin POST helper for Checkout / Portal / Customer calls.
 export async function stripeRequest<T>(
   env: BillingEnv,
   path: string,
@@ -149,4 +148,69 @@ export async function stripeRequest<T>(
     throw new Error(`Stripe API ${res.status}: ${err?.message ?? "unknown"}`);
   }
   return json as T;
+}
+
+interface StripeCustomer {
+  id: string;
+}
+
+// Creates a Stripe Customer for a dmarcheck user. We do this lazily on the
+// first upgrade click rather than at signup so free users never hit Stripe.
+// Email is set so it appears in the Stripe dashboard; metadata.user_id lets
+// the webhook handler resolve a Stripe event back to our user row.
+export async function createStripeCustomer(
+  env: BillingEnv,
+  input: { userId: string; email: string },
+): Promise<string> {
+  const customer = await stripeRequest<StripeCustomer>(env, "/customers", {
+    email: input.email,
+    "metadata[user_id]": input.userId,
+  });
+  return customer.id;
+}
+
+interface StripeCheckoutSession {
+  id: string;
+  url: string;
+}
+
+// Creates a Checkout Session in `subscription` mode for the Pro plan. The
+// returned `url` is the hosted Checkout page we redirect the user to.
+export async function createCheckoutSession(
+  env: BillingEnv,
+  input: {
+    customerId: string;
+    successUrl: string;
+    cancelUrl: string;
+    userId: string;
+  },
+): Promise<StripeCheckoutSession> {
+  return stripeRequest<StripeCheckoutSession>(env, "/checkout/sessions", {
+    mode: "subscription",
+    customer: input.customerId,
+    "line_items[0][price]": env.STRIPE_PRICE_ID_PRO,
+    "line_items[0][quantity]": "1",
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    // Stripe copies this onto the created subscription; lets the webhook
+    // handler cross-check the user_id matches the customer lookup.
+    "subscription_data[metadata][user_id]": input.userId,
+  });
+}
+
+interface StripePortalSession {
+  id: string;
+  url: string;
+}
+
+// Creates a Customer Portal session. Users manage cancel / payment method /
+// invoice history here — dmarcheck doesn't need to build any of that.
+export async function createPortalSession(
+  env: BillingEnv,
+  input: { customerId: string; returnUrl: string },
+): Promise<StripePortalSession> {
+  return stripeRequest<StripePortalSession>(env, "/billing_portal/sessions", {
+    customer: input.customerId,
+    return_url: input.returnUrl,
+  });
 }
