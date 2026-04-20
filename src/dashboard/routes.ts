@@ -1,4 +1,10 @@
 import { Hono } from "hono";
+import {
+  BULK_IN_BAND_CAP,
+  BULK_TOTAL_CAP,
+  isCapExceeded,
+  processBulkScan,
+} from "../api/bulk-scan.js";
 import { generateApiKey } from "../auth/api-key.js";
 import { requireAuth } from "../auth/middleware.js";
 import type { SessionPayload } from "../auth/session.js";
@@ -31,6 +37,7 @@ import { normalizeDomain } from "../shared/domain.js";
 import {
   renderAddDomainPage,
   renderApiKeysPage,
+  renderBulkScanPage,
   renderDashboardPage,
   renderDomainDetailPage,
   renderDomainHistoryPage,
@@ -143,6 +150,82 @@ dashboardRoutes.post("/domain/add", async (c) => {
     isFree: false,
   });
   return c.redirect(`/dashboard/domain/${encodeURIComponent(normalized)}`, 303);
+});
+
+// Bulk scan (Pro). The route is reachable for free users so the upgrade CTA
+// has somewhere to land — same gate-the-payload-not-the-route pattern as the
+// scan-history page from PR #153.
+dashboardRoutes.get("/bulk", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const plan = await getPlanForUser(db, session.sub);
+  return c.html(
+    renderBulkScanPage({
+      email: session.email,
+      plan,
+      submitted: null,
+      results: null,
+      error: null,
+      totalCap: BULK_TOTAL_CAP,
+      inBandCap: BULK_IN_BAND_CAP,
+    }),
+  );
+});
+
+dashboardRoutes.post("/bulk", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const plan = await getPlanForUser(db, session.sub);
+  if (plan !== "pro") {
+    return c.html(
+      renderBulkScanPage({
+        email: session.email,
+        plan,
+        submitted: null,
+        results: null,
+        error: "Bulk scan is a Pro feature.",
+        totalCap: BULK_TOTAL_CAP,
+        inBandCap: BULK_IN_BAND_CAP,
+      }),
+      402,
+    );
+  }
+  const body = await c.req.parseBody();
+  const raw = typeof body.domains === "string" ? body.domains : "";
+  const lines = raw
+    .split(/[\r\n,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const outcome = await processBulkScan({
+    db,
+    userId: session.sub,
+    rawDomains: lines,
+  });
+  if (isCapExceeded(outcome)) {
+    return c.html(
+      renderBulkScanPage({
+        email: session.email,
+        plan,
+        submitted: lines.length,
+        results: null,
+        error: `Too many domains: ${outcome.submitted} submitted, max ${outcome.cap}.`,
+        totalCap: BULK_TOTAL_CAP,
+        inBandCap: BULK_IN_BAND_CAP,
+      }),
+      400,
+    );
+  }
+  return c.html(
+    renderBulkScanPage({
+      email: session.email,
+      plan,
+      submitted: lines.length,
+      results: outcome,
+      error: null,
+      totalCap: BULK_TOTAL_CAP,
+      inBandCap: BULK_IN_BAND_CAP,
+    }),
+  );
 });
 
 // Domain detail

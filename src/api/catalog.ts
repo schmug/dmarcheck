@@ -15,24 +15,17 @@ export interface ApiCatalog {
 }
 
 export function buildApiCatalog(origin: string = CANONICAL_ORIGIN): ApiCatalog {
+  const sharedRefs = {
+    "service-desc": [
+      { href: `${origin}/openapi.json`, type: "application/openapi+json" },
+    ],
+    "service-doc": [{ href: `${origin}/docs/api`, type: "text/html" }],
+    status: [{ href: `${origin}/health` }],
+  };
   return {
     linkset: [
-      {
-        anchor: `${origin}/api/check`,
-        "service-desc": [
-          {
-            href: `${origin}/openapi.json`,
-            type: "application/openapi+json",
-          },
-        ],
-        "service-doc": [
-          {
-            href: `${origin}/docs/api`,
-            type: "text/html",
-          },
-        ],
-        status: [{ href: `${origin}/health` }],
-      },
+      { anchor: `${origin}/api/check`, ...sharedRefs },
+      { anchor: `${origin}/api/bulk-scan`, ...sharedRefs },
     ],
   };
 }
