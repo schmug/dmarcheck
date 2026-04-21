@@ -19,6 +19,7 @@ import {
   processBulkScan,
 } from "./api/bulk-scan.js";
 import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
+import { clampHistoryLimit, fetchDomainHistory } from "./api/history.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
@@ -365,6 +366,18 @@ app.use(
 // counting as a single request.
 app.use(
   "/api/bulk-scan",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
+
+// Per-domain API endpoints (currently only /api/domain/:name/history). Path
+// prefix instead of exact-match so future per-domain endpoints inherit the
+// same limiter without re-wiring. Hono matches `/api/domain/*` after the
+// exact-match routes above, so /api/check and /api/bulk-scan aren't affected.
+// This middleware is what populates `c.get("bearer")` via resolveRateLimitScope.
+app.use(
+  "/api/domain/*",
   rateLimitMiddleware((c, result, headers) =>
     c.json({ error: blockedMessage(result) }, { status: 429, headers }),
   ),
@@ -824,6 +837,52 @@ app.post("/api/bulk-scan", async (c) => {
     );
   }
   return c.json(outcome);
+});
+
+// Scan history for a watched domain — Pro-only, bearer-authenticated. Thin
+// wrapper around the same `getScanHistoryWithProtocols` helper the dashboard
+// uses (src/dashboard/routes.ts `/dashboard/domain/:domain/history`), so the
+// HTML view and the JSON API return the same rows. Check order is deliberate:
+// auth → plan → domain validation → ownership. The ownership check must run
+// after the plan check, otherwise a free-tier bearer could probe which
+// domains belong to a pro user. It must also not echo anything about the
+// domain on 404 — existence is not revealed.
+app.get("/api/domain/:name/history", async (c) => {
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
+  if (!bearer) {
+    return c.json(
+      {
+        error:
+          "Bearer token required. Generate one at /dashboard/settings/api-keys.",
+      },
+      401,
+    );
+  }
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) {
+    return c.json({ error: "Database not configured" }, 500);
+  }
+  const plan = await getPlanForUser(db, bearer.userId);
+  if (plan !== "pro") {
+    return c.json(
+      {
+        error: "Scan history requires a Pro plan.",
+        upgrade: `${CANONICAL_ORIGIN}/dashboard/billing/subscribe`,
+      },
+      402,
+    );
+  }
+  const domain = normalizeDomain(c.req.param("name"));
+  if (!domain) {
+    return c.json({ error: "Missing or invalid domain parameter" }, 400);
+  }
+  const limit = clampHistoryLimit(c.req.query("limit"));
+  const resp = await fetchDomainHistory(db, bearer.userId, domain, limit);
+  if (!resp) {
+    return c.json({ error: "Domain not found" }, 404);
+  }
+  return c.json(resp);
 });
 
 // Fire-and-forget: look up the (user, domain) pair and record a scan_history
