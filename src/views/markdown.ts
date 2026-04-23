@@ -258,35 +258,47 @@ Run a scan: ${MD_SITE}/check?domain=example.com
 }
 
 export function renderPricingMarkdown(): string {
-  return `# dmarcheck pricing
+  return `# Nightly DMARC, SPF, DKIM, BIMI & MTA-STS monitoring
 
-> **Preview — copy pending.** This page is a placeholder while final pricing and feature copy are drafted.
-
-The free public scanner at ${MD_SITE} stays free and open source forever. The **Pro** hosted tier adds saved history, nightly monitoring, email alerts, bulk scan, and higher API rate limits.
+**$19/mo.** Free forever for one-off scans.
 
 ## Free — $0
 
-- Unlimited one-off scans from the web UI
-- JSON API: \`GET /api/check?domain=example.com\` (10 req/min/IP)
+Public scanner, no account needed.
+
+- Unlimited on-demand scans from the web UI
+- JSON API: \`GET /api/check?domain=example.com\`
+- 10 requests per minute per IP
 - All five analyzers: DMARC, SPF, DKIM, BIMI, MTA-STS
 - Self-hostable (MIT) — <https://github.com/schmug/dmarcheck>
 
-## Pro — _[PLACEHOLDER price/mo]_
+## Pro — $19/mo
+
+Continuous monitoring for the domains you actually care about.
 
 - Saved scan history with per-domain trend views
 - Nightly rescans of your watchlist (up to 25 domains)
 - Email alerts on grade drop or protocol regression
 - Bulk scan: up to 100 domains per request
-- API keys with a higher rate-limit ceiling
-- Cancel anytime via Stripe Customer Portal
+- API keys with a 60-request/hour rate limit (6× the anonymous ceiling)
+- Cancel anytime via Stripe Customer Portal — access continues until the period ends
+- 30-day refunds on request — email support@dmarc.mx
 
-_[PLACEHOLDER: upgrade CTA & final price land with real copy.]_
+**Not in Pro (yet):** DMARC aggregate (RUA) report ingestion, team seats or SSO, white-label or custom domain.
+
+**Start Pro:** <${MD_SITE}/dashboard/billing/subscribe> (requires a free account).
 
 ## FAQ
 
-- **Free scanner stays free?** Yes. Pro adds hosted features, not the scan itself.
-- **Self-host?** Yes — clone the MIT repo, \`wrangler deploy\`, run your own instance.
-- **Refunds / billing terms?** _[PLACEHOLDER pending legal/copy review.]_
+- **Does the free scanner stay free?** Yes. The scanner, all five analyzers, and the JSON API stay free and open source. Pro adds hosted features — history, monitoring, alerts — not the scan itself.
+- **What counts as "nightly"?** Once every 24 hours, in the early-UTC-morning window. Every domain on your watchlist gets re-scanned; if the grade drops or a protocol regresses versus the previous scan, you get an email.
+- **How do I cancel?** One click in the Stripe Customer Portal, linked from your account page. You keep access until the end of the current billing cycle and aren't charged again.
+- **Refunds?** Yes — email support@dmarc.mx within 30 days of the charge for a full refund. After 30 days, cancel at period end.
+- **Can I self-host the paid features?** Yes — the repo is MIT-licensed. Clone it, configure D1, WorkOS, and Stripe bindings, and run the same code with the same features.
+- **Where's my data stored, and for how long?** Cloudflare D1 (US region). Scan results retained while your account is active; deleted on request or within 30 days of account closure. Full detail: <${MD_SITE}/legal/privacy>.
+- **Pro API rate limits?** 60 requests/hour per API key. Anonymous IP limit stays at 10/min. Need more? Email support@dmarc.mx.
+
+See [Terms](${MD_SITE}/legal/terms) and [Privacy](${MD_SITE}/legal/privacy). Questions? support@dmarc.mx.
 `;
 }
 

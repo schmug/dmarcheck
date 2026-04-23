@@ -678,6 +678,7 @@ Sitemap: https://dmarc.mx/sitemap.xml
 // authority signal.
 const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
+  { loc: "https://dmarc.mx/pricing", priority: "0.9" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
   { loc: "https://dmarc.mx/learn", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/dmarc", priority: "0.8" },
@@ -689,7 +690,7 @@ const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
   { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
 ];
-const SITEMAP_LASTMOD = "2026-04-11";
+const SITEMAP_LASTMOD = "2026-04-23";
 
 app.get("/sitemap.xml", (c) => {
   const urls = SITEMAP_URLS.map(
