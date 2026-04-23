@@ -614,7 +614,7 @@ export function renderAlertsSection(
   <span class="alert-message">${esc(describeAlert(a))}</span>
   <span class="alert-time">${esc(relativeTime(a.createdAt, now))}</span>
   <form method="post" action="${ackHref}">
-    <button type="submit" class="btn-dismiss">Dismiss</button>
+    <button type="submit" class="btn-dismiss" aria-label="Dismiss alert for ${esc(a.domain)}">Dismiss</button>
   </form>
 </li>`;
     })
@@ -731,7 +731,7 @@ export function renderDomainDetailPage({
   </form>
   <a href="/check?domain=${encodeURIComponent(domain)}" class="btn btn-secondary">View Full Report</a>
   <form method="POST" action="/dashboard/domain/${encodeURIComponent(domain)}/delete" style="display:inline" onsubmit="return confirm('Stop monitoring ${esc(domain)}?');">
-    <button type="submit" class="btn btn-secondary">Delete</button>
+    <button type="submit" class="btn btn-secondary" aria-label="Delete domain ${esc(domain)}">Delete</button>
   </form>
 </div>
 <div class="section-card">
@@ -1228,7 +1228,7 @@ export function renderApiKeysPage({
           ? ""
           : `<form method="POST" action="/dashboard/settings/api-keys/revoke" style="display:inline" onsubmit="return confirm('Revoke this key? Requests using it will start failing.');">
               <input type="hidden" name="id" value="${esc(k.id)}">
-              <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.6rem;font-size:0.8125rem">Revoke</button>
+              <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.6rem;font-size:0.8125rem" aria-label="Revoke API key ${name}">Revoke</button>
             </form>`;
         return `<tr>
   <td>${name}</td>
