@@ -32,10 +32,17 @@ describe("Cloudflare Web Analytics beacon injection", () => {
         expect(html).toContain(BEACON_SRC);
         expect(html).toContain(`"token":"${VALID_TOKEN}"`);
         // Beacon must sit just before </body> so DOM is available before
-        // the script parses performance metrics.
-        expect(html).toMatch(
-          new RegExp(`${BEACON_SRC}[^<]*</script>\\s*</body>`),
-        );
+        // the script parses performance metrics. String indices avoid a
+        // regex built from BEACON_SRC (CodeQL: js/incomplete-hostname-regexp).
+        const beaconIdx = html.lastIndexOf(BEACON_SRC);
+        const bodyCloseIdx = html.lastIndexOf("</body>");
+        expect(beaconIdx).toBeGreaterThan(-1);
+        expect(bodyCloseIdx).toBeGreaterThan(beaconIdx);
+        // Nothing but the closing </script> should sit between the beacon
+        // src and </body>.
+        const between = html.slice(beaconIdx, bodyCloseIdx);
+        expect(between).toContain("</script>");
+        expect(between).not.toContain("<div");
       });
     }
 
