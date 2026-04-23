@@ -160,6 +160,16 @@ const AGENT_DISCOVERY_LINK_HEADER = [
 // over `frame-ancestors`, which would defeat this allowlist.
 const EMBED_ALLOWED_ORIGINS = ["https://cortech.online"];
 
+// Paths that skip Cloudflare Web Analytics beacon injection. Dashboard and
+// auth pages can expose user-specific URL patterns (e.g. domain names in
+// the path); we deliberately keep those out of analytics even though the
+// beacon itself is cookieless.
+const ANALYTICS_SKIP_PATH_PREFIXES = ["/dashboard", "/auth", "/webhooks"];
+
+// Cloudflare Web Analytics tokens are 32-char lowercase hex. Guard against
+// a misconfigured env var injecting arbitrary strings into HTML.
+const CF_ANALYTICS_TOKEN_RE = /^[a-f0-9]{32}$/;
+
 app.use("*", async (c, next) => {
   await next();
   c.res.headers.set("X-Content-Type-Options", "nosniff");
@@ -187,6 +197,29 @@ app.use("*", async (c, next) => {
         "Cache-Control",
         "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
       );
+    }
+
+    // Inject the Cloudflare Web Analytics beacon on public HTML pages.
+    // Skipped when the token isn't configured (self-host default) and on
+    // auth/dashboard/webhook paths whose URLs can carry user-specific detail.
+    // Our HTML responses are already buffered strings (never streamed), so a
+    // simple `</body>` replace is both correct and keeps tests in the Node
+    // pool runnable without HTMLRewriter.
+    const token = (c.env as Env | undefined)?.CF_ANALYTICS_TOKEN;
+    const path = c.req.path;
+    const isAnalyticsEligible =
+      token &&
+      CF_ANALYTICS_TOKEN_RE.test(token) &&
+      !ANALYTICS_SKIP_PATH_PREFIXES.some((p) => path.startsWith(p));
+    if (isAnalyticsEligible) {
+      const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${token}"}'></script>`;
+      const body = await c.res.text();
+      const injected = body.replace("</body>", `${beacon}</body>`);
+      c.res = new Response(injected, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: c.res.headers,
+      });
     }
   } else {
     // `frame-ancestors` does not inherit from `default-src`, so it must be

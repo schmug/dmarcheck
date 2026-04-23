@@ -15,4 +15,10 @@ export interface Env {
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_PRICE_ID_PRO?: string;
+  // Cloudflare Web Analytics token. Optional: when unset, the beacon script
+  // is not injected. Set this on the hosted deploy (wrangler secret) to turn
+  // on analytics. The token itself is non-secret (ends up in public HTML)
+  // but lives here so self-host forks don't accidentally ship data to the
+  // hosted tier's dashboard.
+  CF_ANALYTICS_TOKEN?: string;
 }

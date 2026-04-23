@@ -164,10 +164,13 @@ them entirely. Set any of these as wrangler secrets (`wrangler secret put NAME`)
 | `STRIPE_SECRET_KEY` | Stripe API key for Checkout + Portal calls |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for the `/webhooks/stripe` endpoint |
 | `STRIPE_PRICE_ID_PRO` | Price ID for the Pro plan offered via Checkout |
+| `CF_ANALYTICS_TOKEN` | Cloudflare Web Analytics beacon token (32-char lowercase hex). Injects a cookieless beacon on public HTML pages; skipped on `/dashboard/*`, `/auth/*`, `/webhooks/*`. Leave unset to disable. |
 
-If any of the three are missing, `isBillingEnabled` returns false and all
+If any of the three Stripe secrets are missing, `isBillingEnabled` returns false and all
 paid-tier routes return 404. This keeps a fresh `wrangler deploy` working
-end-to-end for self-hosters who only want the free scanner.
+end-to-end for self-hosters who only want the free scanner. `CF_ANALYTICS_TOKEN`
+is independent — set it only if you want to send analytics to your own
+Cloudflare Web Analytics dashboard.
 
 ## Stack
 
