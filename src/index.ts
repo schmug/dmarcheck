@@ -77,22 +77,16 @@ import {
   renderLearnMtaSts,
   renderLearnSpf,
 } from "./views/learn.js";
-import {
-  renderLegalIndex,
-  renderPrivacyPage,
-  renderTermsPage,
-} from "./views/legal.js";
+import { renderPrivacyPage } from "./views/legal.js";
 import {
   renderApiDocsMarkdown,
   renderErrorMarkdown,
   renderLandingMarkdown,
   renderLearnHubMarkdown,
-  renderLegalIndexMarkdown,
   renderPricingMarkdown,
   renderPrivacyMarkdown,
   renderReportMarkdown,
   renderScoringRubricMarkdown,
-  renderTermsMarkdown,
 } from "./views/markdown.js";
 import { renderPricingPage } from "./views/pricing.js";
 import { JS } from "./views/scripts.js";
@@ -680,6 +674,7 @@ const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
   { loc: "https://dmarc.mx/pricing", priority: "0.9" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
+  { loc: "https://dmarc.mx/legal/privacy", priority: "0.3" },
   { loc: "https://dmarc.mx/learn", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/dmarc", priority: "0.8" },
   { loc: "https://dmarc.mx/learn/spf", priority: "0.8" },
@@ -729,21 +724,9 @@ app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
 app.get("/learn/bimi", (c) => c.html(renderLearnBimi()));
 app.get("/learn/mta-sts", (c) => c.html(renderLearnMtaSts()));
 
-// Pricing and legal pages ship with placeholder copy (see
-// src/views/pricing.ts + src/views/legal.ts). Real copy lands in a follow-up
-// PR before launch. `noindex` on the HTML plus omission from sitemap.xml
-// keeps them out of search while placeholder.
 app.get("/pricing", (c) => {
   if (wantsMarkdown(c)) return markdownResponse(c, renderPricingMarkdown());
   return c.html(renderPricingPage());
-});
-app.get("/legal", (c) => {
-  if (wantsMarkdown(c)) return markdownResponse(c, renderLegalIndexMarkdown());
-  return c.html(renderLegalIndex());
-});
-app.get("/legal/terms", (c) => {
-  if (wantsMarkdown(c)) return markdownResponse(c, renderTermsMarkdown());
-  return c.html(renderTermsPage());
 });
 app.get("/legal/privacy", (c) => {
   if (wantsMarkdown(c)) return markdownResponse(c, renderPrivacyMarkdown());

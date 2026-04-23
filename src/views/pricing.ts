@@ -155,7 +155,7 @@ export function renderPricingPage(): string {
     <a href="/" class="rubric-cta">Scan a domain &rarr;</a>
   </div>
 
-  <div class="learn-link" style="text-align:center">See <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy</a>. Questions? <a href="mailto:support@dmarc.mx">support@dmarc.mx</a></div>
+  <div class="learn-link" style="text-align:center">See <a href="/legal/privacy">Privacy</a>. Questions? <a href="mailto:support@dmarc.mx">support@dmarc.mx</a></div>
 </main>`;
 
   return page({
