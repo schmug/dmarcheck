@@ -257,6 +257,110 @@ Run a scan: ${MD_SITE}/check?domain=example.com
 `;
 }
 
+export function renderPricingMarkdown(): string {
+  return `# Nightly DMARC, SPF, DKIM, BIMI & MTA-STS monitoring
+
+**$19/mo.** Free forever for one-off scans.
+
+## Free — $0
+
+Public scanner, no account needed.
+
+- Unlimited on-demand scans from the web UI
+- JSON API: \`GET /api/check?domain=example.com\`
+- 10 requests per minute per IP
+- All five analyzers: DMARC, SPF, DKIM, BIMI, MTA-STS
+- Self-hostable (MIT) — <https://github.com/schmug/dmarcheck>
+
+## Pro — $19/mo
+
+Continuous monitoring for the domains you actually care about.
+
+- Saved scan history with per-domain trend views
+- Nightly rescans of your watchlist (up to 25 domains)
+- Email alerts on grade drop or protocol regression
+- Bulk scan: up to 100 domains per request
+- API keys with a 60-request/hour rate limit (6× the anonymous ceiling)
+- Cancel anytime via Stripe Customer Portal — access continues until the period ends
+- 30-day refunds on request — email support@dmarc.mx
+
+**Not in Pro (yet):** DMARC aggregate (RUA) report ingestion, team seats or SSO, white-label or custom domain.
+
+**Start Pro:** <${MD_SITE}/dashboard/billing/subscribe> (requires a free account).
+
+## FAQ
+
+- **Does the free scanner stay free?** Yes. The scanner, all five analyzers, and the JSON API stay free and open source. Pro adds hosted features — history, monitoring, alerts — not the scan itself.
+- **What counts as "nightly"?** Once every 24 hours, in the early-UTC-morning window. Every domain on your watchlist gets re-scanned; if the grade drops or a protocol regresses versus the previous scan, you get an email.
+- **How do I cancel?** One click in the Stripe Customer Portal, linked from your account page. You keep access until the end of the current billing cycle and aren't charged again.
+- **Refunds?** Yes — email support@dmarc.mx within 30 days of the charge for a full refund. After 30 days, cancel at period end.
+- **Can I self-host the paid features?** Yes — the repo is MIT-licensed. Clone it, configure D1, WorkOS, and Stripe bindings, and run the same code with the same features.
+- **Where's my data stored, and for how long?** Cloudflare D1 (US region). Scan results retained while your account is active; deleted on request or within 30 days of account closure. Full detail: <${MD_SITE}/legal/privacy>.
+- **Pro API rate limits?** 60 requests/hour per API key. Anonymous IP limit stays at 10/min. Need more? Email support@dmarc.mx.
+
+See [Terms](${MD_SITE}/legal/terms) and [Privacy](${MD_SITE}/legal/privacy). Questions? support@dmarc.mx.
+`;
+}
+
+export function renderLegalIndexMarkdown(): string {
+  return `# Legal
+
+> **Preview — legal text pending.** This page is a placeholder while final TOS and Privacy Policy text are drafted and reviewed.
+
+Terms, privacy, and contact info for the hosted service at ${MD_SITE}. The self-hosted OSS project is governed by its [MIT license](https://github.com/schmug/dmarcheck/blob/main/LICENSE).
+
+- [Terms of Service](${MD_SITE}/legal/terms)
+- [Privacy Policy](${MD_SITE}/legal/privacy)
+- Security disclosure: <https://github.com/schmug/dmarcheck/blob/main/SECURITY.md>
+- Source & license: <https://github.com/schmug/dmarcheck>
+`;
+}
+
+export function renderTermsMarkdown(): string {
+  return `# Terms of Service
+
+> **Preview — legal text pending.** Final Terms replace this text before launch. This outline is not legally binding.
+
+_[PLACEHOLDER]_ — final text pending attorney review.
+
+## Outline
+
+1. Scope — hosted service at ${MD_SITE}. The OSS project is MIT-licensed separately.
+2. Acceptable use — no abusive scanning, no circumventing rate limits, no use to harm third parties.
+3. Accounts — one human per account, accurate contact info.
+4. Billing — _[PLACEHOLDER: cadence, refunds, taxes]._
+5. Data — domain names and scan results are stored per the Privacy Policy.
+6. Warranty disclaimer — service is provided "as is".
+7. Limitation of liability — _[PLACEHOLDER]._
+8. Termination — either side may terminate; data export on request.
+9. Changes — notify in-app or by email before material changes.
+10. Governing law — _[PLACEHOLDER]._
+
+[Back to legal index](${MD_SITE}/legal)
+`;
+}
+
+export function renderPrivacyMarkdown(): string {
+  return `# Privacy Policy
+
+> **Preview — legal text pending.** Final Privacy Policy replaces this text before launch. This outline is not a binding policy.
+
+_[PLACEHOLDER]_ — final text pending review.
+
+## Outline
+
+- **What we collect** — domain names you scan, scan results, your account email (Pro), billing metadata via Stripe (Pro), error telemetry via Sentry.
+- **Why** — to run the service, save your history, send alerts you asked for, debug outages.
+- **Retention** — _[PLACEHOLDER duration]._
+- **Sharing** — we do not sell your data. Subprocessors: Cloudflare (hosting), WorkOS (auth), Stripe (billing), Resend/Cloudflare Email (transactional email), Sentry (errors).
+- **Your rights** — export, delete, opt out of alerts, contact support.
+- **Cookies** — only functional (session, theme preference). No third-party advertising trackers.
+- **Contact** — _[PLACEHOLDER email]._
+
+[Back to legal index](${MD_SITE}/legal)
+`;
+}
+
 export function renderErrorMarkdown(message: string): string {
   return `# Error
 
