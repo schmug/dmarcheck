@@ -298,66 +298,86 @@ Continuous monitoring for the domains you actually care about.
 - **Where's my data stored, and for how long?** Cloudflare D1 (US region). Scan results retained while your account is active; deleted on request or within 30 days of account closure. Full detail: <${MD_SITE}/legal/privacy>.
 - **Pro API rate limits?** 60 requests/hour per API key. Anonymous IP limit stays at 10/min. Need more? Email support@dmarc.mx.
 
-See [Terms](${MD_SITE}/legal/terms) and [Privacy](${MD_SITE}/legal/privacy). Questions? support@dmarc.mx.
-`;
-}
-
-export function renderLegalIndexMarkdown(): string {
-  return `# Legal
-
-> **Preview — legal text pending.** This page is a placeholder while final TOS and Privacy Policy text are drafted and reviewed.
-
-Terms, privacy, and contact info for the hosted service at ${MD_SITE}. The self-hosted OSS project is governed by its [MIT license](https://github.com/schmug/dmarcheck/blob/main/LICENSE).
-
-- [Terms of Service](${MD_SITE}/legal/terms)
-- [Privacy Policy](${MD_SITE}/legal/privacy)
-- Security disclosure: <https://github.com/schmug/dmarcheck/blob/main/SECURITY.md>
-- Source & license: <https://github.com/schmug/dmarcheck>
-`;
-}
-
-export function renderTermsMarkdown(): string {
-  return `# Terms of Service
-
-> **Preview — legal text pending.** Final Terms replace this text before launch. This outline is not legally binding.
-
-_[PLACEHOLDER]_ — final text pending attorney review.
-
-## Outline
-
-1. Scope — hosted service at ${MD_SITE}. The OSS project is MIT-licensed separately.
-2. Acceptable use — no abusive scanning, no circumventing rate limits, no use to harm third parties.
-3. Accounts — one human per account, accurate contact info.
-4. Billing — _[PLACEHOLDER: cadence, refunds, taxes]._
-5. Data — domain names and scan results are stored per the Privacy Policy.
-6. Warranty disclaimer — service is provided "as is".
-7. Limitation of liability — _[PLACEHOLDER]._
-8. Termination — either side may terminate; data export on request.
-9. Changes — notify in-app or by email before material changes.
-10. Governing law — _[PLACEHOLDER]._
-
-[Back to legal index](${MD_SITE}/legal)
+See [Privacy](${MD_SITE}/legal/privacy). Questions? support@dmarc.mx.
 `;
 }
 
 export function renderPrivacyMarkdown(): string {
   return `# Privacy Policy
 
-> **Preview — legal text pending.** Final Privacy Policy replaces this text before launch. This outline is not a binding policy.
+_Last updated: 2026-04-23_
 
-_[PLACEHOLDER]_ — final text pending review.
+## Who I am
 
-## Outline
+DMarcus runs **dmarcheck** — the hosted email-security scanner at ${MD_SITE}. The self-hosted OSS project (<https://github.com/schmug/dmarcheck>) is yours to run under MIT; this policy covers the hosted service only.
 
-- **What we collect** — domain names you scan, scan results, your account email (Pro), billing metadata via Stripe (Pro), error telemetry via Sentry.
-- **Why** — to run the service, save your history, send alerts you asked for, debug outages.
-- **Retention** — _[PLACEHOLDER duration]._
-- **Sharing** — we do not sell your data. Subprocessors: Cloudflare (hosting), WorkOS (auth), Stripe (billing), Resend/Cloudflare Email (transactional email), Sentry (errors).
-- **Your rights** — export, delete, opt out of alerts, contact support.
-- **Cookies** — only functional (session, theme preference). No third-party advertising trackers.
-- **Contact** — _[PLACEHOLDER email]._
+## What I collect
 
-[Back to legal index](${MD_SITE}/legal)
+When you use ${MD_SITE}:
+
+- **The domain you scan** and its public DNS records.
+- **Your IP address**, briefly, for rate limiting.
+- **Your email address** — only if you have a Pro account. I need it to log you in, send alerts you asked for, and contact you about your account.
+- **Your subscription state** from Stripe: subscription ID, plan, status, period end. Stripe holds the actual payment method; I never see your card number.
+- **Scan history and watchlist** — only if you have a Pro account and added domains yourself.
+- **Error telemetry** via Sentry, when the service crashes.
+
+## Why
+
+- Scan → show you the result.
+- IP address → stop one caller from drowning everyone.
+- Email → log you in, send alerts you asked for, contact you about billing.
+- Stripe subscription state → run Pro features, let you cancel.
+- Scan history and watchlist → run the Pro features you paid for.
+- Error telemetry → fix bugs.
+
+## How long I keep it
+
+- **Free, anonymous scans:** not stored after the scan completes.
+- **Pro scan history and watchlist:** kept while your account is active. Deleted within 30 days of account closure or on request.
+- **Account email:** same as above.
+- **Stripe billing records:** Stripe retains these to comply with US financial-record law (typically 7 years). I delete my local copy on account closure.
+- **Error telemetry:** 90 days, then purged by Sentry.
+
+## Who I share it with
+
+I use a short list of subprocessors to run the service. **I'm not using this to train AI, selling your data, or sending it to advertisers.**
+
+- **Cloudflare** — hosting, DNS, edge compute, D1 database
+- **WorkOS** — account login
+- **Stripe** — billing
+- **Cloudflare Email Sending** — alerts, receipts, login links
+- **Sentry** — error telemetry
+
+If I add or swap a subprocessor, I'll update this list and email Pro users at least 14 days ahead.
+
+## Your rights
+
+- **Export your data** — email support@dmarc.mx and I'll send your scan history and watchlist as JSON within 30 days.
+- **Delete your account** — one click from the dashboard. Everything I hold gets removed within 30 days. Stripe keeps its own billing records per law.
+- **Stop getting emails** — unsubscribe from any email footer, or toggle alerts off in your dashboard.
+- **Ask a question** — support@dmarc.mx.
+
+If you're in the EU/UK, California, or any jurisdiction with statutory privacy rights (GDPR, UK GDPR, CCPA/CPRA, etc.), you have the full set of rights that law gives you. Nothing here overrides a statutory right.
+
+## Cookies
+
+- **Session cookie** when you log in (required).
+- **Theme preference** (light/dark) in \`localStorage\`.
+
+That's the whole list. No advertising cookies, no third-party tracking.
+
+## Children
+
+dmarcheck isn't aimed at anyone under 13. If you're under 13, please don't sign up.
+
+## Changes
+
+If I change how I handle your data in a way that affects you materially, I'll email Pro users at least 14 days ahead. The "Last updated" date tracks minor edits.
+
+## Contact
+
+support@dmarc.mx
 `;
 }
 
