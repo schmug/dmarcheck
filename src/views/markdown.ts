@@ -305,7 +305,7 @@ See [Privacy](${MD_SITE}/legal/privacy). Questions? support@dmarc.mx.
 export function renderPrivacyMarkdown(): string {
   return `# Privacy Policy
 
-_Last updated: 2026-04-23_
+_Last updated: 2026-04-24_
 
 ## Who I am
 
@@ -321,6 +321,7 @@ When you use ${MD_SITE}:
 - **Your subscription state** from Stripe: subscription ID, plan, status, period end. Stripe holds the actual payment method; I never see your card number.
 - **Scan history and watchlist** — only if you have a Pro account and added domains yourself.
 - **Error telemetry** via Sentry, when the service crashes.
+- **Anonymized page views** via Cloudflare Web Analytics — cookieless beacon, no cross-site tracking, no per-user profile. Skipped on \`/dashboard/*\`, \`/auth/*\`, and webhook endpoints.
 
 ## Why
 
@@ -330,6 +331,7 @@ When you use ${MD_SITE}:
 - Stripe subscription state → run Pro features, let you cancel.
 - Scan history and watchlist → run the Pro features you paid for.
 - Error telemetry → fix bugs.
+- Page views → know which pages are worth improving.
 
 ## How long I keep it
 
@@ -338,12 +340,13 @@ When you use ${MD_SITE}:
 - **Account email:** same as above.
 - **Stripe billing records:** Stripe retains these to comply with US financial-record law (typically 7 years). I delete my local copy on account closure.
 - **Error telemetry:** 90 days, then purged by Sentry.
+- **Page views (Cloudflare Web Analytics):** aggregated only, no per-user record to delete.
 
 ## Who I share it with
 
 I use a short list of subprocessors to run the service. **I'm not using this to train AI, selling your data, or sending it to advertisers.**
 
-- **Cloudflare** — hosting, DNS, edge compute, D1 database
+- **Cloudflare** — hosting, DNS, edge compute, D1 database, Web Analytics
 - **WorkOS** — account login
 - **Stripe** — billing
 - **Cloudflare Email Sending** — alerts, receipts, login links

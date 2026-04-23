@@ -117,6 +117,15 @@ describe("privacy policy", () => {
     }
   });
 
+  it("discloses Cloudflare Web Analytics in 'What I collect' and subprocessor list", async () => {
+    const res = await app.request("/legal/privacy");
+    const html = await res.text();
+    expect(html).toContain("Cloudflare Web Analytics");
+    expect(html).toContain("cookieless beacon");
+    // Subprocessor line folds Web Analytics into the Cloudflare entry
+    expect(html).toMatch(/Cloudflare[^<]*Web Analytics/);
+  });
+
   it("does not contain placeholder markers or pending banners", async () => {
     const res = await app.request("/legal/privacy");
     const html = await res.text();

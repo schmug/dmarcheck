@@ -5,7 +5,7 @@ import { page } from "./html.js";
 // placeholder until the LLC is formed; at that point "DMarcus"/"I" flip to
 // the entity name and "we".
 
-const LAST_UPDATED = "2026-04-23";
+const LAST_UPDATED = "2026-04-24";
 
 export function renderPrivacyPage(): string {
   const body = `<main class="breakdown">
@@ -33,6 +33,7 @@ export function renderPrivacyPage(): string {
         <li><strong>Your subscription state</strong> from Stripe: subscription ID, plan, status, period end. Stripe holds the actual payment method; I never see your card number.</li>
         <li><strong>Scan history and watchlist</strong> &mdash; only if you have a Pro account and added domains yourself.</li>
         <li><strong>Error telemetry</strong> via Sentry, when the service crashes.</li>
+        <li><strong>Anonymized page views</strong> via Cloudflare Web Analytics &mdash; cookieless beacon, no cross-site tracking, no per-user profile. Skipped on <code>/dashboard/*</code>, <code>/auth/*</code>, and webhook endpoints.</li>
       </ul>
     </div>
   </div>
@@ -47,6 +48,7 @@ export function renderPrivacyPage(): string {
         <li>Stripe subscription state &rarr; run Pro features, let you cancel.</li>
         <li>Scan history and watchlist &rarr; run the Pro features you paid for.</li>
         <li>Error telemetry &rarr; fix bugs.</li>
+        <li>Page views &rarr; know which pages are worth improving.</li>
       </ul>
     </div>
   </div>
@@ -60,6 +62,7 @@ export function renderPrivacyPage(): string {
         <li><strong>Account email:</strong> same as above.</li>
         <li><strong>Stripe billing records:</strong> Stripe retains these to comply with US financial-record law (typically 7 years). I delete my local copy on account closure.</li>
         <li><strong>Error telemetry:</strong> 90 days, then purged by Sentry.</li>
+        <li><strong>Page views (Cloudflare Web Analytics):</strong> aggregated only, no per-user record to delete.</li>
       </ul>
     </div>
   </div>
@@ -69,7 +72,7 @@ export function renderPrivacyPage(): string {
     <div class="bd-card-body">
       <p class="tier-text">I use a short list of subprocessors to run the service. <strong>I'm not using this to train AI, selling your data, or sending it to advertisers.</strong></p>
       <ul>
-        <li><strong>Cloudflare</strong> &mdash; hosting, DNS, edge compute, D1 database</li>
+        <li><strong>Cloudflare</strong> &mdash; hosting, DNS, edge compute, D1 database, Web Analytics</li>
         <li><strong>WorkOS</strong> &mdash; account login</li>
         <li><strong>Stripe</strong> &mdash; billing</li>
         <li><strong>Cloudflare Email Sending</strong> &mdash; alerts, receipts, login links</li>
