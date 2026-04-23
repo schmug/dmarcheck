@@ -257,6 +257,98 @@ Run a scan: ${MD_SITE}/check?domain=example.com
 `;
 }
 
+export function renderPricingMarkdown(): string {
+  return `# dmarcheck pricing
+
+> **Preview — copy pending.** This page is a placeholder while final pricing and feature copy are drafted.
+
+The free public scanner at ${MD_SITE} stays free and open source forever. The **Pro** hosted tier adds saved history, nightly monitoring, email alerts, bulk scan, and higher API rate limits.
+
+## Free — $0
+
+- Unlimited one-off scans from the web UI
+- JSON API: \`GET /api/check?domain=example.com\` (10 req/min/IP)
+- All five analyzers: DMARC, SPF, DKIM, BIMI, MTA-STS
+- Self-hostable (MIT) — <https://github.com/schmug/dmarcheck>
+
+## Pro — _[PLACEHOLDER price/mo]_
+
+- Saved scan history with per-domain trend views
+- Nightly rescans of your watchlist (up to 25 domains)
+- Email alerts on grade drop or protocol regression
+- Bulk scan: up to 100 domains per request
+- API keys with a higher rate-limit ceiling
+- Cancel anytime via Stripe Customer Portal
+
+_[PLACEHOLDER: upgrade CTA & final price land with real copy.]_
+
+## FAQ
+
+- **Free scanner stays free?** Yes. Pro adds hosted features, not the scan itself.
+- **Self-host?** Yes — clone the MIT repo, \`wrangler deploy\`, run your own instance.
+- **Refunds / billing terms?** _[PLACEHOLDER pending legal/copy review.]_
+`;
+}
+
+export function renderLegalIndexMarkdown(): string {
+  return `# Legal
+
+> **Preview — legal text pending.** This page is a placeholder while final TOS and Privacy Policy text are drafted and reviewed.
+
+Terms, privacy, and contact info for the hosted service at ${MD_SITE}. The self-hosted OSS project is governed by its [MIT license](https://github.com/schmug/dmarcheck/blob/main/LICENSE).
+
+- [Terms of Service](${MD_SITE}/legal/terms)
+- [Privacy Policy](${MD_SITE}/legal/privacy)
+- Security disclosure: <https://github.com/schmug/dmarcheck/blob/main/SECURITY.md>
+- Source & license: <https://github.com/schmug/dmarcheck>
+`;
+}
+
+export function renderTermsMarkdown(): string {
+  return `# Terms of Service
+
+> **Preview — legal text pending.** Final Terms replace this text before launch. This outline is not legally binding.
+
+_[PLACEHOLDER]_ — final text pending attorney review.
+
+## Outline
+
+1. Scope — hosted service at ${MD_SITE}. The OSS project is MIT-licensed separately.
+2. Acceptable use — no abusive scanning, no circumventing rate limits, no use to harm third parties.
+3. Accounts — one human per account, accurate contact info.
+4. Billing — _[PLACEHOLDER: cadence, refunds, taxes]._
+5. Data — domain names and scan results are stored per the Privacy Policy.
+6. Warranty disclaimer — service is provided "as is".
+7. Limitation of liability — _[PLACEHOLDER]._
+8. Termination — either side may terminate; data export on request.
+9. Changes — notify in-app or by email before material changes.
+10. Governing law — _[PLACEHOLDER]._
+
+[Back to legal index](${MD_SITE}/legal)
+`;
+}
+
+export function renderPrivacyMarkdown(): string {
+  return `# Privacy Policy
+
+> **Preview — legal text pending.** Final Privacy Policy replaces this text before launch. This outline is not a binding policy.
+
+_[PLACEHOLDER]_ — final text pending review.
+
+## Outline
+
+- **What we collect** — domain names you scan, scan results, your account email (Pro), billing metadata via Stripe (Pro), error telemetry via Sentry.
+- **Why** — to run the service, save your history, send alerts you asked for, debug outages.
+- **Retention** — _[PLACEHOLDER duration]._
+- **Sharing** — we do not sell your data. Subprocessors: Cloudflare (hosting), WorkOS (auth), Stripe (billing), Resend/Cloudflare Email (transactional email), Sentry (errors).
+- **Your rights** — export, delete, opt out of alerts, contact support.
+- **Cookies** — only functional (session, theme preference). No third-party advertising trackers.
+- **Contact** — _[PLACEHOLDER email]._
+
+[Back to legal index](${MD_SITE}/legal)
+`;
+}
+
 export function renderErrorMarkdown(message: string): string {
   return `# Error
 

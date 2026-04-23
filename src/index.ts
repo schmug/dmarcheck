@@ -78,13 +78,23 @@ import {
   renderLearnSpf,
 } from "./views/learn.js";
 import {
+  renderLegalIndex,
+  renderPrivacyPage,
+  renderTermsPage,
+} from "./views/legal.js";
+import {
   renderApiDocsMarkdown,
   renderErrorMarkdown,
   renderLandingMarkdown,
   renderLearnHubMarkdown,
+  renderLegalIndexMarkdown,
+  renderPricingMarkdown,
+  renderPrivacyMarkdown,
   renderReportMarkdown,
   renderScoringRubricMarkdown,
+  renderTermsMarkdown,
 } from "./views/markdown.js";
+import { renderPricingPage } from "./views/pricing.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
@@ -717,6 +727,27 @@ app.get("/learn/spf", (c) => c.html(renderLearnSpf()));
 app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
 app.get("/learn/bimi", (c) => c.html(renderLearnBimi()));
 app.get("/learn/mta-sts", (c) => c.html(renderLearnMtaSts()));
+
+// Pricing and legal pages ship with placeholder copy (see
+// src/views/pricing.ts + src/views/legal.ts). Real copy lands in a follow-up
+// PR before launch. `noindex` on the HTML plus omission from sitemap.xml
+// keeps them out of search while placeholder.
+app.get("/pricing", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderPricingMarkdown());
+  return c.html(renderPricingPage());
+});
+app.get("/legal", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderLegalIndexMarkdown());
+  return c.html(renderLegalIndex());
+});
+app.get("/legal/terms", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderTermsMarkdown());
+  return c.html(renderTermsPage());
+});
+app.get("/legal/privacy", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderPrivacyMarkdown());
+  return c.html(renderPrivacyPage());
+});
 
 app.get("/api/check", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
