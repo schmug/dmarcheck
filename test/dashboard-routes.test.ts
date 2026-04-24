@@ -74,6 +74,7 @@ function createMockDB(data: {
     user_id: string;
     url: string;
     secret: string;
+    format?: "raw" | "slack" | "google_chat";
   }>;
   apiKeys?: Array<{
     id: string;
@@ -120,9 +121,11 @@ function createMockDB(data: {
           (d) => d.user_id === bindings[0] && d.domain === bindings[1],
         ) ?? null) as T | null;
       }
-      if (sql.includes("SELECT url FROM webhooks WHERE user_id")) {
+      if (sql.includes("SELECT url, format FROM webhooks WHERE user_id")) {
         const wh = webhooks.find((w) => w.user_id === bindings[0]);
-        return (wh ? { url: wh.url } : null) as T | null;
+        return (
+          wh ? { url: wh.url, format: wh.format ?? "raw" } : null
+        ) as T | null;
       }
       if (sql.includes("SELECT id FROM webhooks WHERE user_id")) {
         const wh = webhooks.find((w) => w.user_id === bindings[0]);
@@ -1075,7 +1078,61 @@ describe("dashboard/routes", () => {
     });
 
     it("redirects to /dashboard/settings after saving webhook", async () => {
-      const db = createMockDB({ webhooks: [] });
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ webhooks: [], writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({
+        webhookUrl: "https://example.com/hook",
+        format: "slack",
+      });
+      const res = await app.request("/dashboard/settings/webhook", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard/settings");
+
+      const insert = writes.find((w) => /^INSERT INTO webhooks/i.test(w.sql));
+      expect(insert).toBeDefined();
+      // (user_id, url, secret, format) — format lands in position 4.
+      expect(insert?.bindings[3]).toBe("slack");
+    });
+
+    it("rejects an unknown format with a no-save redirect", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ webhooks: [], writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({
+        webhookUrl: "https://example.com/hook",
+        format: "borked",
+      });
+      const res = await app.request("/dashboard/settings/webhook", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/dashboard/settings");
+      expect(
+        writes.find((w) => /INSERT INTO webhooks/i.test(w.sql)),
+      ).toBeUndefined();
+      expect(
+        writes.find((w) => /UPDATE webhooks/i.test(w.sql)),
+      ).toBeUndefined();
+    });
+
+    it("defaults missing format to raw", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ webhooks: [], writes });
       const app = createTestApp(db);
       const cookie = await makeSessionCookie("user_1", "alice@example.com");
       const body = new URLSearchParams({
@@ -1090,7 +1147,8 @@ describe("dashboard/routes", () => {
         body: body.toString(),
       });
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/dashboard/settings");
+      const insert = writes.find((w) => /^INSERT INTO webhooks/i.test(w.sql));
+      expect(insert?.bindings[3]).toBe("raw");
     });
   });
 

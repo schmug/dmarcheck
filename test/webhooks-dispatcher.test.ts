@@ -7,6 +7,7 @@ interface FakeWebhookRow {
   user_id: string;
   url: string;
   secret: string | null;
+  format: "raw" | "slack" | "google_chat";
   created_at: number;
 }
 
@@ -108,6 +109,7 @@ describe("webhooks/dispatcher.dispatchWebhook", () => {
       user_id: "u1",
       url: "https://hook.example/receive",
       secret: "shhh",
+      format: "raw",
       created_at: 0,
     });
     const fetchSpy = vi
@@ -164,6 +166,7 @@ describe("webhooks/dispatcher.dispatchWebhook", () => {
       user_id: "u1",
       url: "https://hook.example/receive",
       secret: "shhh",
+      format: "raw",
       created_at: 0,
     });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -189,6 +192,7 @@ describe("webhooks/dispatcher.dispatchWebhook", () => {
       user_id: "u1",
       url: "https://hook.example/receive",
       secret: "shhh",
+      format: "raw",
       created_at: 0,
     });
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
@@ -214,6 +218,7 @@ describe("webhooks/dispatcher.dispatchWebhook", () => {
       user_id: "u1",
       url: "https://hook.example/receive",
       secret: null,
+      format: "raw",
       created_at: 0,
     });
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -230,5 +235,89 @@ describe("webhooks/dispatcher.dispatchWebhook", () => {
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0].ok).toBe(0);
     expect(deliveries[0].status_code).toBeNull();
+  });
+
+  it("POSTs a Slack-shaped body with no signature header when format is slack", async () => {
+    webhooksByUser.set("u1", {
+      id: 21,
+      user_id: "u1",
+      url: "https://hooks.slack.com/services/T/B/X",
+      secret: "ignored-for-chat-formats",
+      format: "slack",
+      created_at: 0,
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const db = makeDb();
+
+    const result = await dispatchWebhook(
+      db,
+      "u1",
+      { type: "webhook.test", data: { message: "Hello from dmarcheck" } },
+      { now: 1_700_000_000 },
+    );
+
+    expect(result?.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [calledUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe("https://hooks.slack.com/services/T/B/X");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers["Dmarcheck-Signature"]).toBeUndefined();
+
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["text"]);
+    expect(body.text).toBe("dmarcheck webhook test — Hello from dmarcheck");
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].ok).toBe(1);
+    expect(deliveries[0].webhook_id).toBe(21);
+  });
+
+  it("POSTs a Google Chat-shaped body with no signature header when format is google_chat", async () => {
+    webhooksByUser.set("u1", {
+      id: 22,
+      user_id: "u1",
+      url: "https://chat.googleapis.com/v1/spaces/ABC/messages?key=x&token=y",
+      secret: null,
+      format: "google_chat",
+      created_at: 0,
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    const db = makeDb();
+
+    const result = await dispatchWebhook(
+      db,
+      "u1",
+      {
+        type: "scan.completed",
+        data: {
+          domain: "example.com",
+          grade: "A",
+          scan_id: "scn_1",
+          trigger: "cron",
+          report_url: "https://dmarc.mx/check?domain=example.com",
+        },
+      },
+      { now: 1_700_000_000 },
+    );
+
+    expect(result?.ok).toBe(true);
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Dmarcheck-Signature"]).toBeUndefined();
+
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["text"]);
+    expect(body.text).toBe(
+      "DMARC scan complete: example.com → A — https://dmarc.mx/check?domain=example.com",
+    );
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].ok).toBe(1);
+    expect(deliveries[0].event_type).toBe("scan.completed");
   });
 });

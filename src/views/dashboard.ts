@@ -1,3 +1,4 @@
+import type { WebhookFormat } from "../webhooks/formats/index.js";
 import {
   esc,
   generateCreature,
@@ -1079,6 +1080,7 @@ export interface WebhookTestFlash {
 export function renderSettingsPage({
   email,
   webhookUrl,
+  webhookFormat = "raw",
   plan,
   billingEnabled,
   emailAlertsEnabled,
@@ -1088,6 +1090,7 @@ export function renderSettingsPage({
 }: {
   email: string;
   webhookUrl: string | null;
+  webhookFormat?: WebhookFormat;
   plan: "free" | "pro";
   billingEnabled: boolean;
   emailAlertsEnabled: boolean;
@@ -1128,9 +1131,10 @@ ${retirementBanner}
 <div class="settings-section">
   <h2>Webhook</h2>
   <p style="font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.75rem">
-    Receive a signed POST when a scan completes. Verify with the
-    <code>Dmarcheck-Signature</code> header (HMAC-SHA256 over
-    <code>&lt;timestamp&gt;.&lt;body&gt;</code>).
+    Receive a POST when a scan completes. Pick a format: the raw JSON
+    envelope is signed with a <code>Dmarcheck-Signature</code> header
+    (HMAC-SHA256 over <code>&lt;timestamp&gt;.&lt;body&gt;</code>), or
+    target a Slack / Google Chat incoming webhook for chat delivery.
   </p>
   <form method="POST" action="/dashboard/settings/webhook">
     <label for="webhook-url" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Webhook URL</label>
@@ -1145,6 +1149,15 @@ ${retirementBanner}
       autocorrect="off"
       spellcheck="false"
     >
+    <label for="webhook-format" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem;margin-top:0.75rem">Format</label>
+    <select id="webhook-format" class="settings-input" name="format">
+      <option value="raw"${webhookFormat === "raw" ? " selected" : ""}>Raw (signed JSON envelope)</option>
+      <option value="slack"${webhookFormat === "slack" ? " selected" : ""}>Slack incoming webhook</option>
+      <option value="google_chat"${webhookFormat === "google_chat" ? " selected" : ""}>Google Chat incoming webhook</option>
+    </select>
+    <p style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0.4rem 0 0.75rem">
+      Raw posts the signed envelope for your own receiver. Slack and Google Chat send a chat message and omit the signature header (those platforms don't verify it).
+    </p>
     <button type="submit" class="btn">Save Webhook</button>
   </form>
   ${

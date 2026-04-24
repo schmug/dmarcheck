@@ -2,11 +2,14 @@
 // (save URL / rotate secret) currently live inline in the dashboard route
 // handler — leaving them there for now to keep route-level tests stable.
 
+import type { WebhookFormat } from "../webhooks/formats/index.js";
+
 export interface WebhookRow {
   id: number;
   user_id: string;
   url: string;
   secret: string | null;
+  format: WebhookFormat;
   created_at: number;
 }
 

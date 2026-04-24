@@ -222,6 +222,26 @@ describe("renderSettingsPage", () => {
     expect(html).toContain("Webhook");
   });
 
+  it("renders a format <select> with all three options, raw selected by default", () => {
+    const html = renderSettingsPage(defaults);
+    expect(html).toContain('name="format"');
+    expect(html).toContain('value="raw"');
+    expect(html).toContain('value="slack"');
+    expect(html).toContain('value="google_chat"');
+    // Default value is "raw", which the template pre-selects.
+    expect(html).toMatch(/value="raw" selected/);
+  });
+
+  it("pre-selects slack when webhookFormat is slack", () => {
+    const html = renderSettingsPage({
+      ...defaults,
+      webhookUrl: "https://hooks.slack.com/services/T/B/X",
+      webhookFormat: "slack",
+    });
+    expect(html).toMatch(/value="slack" selected/);
+    expect(html).not.toMatch(/value="raw" selected/);
+  });
+
   it("renders the Pro badge and Manage Billing link for pro users", () => {
     const html = renderSettingsPage({ ...defaults, plan: "pro" });
     expect(html).toContain("Manage Billing");
