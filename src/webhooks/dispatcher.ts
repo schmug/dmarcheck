@@ -1,32 +1,29 @@
 import { insertWebhookDelivery } from "../db/webhook-deliveries.js";
 import { getWebhookForUser } from "../db/webhooks.js";
 import { hmacSha256Hex } from "../shared/hmac.js";
+import {
+  getFormatAdapter,
+  type ScanCompletedData,
+  type WebhookEnvelope,
+  type WebhookEvent,
+  type WebhookTestData,
+} from "./formats/index.js";
 
-// Outbound webhook dispatcher. Single-attempt POST with a 5s timeout, signed
-// like Stripe (Dmarcheck-Signature: t=<unix>,v1=<hex of HMAC-SHA256 over
-// "<unix>.<body>" with the user's per-webhook secret). Every attempt — success
-// or failure — is recorded to webhook_deliveries so the dashboard can show
-// recent results without us having to keep request bodies around.
+// Outbound webhook dispatcher. Single-attempt POST with a 5s timeout. Every
+// attempt — success or failure — is recorded to webhook_deliveries so the
+// dashboard can show recent results without us keeping request bodies around.
+//
+// The format adapter chosen for the webhook row decides what goes on the
+// wire:
+//   - raw: JSON-stringified envelope, signed like Stripe
+//     (Dmarcheck-Signature: t=<unix>,v1=<hex of HMAC-SHA256 over
+//     "<unix>.<body>" with the user's per-webhook secret).
+//   - slack / google_chat: platform-specific text payload, no signature —
+//     those chat receivers don't verify one.
 
 const FETCH_TIMEOUT_MS = 5_000;
 
-// Payload shapes per event type. `data` is whatever the trigger site has on
-// hand at completion; receivers can call back into the API for more detail.
-export interface ScanCompletedData {
-  domain: string;
-  grade: string;
-  scan_id: string | number;
-  trigger: "dashboard" | "cron" | "bulk_api";
-  report_url: string;
-}
-
-export interface WebhookTestData {
-  message: string;
-}
-
-export type WebhookEvent =
-  | { type: "scan.completed"; data: ScanCompletedData }
-  | { type: "webhook.test"; data: WebhookTestData };
+export type { ScanCompletedData, WebhookEvent, WebhookTestData };
 
 export interface DispatchResult {
   ok: boolean;
@@ -54,44 +51,49 @@ export async function dispatchWebhook(
 
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const eventId = options.eventId ?? `evt_${crypto.randomUUID()}`;
-  const envelope = {
+  const envelope: WebhookEnvelope = {
     id: eventId,
     type: event.type,
     created: now,
     data: event.data,
   };
-  const body = JSON.stringify(envelope);
+
+  const adapter = getFormatAdapter(webhook.format);
+  const { body } = adapter(envelope);
   const bodySha = await sha256Hex(body);
 
-  // No secret = nothing to sign with. Surface as a recorded failure so the
-  // user sees it in their delivery log instead of silently dropping events.
-  if (!webhook.secret) {
-    const result: DispatchResult = {
-      ok: false,
-      status: null,
-      error: "webhook secret missing — re-save the webhook to rotate",
-      attempted_at: now,
-      event_id: eventId,
-    };
-    await recordDelivery(
-      db,
-      userId,
-      webhook.id,
-      webhook.url,
-      event.type,
-      body,
-      bodySha,
-      result,
-    );
-    return result;
-  }
-
-  const signature = await hmacSha256Hex(webhook.secret, `${now}.${body}`);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Dmarcheck-Signature": `t=${now},v1=${signature}`,
     "User-Agent": "dmarcheck-webhook/1",
   };
+
+  // `raw` is the only format that signs — chat platforms don't verify and
+  // sending the header to them is noise. The null-secret guard therefore
+  // only blocks dispatch on the `raw` path: legacy rows that predate the
+  // secret rotation can still deliver to Slack/Google Chat.
+  if (webhook.format === "raw") {
+    if (!webhook.secret) {
+      const result: DispatchResult = {
+        ok: false,
+        status: null,
+        error: "webhook secret missing — re-save the webhook to rotate",
+        attempted_at: now,
+        event_id: eventId,
+      };
+      await recordDelivery(
+        db,
+        userId,
+        webhook.id,
+        webhook.url,
+        event.type,
+        bodySha,
+        result,
+      );
+      return result;
+    }
+    const signature = await hmacSha256Hex(webhook.secret, `${now}.${body}`);
+    headers["Dmarcheck-Signature"] = `t=${now},v1=${signature}`;
+  }
 
   let result: DispatchResult;
   try {
@@ -124,7 +126,6 @@ export async function dispatchWebhook(
     webhook.id,
     webhook.url,
     event.type,
-    body,
     bodySha,
     result,
   );
@@ -137,7 +138,6 @@ async function recordDelivery(
   webhookId: number,
   url: string,
   eventType: string,
-  _body: string,
   bodySha: string,
   result: DispatchResult,
 ): Promise<void> {

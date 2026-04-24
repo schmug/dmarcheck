@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   url TEXT NOT NULL,
   secret TEXT,
+  format TEXT NOT NULL DEFAULT 'raw',
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

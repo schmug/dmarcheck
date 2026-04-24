@@ -47,6 +47,10 @@ import {
 } from "../views/dashboard.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
 import {
+  isWebhookFormat,
+  type WebhookFormat,
+} from "../webhooks/formats/index.js";
+import {
   fireBulkScanWebhooks,
   fireScanCompletedWebhook,
 } from "../webhooks/triggers.js";
@@ -355,9 +359,9 @@ dashboardRoutes.get("/settings", async (c) => {
     return c.redirect("/auth/logout");
   }
   const webhook = await db
-    .prepare("SELECT url FROM webhooks WHERE user_id = ?")
+    .prepare("SELECT url, format FROM webhooks WHERE user_id = ?")
     .bind(session.sub)
-    .first<{ url: string }>();
+    .first<{ url: string; format: WebhookFormat }>();
   const plan = await getPlanForUser(db, session.sub);
   const env = c.env as { STRIPE_SECRET_KEY?: string };
   const deliveries = await getRecentDeliveriesForUser(db, session.sub, 10);
@@ -384,6 +388,7 @@ dashboardRoutes.get("/settings", async (c) => {
     renderSettingsPage({
       email: user.email,
       webhookUrl: webhook?.url ?? null,
+      webhookFormat: webhook?.format ?? "raw",
       plan,
       billingEnabled: Boolean(env.STRIPE_SECRET_KEY),
       emailAlertsEnabled: user.email_alerts_enabled === 1,
@@ -500,7 +505,7 @@ dashboardRoutes.post("/settings/webhook/test", async (c) => {
   );
 });
 
-// Save webhook URL
+// Save webhook URL + format
 dashboardRoutes.post("/settings/webhook", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
@@ -517,20 +522,33 @@ dashboardRoutes.post("/settings/webhook", async (c) => {
     return c.redirect("/dashboard/settings");
   }
 
+  // Missing `format` (older submissions) means the legacy signed-JSON path.
+  // Unknown values are rejected with a no-save redirect to match the URL
+  // validation above — silent coercion would hide typos in the receiver UI.
+  const rawFormat = body.format;
+  const formatCandidate =
+    typeof rawFormat === "string" && rawFormat !== "" ? rawFormat : "raw";
+  if (!isWebhookFormat(formatCandidate)) {
+    return c.redirect("/dashboard/settings");
+  }
+  const format: WebhookFormat = formatCandidate;
+
   const existing = await db
     .prepare("SELECT id FROM webhooks WHERE user_id = ?")
     .bind(session.sub)
     .first<{ id: number }>();
   if (existing) {
     await db
-      .prepare("UPDATE webhooks SET url = ? WHERE user_id = ?")
-      .bind(url, session.sub)
+      .prepare("UPDATE webhooks SET url = ?, format = ? WHERE user_id = ?")
+      .bind(url, format, session.sub)
       .run();
   } else {
     const secret = crypto.randomUUID();
     await db
-      .prepare("INSERT INTO webhooks (user_id, url, secret) VALUES (?, ?, ?)")
-      .bind(session.sub, url, secret)
+      .prepare(
+        "INSERT INTO webhooks (user_id, url, secret, format) VALUES (?, ?, ?, ?)",
+      )
+      .bind(session.sub, url, secret, format)
       .run();
   }
   return c.redirect("/dashboard/settings");
