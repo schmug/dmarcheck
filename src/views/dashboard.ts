@@ -1062,6 +1062,20 @@ function renderBulkRow(row: BulkResultRow): string {
 </tr>`;
 }
 
+export interface RecentWebhookDelivery {
+  eventType: string;
+  ok: boolean;
+  statusCode: number | null;
+  error: string | null;
+  attemptedAt: number;
+}
+
+export interface WebhookTestFlash {
+  ok: boolean;
+  statusCode: number | null;
+  error: string | null;
+}
+
 export function renderSettingsPage({
   email,
   webhookUrl,
@@ -1069,6 +1083,8 @@ export function renderSettingsPage({
   billingEnabled,
   emailAlertsEnabled,
   showRetirementBanner,
+  recentDeliveries = [],
+  testFlash = null,
 }: {
   email: string;
   webhookUrl: string | null;
@@ -1076,6 +1092,8 @@ export function renderSettingsPage({
   billingEnabled: boolean;
   emailAlertsEnabled: boolean;
   showRetirementBanner: boolean;
+  recentDeliveries?: RecentWebhookDelivery[];
+  testFlash?: WebhookTestFlash | null;
 }): string {
   const retirementBanner = showRetirementBanner
     ? `<div class="settings-section" style="border-color:var(--clr-accent);background:var(--clr-accent-muted, rgba(249,115,22,0.08))">
@@ -1109,6 +1127,11 @@ ${retirementBanner}
 
 <div class="settings-section">
   <h2>Webhook</h2>
+  <p style="font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.75rem">
+    Receive a signed POST when a scan completes. Verify with the
+    <code>Dmarcheck-Signature</code> header (HMAC-SHA256 over
+    <code>&lt;timestamp&gt;.&lt;body&gt;</code>).
+  </p>
   <form method="POST" action="/dashboard/settings/webhook">
     <label for="webhook-url" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Webhook URL</label>
     <input
@@ -1124,6 +1147,15 @@ ${retirementBanner}
     >
     <button type="submit" class="btn">Save Webhook</button>
   </form>
+  ${
+    webhookUrl
+      ? `<form method="POST" action="/dashboard/settings/webhook/test" style="margin-top:0.5rem">
+    <button type="submit" class="btn btn-secondary">Send test event</button>
+  </form>`
+      : ""
+  }
+  ${renderWebhookTestFlash(testFlash)}
+  ${renderWebhookDeliveries(recentDeliveries)}
 </div>
 
 <div class="settings-section">
@@ -1146,6 +1178,49 @@ ${retirementBanner}
 </div>`;
 
   return dashboardPage("Settings — dmarc.mx", body, email);
+}
+
+function renderWebhookTestFlash(flash: WebhookTestFlash | null): string {
+  if (!flash) return "";
+  const headline = flash.ok
+    ? `Test event delivered (HTTP ${flash.statusCode ?? "?"})`
+    : flash.statusCode !== null
+      ? `Test event failed: HTTP ${flash.statusCode}`
+      : `Test event failed: ${flash.error ?? "network error"}`;
+  const tone = flash.ok
+    ? "var(--clr-success, #16a34a)"
+    : "var(--clr-danger, #dc2626)";
+  return `<p style="margin-top:0.75rem;color:${tone};font-size:0.875rem">${esc(headline)}</p>`;
+}
+
+function renderWebhookDeliveries(rows: RecentWebhookDelivery[]): string {
+  if (rows.length === 0) return "";
+  const items = rows
+    .map((row) => {
+      const when = new Date(row.attemptedAt * 1000).toLocaleString();
+      const result = row.ok
+        ? `HTTP ${row.statusCode ?? "?"} ✓`
+        : row.statusCode !== null
+          ? `HTTP ${row.statusCode} ✗`
+          : `${esc(row.error ?? "error")} ✗`;
+      return `<tr>
+  <td style="padding:0.25rem 0.5rem">${esc(when)}</td>
+  <td style="padding:0.25rem 0.5rem"><code>${esc(row.eventType)}</code></td>
+  <td style="padding:0.25rem 0.5rem">${result}</td>
+</tr>`;
+    })
+    .join("");
+  return `<details style="margin-top:1rem">
+  <summary style="cursor:pointer;font-size:0.875rem;color:var(--clr-text-muted)">Recent deliveries (${rows.length})</summary>
+  <table style="margin-top:0.5rem;font-size:0.8125rem;border-collapse:collapse;width:100%">
+    <thead><tr style="text-align:left;color:var(--clr-text-muted)">
+      <th style="padding:0.25rem 0.5rem">When</th>
+      <th style="padding:0.25rem 0.5rem">Event</th>
+      <th style="padding:0.25rem 0.5rem">Result</th>
+    </tr></thead>
+    <tbody>${items}</tbody>
+  </table>
+</details>`;
 }
 
 export interface ApiKeyListEntry {
