@@ -85,6 +85,21 @@ CREATE TABLE IF NOT EXISTS api_keys (
   revoked_at INTEGER
 );
 
+-- Outbound webhook delivery audit log
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  url TEXT NOT NULL,
+  status_code INTEGER,
+  ok INTEGER NOT NULL,
+  error TEXT,
+  request_body_sha256 TEXT NOT NULL,
+  attempted_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_domains_user_id ON domains(user_id);
 CREATE INDEX IF NOT EXISTS idx_scan_history_domain_id ON scan_history(domain_id);
@@ -96,3 +111,5 @@ CREATE INDEX IF NOT EXISTS idx_domains_last_scanned ON domains(last_scanned_at);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_user_time
+  ON webhook_deliveries (user_id, attempted_at DESC);

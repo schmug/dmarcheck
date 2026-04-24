@@ -32,6 +32,7 @@ import {
   getUserById,
   setEmailAlertsEnabled,
 } from "../db/users.js";
+import { getRecentDeliveriesForUser } from "../db/webhook-deliveries.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
 import {
@@ -44,6 +45,11 @@ import {
   renderSettingsPage,
   toApiKeyListEntry,
 } from "../views/dashboard.js";
+import { dispatchWebhook } from "../webhooks/dispatcher.js";
+import {
+  fireBulkScanWebhooks,
+  fireScanCompletedWebhook,
+} from "../webhooks/triggers.js";
 
 const HISTORY_LIMIT_PRO = 30;
 const HISTORY_LIMIT_FREE = 5;
@@ -215,6 +221,10 @@ dashboardRoutes.post("/bulk", async (c) => {
       400,
     );
   }
+  c.executionCtx.waitUntil(
+    fireBulkScanWebhooks(db, session.sub, outcome.results, "dashboard"),
+  );
+
   return c.html(
     renderBulkScanPage({
       email: session.email,
@@ -312,6 +322,15 @@ dashboardRoutes.post("/domain/:domain/scan", async (c) => {
     protocolResults: result.protocols,
   });
 
+  c.executionCtx.waitUntil(
+    fireScanCompletedWebhook(db, session.sub, {
+      domain: owned.domain,
+      grade: result.grade,
+      scanId: owned.id,
+      trigger: "dashboard",
+    }),
+  );
+
   return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`, 303);
 });
 
@@ -341,6 +360,26 @@ dashboardRoutes.get("/settings", async (c) => {
     .first<{ url: string }>();
   const plan = await getPlanForUser(db, session.sub);
   const env = c.env as { STRIPE_SECRET_KEY?: string };
+  const deliveries = await getRecentDeliveriesForUser(db, session.sub, 10);
+  const testParam = c.req.query("test");
+  let testFlash: {
+    ok: boolean;
+    statusCode: number | null;
+    error: string | null;
+  } | null = null;
+  if (testParam === "ok" || testParam === "fail") {
+    // Latest delivery row for this user is always the test we just ran (POST
+    // /webhook/test always inserts one). Pull it back so the flash carries the
+    // real status code without us needing to round-trip query params.
+    const latest = deliveries[0] ?? null;
+    if (latest) {
+      testFlash = {
+        ok: latest.ok === 1,
+        statusCode: latest.status_code,
+        error: latest.error,
+      };
+    }
+  }
   return c.html(
     renderSettingsPage({
       email: user.email,
@@ -349,6 +388,14 @@ dashboardRoutes.get("/settings", async (c) => {
       billingEnabled: Boolean(env.STRIPE_SECRET_KEY),
       emailAlertsEnabled: user.email_alerts_enabled === 1,
       showRetirementBanner: user.api_key_retirement_acknowledged_at === null,
+      recentDeliveries: deliveries.map((row) => ({
+        eventType: row.event_type,
+        ok: row.ok === 1,
+        statusCode: row.status_code,
+        error: row.error,
+        attemptedAt: row.attempted_at,
+      })),
+      testFlash,
     }),
   );
 });
@@ -432,6 +479,25 @@ dashboardRoutes.post("/settings/api-keys/revoke", async (c) => {
     await revokeApiKey(db, id, session.sub);
   }
   return c.redirect("/dashboard/settings/api-keys", 303);
+});
+
+// Fires a synthetic `webhook.test` event through the dispatcher so the user
+// can verify their receiver + signing without waiting for a real scan. Awaits
+// the result (rather than waitUntil) so we can flash the outcome on redirect.
+dashboardRoutes.post("/settings/webhook/test", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const result = await dispatchWebhook(db, session.sub, {
+    type: "webhook.test",
+    data: { message: "Hello from dmarcheck" },
+  });
+  if (!result) {
+    return c.redirect("/dashboard/settings");
+  }
+  return c.redirect(
+    `/dashboard/settings?test=${result.ok ? "ok" : "fail"}`,
+    303,
+  );
 });
 
 // Save webhook URL

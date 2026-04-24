@@ -91,6 +91,7 @@ import {
 import { renderPricingPage } from "./views/pricing.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
+import { fireBulkScanWebhooks } from "./webhooks/triggers.js";
 
 // The Hono app is exported for tests (which call `app.request(...)`).
 // Runtime Workers use the Sentry-wrapped default export below, which adds
@@ -884,6 +885,9 @@ app.post("/api/bulk-scan", async (c) => {
       400,
     );
   }
+  c.executionCtx.waitUntil(
+    fireBulkScanWebhooks(db, bearer.userId, outcome.results, "bulk_api"),
+  );
   return c.json(outcome);
 });
 
