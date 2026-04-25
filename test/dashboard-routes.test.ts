@@ -573,6 +573,134 @@ describe("dashboard/routes", () => {
     });
   });
 
+  describe("GET /dashboard/domains (live-search fragment)", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domains");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 404 for free-plan users (Pro-only endpoint)", async () => {
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 1,
+            scan_frequency: "monthly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1700000000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domains", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns the panel fragment (no <html> shell) for Pro users", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_pro",
+            email: "pro@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: "cus_x",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        domains: [
+          {
+            id: 1,
+            user_id: "user_pro",
+            domain: "alpha.example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const res = await app.request("/dashboard/domains", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Cache-Control")).toBe("no-store");
+      const body = await res.text();
+      // Fragment, not a full page.
+      expect(body).not.toContain("<!DOCTYPE");
+      expect(body).not.toContain("<html");
+      expect(body).not.toContain("dashboard-nav");
+      // But it does include the live-search-aware wrapper + toolbar + table.
+      expect(body).toContain('id="domain-panel"');
+      expect(body).toContain('data-pro="1"');
+      expect(body).toContain('<form class="domain-toolbar"');
+      expect(body).toContain("alpha.example.com");
+    });
+
+    it("honors the q filter so the fragment matches the full-page result", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_pro",
+            email: "pro@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: "cus_x",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        domains: [
+          {
+            id: 1,
+            user_id: "user_pro",
+            domain: "alpha.example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+          {
+            id: 2,
+            user_id: "user_pro",
+            domain: "beta.io",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "B",
+            created_at: 1700000001,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const res = await app.request("/dashboard/domains?q=alpha", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("alpha.example.com");
+      expect(body).not.toContain("beta.io");
+      expect(body).toContain("Showing 1–1 of 1");
+    });
+  });
+
   describe("GET /dashboard/domain/:domain", () => {
     it("redirects to /auth/login without a session cookie", async () => {
       const db = createMockDB({});

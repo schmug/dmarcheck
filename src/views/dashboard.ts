@@ -900,18 +900,17 @@ function renderPagination(controls: DashboardControls): string {
 </nav>`;
 }
 
-export function renderDashboardPage({
-  email,
-  alerts = [],
+// Renders just the toolbar + table + pagination, wrapped in a stable
+// `#domain-panel` element so the live-search client script can swap it in
+// place via /dashboard/domains. Used both inline by renderDashboardPage and
+// directly by the fragment route — keep the wrapper markup identical between
+// the two so the swap is a clean replace.
+export function renderDomainPanel({
   domains,
-  controls = null,
+  controls,
 }: {
-  email: string;
-  alerts?: DashboardAlert[];
   domains: DashboardDomain[];
-  // Set only for Pro accounts; gates the search/sort/pagination UI.
-  plan?: "free" | "pro";
-  controls?: DashboardControls | null;
+  controls: DashboardControls | null;
 }): string {
   const isFiltered =
     controls !== null &&
@@ -979,13 +978,34 @@ export function renderDashboardPage({
   const toolbar = controls ? renderDomainToolbar(controls) : "";
   const pagination = controls ? renderPagination(controls) : "";
 
+  // data-pro="1" is the signal the client script uses to enable live
+  // search/swap. Free users render the same wrapper so a future plan upgrade
+  // doesn't need a markup migration, but the script bails out early.
+  return `<div id="domain-panel" data-pro="${controls ? "1" : "0"}">
+${toolbar}
+${tableBody}
+${pagination}
+</div>`;
+}
+
+export function renderDashboardPage({
+  email,
+  alerts = [],
+  domains,
+  controls = null,
+}: {
+  email: string;
+  alerts?: DashboardAlert[];
+  domains: DashboardDomain[];
+  // Set only for Pro accounts; gates the search/sort/pagination UI.
+  plan?: "free" | "pro";
+  controls?: DashboardControls | null;
+}): string {
   return dashboardPage(
     "Domains — dmarc.mx",
     `<h1 class="dashboard-title">Your Domains</h1>
 ${renderAlertsSection(alerts)}
-${toolbar}
-${tableBody}
-${pagination}`,
+${renderDomainPanel({ domains, controls })}`,
     email,
   );
 }

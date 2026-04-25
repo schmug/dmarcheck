@@ -45,6 +45,7 @@ import {
   renderDashboardPage,
   renderDomainDetailPage,
   renderDomainHistoryPage,
+  renderDomainPanel,
   renderSettingsPage,
   toApiKeyListEntry,
 } from "../views/dashboard.js";
@@ -236,6 +237,66 @@ dashboardRoutes.get("/", async (c) => {
 // Dismiss a regression alert. IDOR-safe via SQL: acknowledgeAlert only updates
 // rows whose domain belongs to the session user. Returns 404 (not 500, not 303)
 // for invalid / cross-user / already-acked ids so the caller can distinguish.
+// Live-search fragment endpoint for the Pro domain list. Returns only the
+// `#domain-panel` markup (toolbar + table + pagination) so the client can
+// swap it in place when the user types or changes a filter — no full page
+// reload, no flicker, no focus loss. Free users get 404 because their
+// dashboard skips the search UI entirely; the full page already does the
+// right thing for them.
+dashboardRoutes.get("/domains", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const plan = await getPlanForUser(db, session.sub);
+  if (plan !== "pro") return c.notFound();
+
+  const query = parseDomainListQuery(new URL(c.req.url));
+  const offset = (query.page - 1) * query.pageSize;
+  const [page, unackCounts] = await Promise.all([
+    listDomainsForUserPaged(db, {
+      userId: session.sub,
+      search: query.search || undefined,
+      grade: query.grade ?? undefined,
+      frequency: query.frequency ?? undefined,
+      sort: query.sort,
+      direction: query.direction,
+      limit: query.pageSize,
+      offset,
+    }),
+    countUnacknowledgedByDomain(db, session.sub),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(page.total / query.pageSize));
+  const currentPage = Math.min(query.page, totalPages);
+
+  const html = renderDomainPanel({
+    domains: page.rows.map((d) => ({
+      domain: d.domain,
+      grade: d.last_grade ?? "—",
+      frequency: d.scan_frequency,
+      lastScanned: d.last_scanned_at
+        ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
+        : null,
+      isFree: d.is_free === 1,
+      unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
+    })),
+    controls: {
+      search: query.search,
+      grade: query.grade,
+      frequency: query.frequency,
+      sort: query.sort,
+      direction: query.direction,
+      page: currentPage,
+      pageSize: query.pageSize,
+      totalPages,
+      total: page.total,
+    },
+  });
+
+  // no-store keeps a CDN from caching one user's domain list and serving it
+  // to another. The route is auth-required, but belt-and-suspenders.
+  return c.html(html, 200, { "Cache-Control": "no-store" });
+});
+
 dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
