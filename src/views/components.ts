@@ -227,7 +227,11 @@ export function protocolCard(
   subtitle: string,
   body: string,
   expanded = false,
+  learnSlug?: string,
 ): string {
+  const learnLink = learnSlug
+    ? `<div class="card-learn-link"><a href="/learn/${esc(learnSlug)}">Learn about ${esc(name)} &rarr;</a></div>`
+    : "";
   return `<div class="card${expanded ? " expanded" : ""}">
   <div class="card-header" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
     ${statusDot(status)}
@@ -235,7 +239,7 @@ export function protocolCard(
     <div class="card-subtitle">${esc(subtitle)}</div>
     <div class="card-chevron" aria-hidden="true">&#9654;</div>
   </div>
-  <div class="card-body">${body}</div>
+  <div class="card-body">${body}${learnLink}</div>
 </div>`;
 }
 

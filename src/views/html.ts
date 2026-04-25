@@ -204,7 +204,7 @@ export function renderDmarcCard(dmarc: DmarcResult): string {
     ? rawRecord(dmarc.record)
     : rawRecordExpand(dmarc.record, "Show TXT records found");
   const body = tagGrid(dmarc.tags) + validationList(dmarc.validations) + raw;
-  return protocolCard("DMARC", dmarc.status, subtitle, body, true);
+  return protocolCard("DMARC", dmarc.status, subtitle, body, true, "dmarc");
 }
 
 export function renderSpfCard(spf: SpfResult): string {
@@ -218,7 +218,7 @@ export function renderSpfCard(spf: SpfResult): string {
   }
   body += validationList(spf.validations);
   body += rawRecord(spf.record);
-  return protocolCard("SPF", spf.status, subtitle, body, true);
+  return protocolCard("SPF", spf.status, subtitle, body, true, "spf");
 }
 
 export function renderDkimCard(dkim: DkimResult): string {
@@ -229,7 +229,7 @@ export function renderDkimCard(dkim: DkimResult): string {
       : "No selectors found";
   const body =
     dkimSelectorGrid(dkim.selectors) + validationList(dkim.validations);
-  return protocolCard("DKIM", dkim.status, subtitle, body);
+  return protocolCard("DKIM", dkim.status, subtitle, body, false, "dkim");
 }
 
 export function renderBimiCard(bimi: BimiResult): string {
@@ -244,7 +244,7 @@ export function renderBimiCard(bimi: BimiResult): string {
     : "";
   const body =
     logo + tagGrid(bimi.tags) + validationList(bimi.validations) + raw;
-  return protocolCard("BIMI", bimi.status, subtitle, body);
+  return protocolCard("BIMI", bimi.status, subtitle, body, false, "bimi");
 }
 
 export function renderMtaStsCard(mtaSts: MtaStsResult): string {
@@ -259,7 +259,14 @@ export function renderMtaStsCard(mtaSts: MtaStsResult): string {
   if (mtaSts.dns_record) {
     body += rawRecord(mtaSts.dns_record);
   }
-  return protocolCard("MTA-STS", mtaSts.status, subtitle, body);
+  return protocolCard(
+    "MTA-STS",
+    mtaSts.status,
+    subtitle,
+    body,
+    false,
+    "mta-sts",
+  );
 }
 
 export function renderMxCard(mx: MxResult): string {
@@ -625,23 +632,23 @@ export function renderScoringRubric(): string {
     <div class="bd-card-title">The five protocols</div>
     <div class="bd-card-body">
       <div class="rubric-protocol">
-        <h3>DMARC</h3>
+        <h3><a href="/learn/dmarc">DMARC</a></h3>
         <p>Domain-based Message Authentication, Reporting &amp; Conformance. The policy layer that ties SPF and DKIM together and tells receivers what to do with unauthenticated mail. This is the most important factor in your grade.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>SPF</h3>
+        <h3><a href="/learn/spf">SPF</a></h3>
         <p>Sender Policy Framework. A DNS record listing which IP addresses are authorized to send mail for your domain. Receivers check the sending server's IP against this list.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>DKIM</h3>
+        <h3><a href="/learn/dkim">DKIM</a></h3>
         <p>DomainKeys Identified Mail. Adds a cryptographic signature to outgoing messages, proving they haven't been tampered with in transit. Key strength (2048+ bits) and multiple selectors improve your score.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>BIMI</h3>
+        <h3><a href="/learn/bimi">BIMI</a></h3>
         <p>Brand Indicators for Message Identification. Displays your brand logo next to authenticated messages in supporting email clients. Requires DMARC p=reject.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>MTA-STS</h3>
+        <h3><a href="/learn/mta-sts">MTA-STS</a></h3>
         <p>Mail Transfer Agent Strict Transport Security. Forces TLS encryption for inbound mail delivery, preventing downgrade attacks. Modes: testing (report only) and enforce (reject unencrypted).</p>
       </div>
     </div>
