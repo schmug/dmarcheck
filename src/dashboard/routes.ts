@@ -21,9 +21,12 @@ import {
 } from "../db/api-keys.js";
 import {
   createDomain,
+  type DomainSortColumn,
+  type DomainSortDirection,
   deleteDomain,
   getDomainByUserAndName,
   getDomainsByUser,
+  listDomainsForUserPaged,
 } from "../db/domains.js";
 import { getScanHistoryWithProtocols, recordScan } from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
@@ -58,6 +61,75 @@ import {
 const HISTORY_LIMIT_PRO = 30;
 const HISTORY_LIMIT_FREE = 5;
 
+// Page-size knobs for the Pro domain list. Cap is defensive: nothing in the
+// product needs >100 rows at once, and the LIMIT bounds the worst-case D1
+// scan even if a hostile query string asks for more.
+const DOMAINS_PAGE_SIZE_DEFAULT = 25;
+const DOMAINS_PAGE_SIZE_MAX = 100;
+const DOMAINS_SEARCH_MAX = 60;
+
+const VALID_GRADES = new Set([
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "F",
+  "ungraded",
+]);
+const VALID_SORT_COLUMNS = new Set<DomainSortColumn>([
+  "domain",
+  "grade",
+  "last_scanned",
+  "created",
+]);
+
+interface DomainListQuery {
+  search: string;
+  grade: string | null;
+  frequency: "weekly" | "monthly" | null;
+  sort: DomainSortColumn;
+  direction: DomainSortDirection;
+  page: number;
+  pageSize: number;
+}
+
+function parseDomainListQuery(url: URL): DomainListQuery {
+  const params = url.searchParams;
+  const rawSearch = (params.get("q") ?? "").trim().slice(0, DOMAINS_SEARCH_MAX);
+  const grade = params.get("grade");
+  const frequencyRaw = params.get("frequency");
+  const sortRaw = params.get("sort");
+  const dirRaw = params.get("dir");
+  const pageRaw = Number.parseInt(params.get("page") ?? "1", 10);
+  const pageSizeRaw = Number.parseInt(params.get("pageSize") ?? "", 10);
+  return {
+    search: rawSearch,
+    grade: grade && VALID_GRADES.has(grade) ? grade : null,
+    frequency:
+      frequencyRaw === "weekly" || frequencyRaw === "monthly"
+        ? frequencyRaw
+        : null,
+    sort:
+      sortRaw && VALID_SORT_COLUMNS.has(sortRaw as DomainSortColumn)
+        ? (sortRaw as DomainSortColumn)
+        : "domain",
+    direction: dirRaw === "desc" ? "desc" : "asc",
+    page: Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1,
+    pageSize:
+      Number.isFinite(pageSizeRaw) && pageSizeRaw > 0
+        ? Math.min(pageSizeRaw, DOMAINS_PAGE_SIZE_MAX)
+        : DOMAINS_PAGE_SIZE_DEFAULT,
+  };
+}
+
 export const dashboardRoutes = new Hono();
 
 // All dashboard routes require auth
@@ -73,23 +145,70 @@ dashboardRoutes.route("/billing", dashboardBillingRoutes);
 dashboardRoutes.get("/", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
-  const [domains, alerts, unackCounts] = await Promise.all([
-    getDomainsByUser(db, session.sub),
+  const plan = await getPlanForUser(db, session.sub);
+
+  const [alerts, unackCounts] = await Promise.all([
     listUnacknowledgedForUser(db, session.sub, 20),
     countUnacknowledgedByDomain(db, session.sub),
   ]);
+
+  const alertsView = alerts.map((a) => ({
+    id: a.id,
+    domain: a.domain,
+    alertType: a.alert_type,
+    previousValue: a.previous_value,
+    newValue: a.new_value,
+    createdAt: a.created_at,
+  }));
+
+  // Free-tier accounts cap out at a handful of domains, so we skip the
+  // search/sort/page UI for them entirely and serve the simple list.
+  if (plan !== "pro") {
+    const domains = await getDomainsByUser(db, session.sub);
+    return c.html(
+      renderDashboardPage({
+        email: session.email,
+        plan,
+        alerts: alertsView,
+        domains: domains.map((d) => ({
+          domain: d.domain,
+          grade: d.last_grade ?? "—",
+          frequency: d.scan_frequency,
+          lastScanned: d.last_scanned_at
+            ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
+            : null,
+          isFree: d.is_free === 1,
+          unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
+        })),
+        controls: null,
+      }),
+    );
+  }
+
+  const query = parseDomainListQuery(new URL(c.req.url));
+  const offset = (query.page - 1) * query.pageSize;
+  const page = await listDomainsForUserPaged(db, {
+    userId: session.sub,
+    search: query.search || undefined,
+    grade: query.grade ?? undefined,
+    frequency: query.frequency ?? undefined,
+    sort: query.sort,
+    direction: query.direction,
+    limit: query.pageSize,
+    offset,
+  });
+
+  // Clamp out-of-range pages so a deep-linked stale URL doesn't render an
+  // empty table when results exist.
+  const totalPages = Math.max(1, Math.ceil(page.total / query.pageSize));
+  const currentPage = Math.min(query.page, totalPages);
+
   return c.html(
     renderDashboardPage({
       email: session.email,
-      alerts: alerts.map((a) => ({
-        id: a.id,
-        domain: a.domain,
-        alertType: a.alert_type,
-        previousValue: a.previous_value,
-        newValue: a.new_value,
-        createdAt: a.created_at,
-      })),
-      domains: domains.map((d) => ({
+      plan,
+      alerts: alertsView,
+      domains: page.rows.map((d) => ({
         domain: d.domain,
         grade: d.last_grade ?? "—",
         frequency: d.scan_frequency,
@@ -99,6 +218,17 @@ dashboardRoutes.get("/", async (c) => {
         isFree: d.is_free === 1,
         unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
       })),
+      controls: {
+        search: query.search,
+        grade: query.grade,
+        frequency: query.frequency,
+        sort: query.sort,
+        direction: query.direction,
+        page: currentPage,
+        pageSize: query.pageSize,
+        totalPages,
+        total: page.total,
+      },
     }),
   );
 });

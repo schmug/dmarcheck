@@ -505,6 +505,113 @@ const DASHBOARD_CSS = `
   font-size: 0.875rem;
   margin-bottom: 1rem;
 }
+.domain-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: stretch;
+  margin-bottom: 0.75rem;
+}
+.domain-toolbar input,
+.domain-toolbar select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.domain-toolbar input:focus,
+.domain-toolbar select:focus {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: 1px;
+  border-color: var(--clr-accent);
+}
+.domain-toolbar .toolbar-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.domain-toolbar .toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.domain-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--clr-text-muted);
+}
+.domain-table th a.sort-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--clr-text-muted);
+  text-decoration: none;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.domain-table th a.sort-link:hover {
+  color: var(--clr-accent);
+}
+.domain-table th a.sort-link.active {
+  color: var(--clr-text);
+}
+.domain-table th .sort-arrow {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+.domain-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--clr-text-muted);
+}
+.domain-pagination .pagination-links {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.domain-pagination a,
+.domain-pagination span.page-current,
+.domain-pagination span.page-disabled {
+  display: inline-block;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+  background: var(--clr-surface);
+  color: var(--clr-text-muted);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  min-width: 1.75rem;
+  text-align: center;
+}
+.domain-pagination a:hover {
+  border-color: var(--clr-accent);
+  color: var(--clr-accent);
+  text-decoration: none;
+}
+.domain-pagination span.page-current {
+  background: var(--clr-accent);
+  color: #fff;
+  border-color: var(--clr-accent);
+  font-weight: 600;
+}
+.domain-pagination span.page-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 `;
 
 function dashboardPage(title: string, body: string, email: string): string {
@@ -626,19 +733,203 @@ export function renderAlertsSection(
 </section>`;
 }
 
+export type DashboardSortColumn =
+  | "domain"
+  | "grade"
+  | "last_scanned"
+  | "created";
+export type DashboardSortDirection = "asc" | "desc";
+
+export interface DashboardControls {
+  search: string;
+  grade: string | null;
+  frequency: "weekly" | "monthly" | null;
+  sort: DashboardSortColumn;
+  direction: DashboardSortDirection;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  total: number;
+}
+
+const GRADE_FILTER_OPTIONS = [
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "F",
+  "ungraded",
+];
+
+// Build a URL-encoded query string for /dashboard from the current control
+// state plus a set of overrides. Centralizes the "preserve every other knob"
+// rule so sort headers and pagination links don't drop filters.
+function buildDashboardHref(
+  controls: DashboardControls,
+  overrides: Partial<{
+    sort: DashboardSortColumn;
+    direction: DashboardSortDirection;
+    page: number;
+  }>,
+): string {
+  const params = new URLSearchParams();
+  if (controls.search) params.set("q", controls.search);
+  if (controls.grade) params.set("grade", controls.grade);
+  if (controls.frequency) params.set("frequency", controls.frequency);
+  const sort = overrides.sort ?? controls.sort;
+  const direction = overrides.direction ?? controls.direction;
+  if (sort !== "domain") params.set("sort", sort);
+  if (direction !== "asc") params.set("dir", direction);
+  const page = overrides.page ?? controls.page;
+  if (page > 1) params.set("page", String(page));
+  if (controls.pageSize !== 25) {
+    params.set("pageSize", String(controls.pageSize));
+  }
+  const qs = params.toString();
+  return qs ? `/dashboard?${qs}` : "/dashboard";
+}
+
+function renderSortableHeader(
+  controls: DashboardControls,
+  column: DashboardSortColumn,
+  label: string,
+): string {
+  const isActive = controls.sort === column;
+  // Toggle direction when re-clicking the active column; otherwise default to
+  // ascending so users see best→worst for grade and oldest→newest for dates
+  // unless they explicitly flip it.
+  const nextDirection: DashboardSortDirection = isActive
+    ? controls.direction === "asc"
+      ? "desc"
+      : "asc"
+    : "asc";
+  const arrow = isActive ? (controls.direction === "asc" ? "▲" : "▼") : "";
+  const href = buildDashboardHref(controls, {
+    sort: column,
+    direction: nextDirection,
+    page: 1,
+  });
+  return `<th><a class="sort-link${isActive ? " active" : ""}" href="${esc(href)}">${esc(label)}<span class="sort-arrow">${arrow}</span></a></th>`;
+}
+
+function renderDomainToolbar(controls: DashboardControls): string {
+  const gradeOpts = GRADE_FILTER_OPTIONS.map((g) => {
+    const sel = controls.grade === g ? " selected" : "";
+    const label = g === "ungraded" ? "Not yet scanned" : g;
+    return `<option value="${esc(g)}"${sel}>${esc(label)}</option>`;
+  }).join("");
+  const freqOpts = ["weekly", "monthly"]
+    .map(
+      (f) =>
+        `<option value="${esc(f)}"${controls.frequency === f ? " selected" : ""}>${esc(f.charAt(0).toUpperCase() + f.slice(1))}</option>`,
+    )
+    .join("");
+  return `<form class="domain-toolbar" method="get" action="/dashboard" role="search">
+  <input
+    type="search"
+    class="toolbar-search"
+    name="q"
+    value="${esc(controls.search)}"
+    placeholder="Search domains…"
+    aria-label="Search domains"
+    maxlength="60"
+  >
+  <select name="grade" aria-label="Filter by grade">
+    <option value="">All grades</option>
+    ${gradeOpts}
+  </select>
+  <select name="frequency" aria-label="Filter by scan frequency">
+    <option value="">All frequencies</option>
+    ${freqOpts}
+  </select>
+  ${controls.sort !== "domain" ? `<input type="hidden" name="sort" value="${esc(controls.sort)}">` : ""}
+  ${controls.direction !== "asc" ? `<input type="hidden" name="dir" value="${esc(controls.direction)}">` : ""}
+  ${controls.pageSize !== 25 ? `<input type="hidden" name="pageSize" value="${controls.pageSize}">` : ""}
+  <div class="toolbar-actions">
+    <button type="submit" class="btn">Apply</button>
+    <a href="/dashboard" class="btn btn-secondary">Reset</a>
+  </div>
+</form>`;
+}
+
+function renderPagination(controls: DashboardControls): string {
+  if (controls.total === 0) return "";
+  const start = (controls.page - 1) * controls.pageSize + 1;
+  const end = Math.min(controls.page * controls.pageSize, controls.total);
+  const prev = controls.page > 1;
+  const next = controls.page < controls.totalPages;
+
+  // Window of page numbers around the current page so the link list stays
+  // readable when a user has many domains.
+  const window: number[] = [];
+  const span = 2;
+  const lo = Math.max(1, controls.page - span);
+  const hi = Math.min(controls.totalPages, controls.page + span);
+  for (let p = lo; p <= hi; p += 1) window.push(p);
+
+  const pageLinks = window
+    .map((p) =>
+      p === controls.page
+        ? `<span class="page-current" aria-current="page">${p}</span>`
+        : `<a href="${esc(buildDashboardHref(controls, { page: p }))}">${p}</a>`,
+    )
+    .join("");
+
+  const prevLink = prev
+    ? `<a href="${esc(buildDashboardHref(controls, { page: controls.page - 1 }))}" rel="prev">‹ Prev</a>`
+    : `<span class="page-disabled">‹ Prev</span>`;
+  const nextLink = next
+    ? `<a href="${esc(buildDashboardHref(controls, { page: controls.page + 1 }))}" rel="next">Next ›</a>`
+    : `<span class="page-disabled">Next ›</span>`;
+
+  return `<nav class="domain-pagination" aria-label="Domain list pagination">
+  <span>Showing ${start}–${end} of ${controls.total}</span>
+  <span class="pagination-links">
+    ${prevLink}
+    ${pageLinks}
+    ${nextLink}
+  </span>
+</nav>`;
+}
+
 export function renderDashboardPage({
   email,
   alerts = [],
   domains,
+  controls = null,
 }: {
   email: string;
   alerts?: DashboardAlert[];
   domains: DashboardDomain[];
+  // Set only for Pro accounts; gates the search/sort/pagination UI.
+  plan?: "free" | "pro";
+  controls?: DashboardControls | null;
 }): string {
+  const isFiltered =
+    controls !== null &&
+    (controls.search !== "" ||
+      controls.grade !== null ||
+      controls.frequency !== null);
+
   let tableBody: string;
 
   if (domains.length === 0) {
-    tableBody = `<div class="empty-state">
+    // Filtered-empty differs from "no domains at all" — keep the upgrade /
+    // add-domain CTA out of the way when the user is just narrowing a list.
+    tableBody = isFiltered
+      ? `<div class="empty-state">
+  <p>No domains match these filters.</p>
+  <a href="/dashboard" class="btn btn-secondary">Clear filters</a>
+</div>`
+      : `<div class="empty-state">
   <p>No domains yet. Add your first domain to start monitoring.</p>
   <a href="/dashboard/domain/add" class="btn">Add Domain</a>
 </div>`;
@@ -663,24 +954,38 @@ export function renderDashboardPage({
       })
       .join("");
 
-    tableBody = `<table class="domain-table">
-  <thead>
-    <tr>
+    const headerRow = controls
+      ? `<tr>
+      ${renderSortableHeader(controls, "domain", "Domain")}
+      ${renderSortableHeader(controls, "grade", "Grade")}
+      <th>Frequency</th>
+      ${renderSortableHeader(controls, "last_scanned", "Last Scan")}
+    </tr>`
+      : `<tr>
       <th>Domain</th>
       <th>Grade</th>
       <th>Frequency</th>
       <th>Last Scan</th>
-    </tr>
-  </thead>
+    </tr>`;
+
+    tableBody = `<table class="domain-table">
+  <thead>${headerRow}</thead>
   <tbody>${rows}</tbody>
 </table>`;
   }
+
+  // Pro accounts get the full toolbar + pagination. Free accounts cap out at
+  // a tiny list, so the controls only add noise.
+  const toolbar = controls ? renderDomainToolbar(controls) : "";
+  const pagination = controls ? renderPagination(controls) : "";
 
   return dashboardPage(
     "Domains — dmarc.mx",
     `<h1 class="dashboard-title">Your Domains</h1>
 ${renderAlertsSection(alerts)}
-${tableBody}`,
+${toolbar}
+${tableBody}
+${pagination}`,
     email,
   );
 }

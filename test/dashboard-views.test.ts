@@ -106,6 +106,187 @@ describe("renderDashboardPage", () => {
     expect(html).toContain("/dashboard/domain/");
     expect(html).toContain("example.com");
   });
+
+  it("does not render search/filter controls when controls is omitted", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      domains: [],
+    });
+    // The class lives in the always-included CSS, so the markup-level check
+    // looks for the actual <form> the toolbar renders into.
+    expect(html).not.toContain('<form class="domain-toolbar"');
+    expect(html).not.toContain("Search domains…");
+  });
+
+  it("renders search/filter controls and pagination when controls are provided", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [
+        {
+          domain: "alpha.com",
+          grade: "A",
+          frequency: "weekly",
+          lastScanned: "2026-04-01",
+          isFree: false,
+        },
+      ],
+      controls: {
+        search: "",
+        grade: null,
+        frequency: null,
+        sort: "domain",
+        direction: "asc",
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+        total: 1,
+      },
+    });
+    expect(html).toContain("domain-toolbar");
+    expect(html).toContain('placeholder="Search domains');
+    expect(html).toContain("All grades");
+    expect(html).toContain("All frequencies");
+    expect(html).toContain("Showing 1–1 of 1");
+  });
+
+  it("preserves search/filter state in sort header links", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [
+        {
+          domain: "alpha.com",
+          grade: "A",
+          frequency: "weekly",
+          lastScanned: null,
+          isFree: false,
+        },
+      ],
+      controls: {
+        search: "alpha",
+        grade: "A",
+        frequency: "weekly",
+        sort: "domain",
+        direction: "asc",
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+        total: 1,
+      },
+    });
+    expect(html).toContain("q=alpha");
+    expect(html).toContain("grade=A");
+    expect(html).toContain("frequency=weekly");
+    expect(html).toContain("sort=grade");
+  });
+
+  it("renders prev/next pagination links spanning multiple pages", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [
+        {
+          domain: "p2-domain.com",
+          grade: "B",
+          frequency: "weekly",
+          lastScanned: null,
+          isFree: false,
+        },
+      ],
+      controls: {
+        search: "",
+        grade: null,
+        frequency: null,
+        sort: "domain",
+        direction: "asc",
+        page: 2,
+        pageSize: 25,
+        totalPages: 4,
+        total: 80,
+      },
+    });
+    expect(html).toContain("Showing 26–50 of 80");
+    // Prev jumps to page 1 (rendered as bare /dashboard since page=1 is the
+    // default and we drop default-valued params for clean URLs). Next jumps
+    // to page 3.
+    expect(html).toContain('href="/dashboard" rel="prev"');
+    expect(html).toContain("page=3");
+    expect(html).toContain('rel="next"');
+  });
+
+  it("disables prev on first page and next on last page", () => {
+    const lastPage = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [
+        {
+          domain: "tail.com",
+          grade: "B",
+          frequency: "weekly",
+          lastScanned: null,
+          isFree: false,
+        },
+      ],
+      controls: {
+        search: "",
+        grade: null,
+        frequency: null,
+        sort: "domain",
+        direction: "asc",
+        page: 3,
+        pageSize: 25,
+        totalPages: 3,
+        total: 51,
+      },
+    });
+    expect(lastPage).toContain("page-disabled");
+    expect(lastPage).not.toContain('rel="next"');
+  });
+
+  it("shows a 'no matches' empty state when filters are active and no results", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [],
+      controls: {
+        search: "nope",
+        grade: null,
+        frequency: null,
+        sort: "domain",
+        direction: "asc",
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+        total: 0,
+      },
+    });
+    expect(html).toContain("No domains match these filters");
+    expect(html).toContain("Clear filters");
+    // Must not show the new-account empty state copy.
+    expect(html).not.toContain("Add your first domain");
+  });
+
+  it("escapes hostile search input in the toolbar value", () => {
+    const html = renderDashboardPage({
+      email: "user@example.com",
+      plan: "pro",
+      domains: [],
+      controls: {
+        search: '"><script>alert(1)</script>',
+        grade: null,
+        frequency: null,
+        sort: "domain",
+        direction: "asc",
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+        total: 0,
+      },
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
 
 describe("renderDomainDetailPage", () => {
