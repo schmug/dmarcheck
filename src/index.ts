@@ -14,6 +14,10 @@ import type {
   SpfResult,
 } from "./analyzers/types.js";
 import {
+  getAgentSkillsIndexJson,
+  SCAN_DOMAIN_SKILL_MD,
+} from "./api/agent-skills.js";
+import {
   BULK_IN_BAND_CAP,
   isCapExceeded,
   processBulkScan,
@@ -144,6 +148,7 @@ const NOINDEX_CONTENT_TYPES = [
 // using the API directly.
 const AGENT_DISCOVERY_LINK_HEADER = [
   '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+  '</.well-known/agent-skills/index.json>; rel="https://agentskills.io/rel/index"; type="application/json"',
   '</openapi.json>; rel="service-desc"; type="application/openapi+json"',
   '</docs/api>; rel="service-doc"; type="text/html"',
   '</health>; rel="status"',
@@ -669,6 +674,23 @@ app.get("/health", (c) => {
 app.get("/.well-known/api-catalog", (c) => {
   return c.body(API_CATALOG_JSON, 200, {
     "Content-Type": "application/linkset+json",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+// Agent Skills discovery index — Cloudflare RFC v0.2.0.
+// https://github.com/cloudflare/agent-skills-discovery-rfc
+app.get("/.well-known/agent-skills/index.json", async (c) => {
+  const json = await getAgentSkillsIndexJson();
+  return c.body(json, 200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/.well-known/agent-skills/scan-domain/SKILL.md", (c) => {
+  return c.body(SCAN_DOMAIN_SKILL_MD, 200, {
+    "Content-Type": "text/markdown; charset=utf-8",
     "Cache-Control": "public, max-age=3600",
   });
 });
