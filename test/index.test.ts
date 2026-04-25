@@ -553,6 +553,52 @@ describe("HTML head tags", () => {
     expect(html).toContain('<dt><a href="/learn/mta-sts">MTA-STS</a></dt>');
   });
 
+  it("/scoring cross-links each protocol heading to its /learn page", async () => {
+    const res = await app.request("/scoring");
+    const html = await res.text();
+    expect(html).toContain('<h3><a href="/learn/dmarc">DMARC</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/spf">SPF</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/dkim">DKIM</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/bimi">BIMI</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/mta-sts">MTA-STS</a></h3>');
+  });
+
+  it("report cards cross-link each protocol to its /learn page", async () => {
+    const {
+      renderDmarcCard,
+      renderSpfCard,
+      renderDkimCard,
+      renderBimiCard,
+      renderMtaStsCard,
+    } = await import("../src/views/html.js");
+    const empty = { status: "fail" as const, validations: [] };
+    expect(renderDmarcCard({ ...empty, record: null, tags: null })).toContain(
+      '<div class="card-learn-link"><a href="/learn/dmarc">Learn about DMARC &rarr;</a></div>',
+    );
+    expect(
+      renderSpfCard({
+        ...empty,
+        record: null,
+        lookups_used: 0,
+        lookup_limit: 10,
+        include_tree: null,
+      }),
+    ).toContain(
+      '<div class="card-learn-link"><a href="/learn/spf">Learn about SPF &rarr;</a></div>',
+    );
+    expect(renderDkimCard({ ...empty, selectors: {} })).toContain(
+      '<div class="card-learn-link"><a href="/learn/dkim">Learn about DKIM &rarr;</a></div>',
+    );
+    expect(renderBimiCard({ ...empty, record: null, tags: null })).toContain(
+      '<div class="card-learn-link"><a href="/learn/bimi">Learn about BIMI &rarr;</a></div>',
+    );
+    expect(
+      renderMtaStsCard({ ...empty, dns_record: null, policy: null }),
+    ).toContain(
+      '<div class="card-learn-link"><a href="/learn/mta-sts">Learn about MTA-STS &rarr;</a></div>',
+    );
+  });
+
   it("landing page embeds WebSite + SoftwareApplication JSON-LD", async () => {
     const res = await app.request("/");
     const html = await res.text();
