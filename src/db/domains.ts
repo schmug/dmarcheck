@@ -84,7 +84,11 @@ function buildFilter(opts: ListDomainsOptions): {
   const bindings: unknown[] = [opts.userId];
   const search = opts.search?.trim();
   if (search) {
-    clauses.push("LOWER(domain) LIKE ? ESCAPE '\\\\'");
+    // SQLite's ESCAPE clause must be exactly one character. The JS source
+    // here produces a SQL string containing a single backslash; double
+    // backslashes blow up at runtime as `ESCAPE expression must be a single
+    // character`.
+    clauses.push("LOWER(domain) LIKE ? ESCAPE '\\'");
     bindings.push(`%${escapeLike(search.toLowerCase())}%`);
   }
   if (opts.grade) {

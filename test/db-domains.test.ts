@@ -289,6 +289,15 @@ function makePagedMock(seed: Domain[]): D1Database {
     let cursor = 0;
     const userId = params[cursor++] as string;
     let rows = data.filter((d) => d.user_id === userId);
+    // Mirror SQLite's runtime check: ESCAPE expression must be a single
+    // character. Catches the JS-string-literal trap where '\\\\' compiles to
+    // two backslashes in the actual SQL and D1 rejects the whole query.
+    const escapeMatch = sql.match(/ESCAPE '([^']*)'/);
+    if (escapeMatch && escapeMatch[1].length !== 1) {
+      throw new Error(
+        `D1_ERROR: ESCAPE expression must be a single character: SQLITE_ERROR (got ${JSON.stringify(escapeMatch[1])})`,
+      );
+    }
     if (/LOWER\(domain\) LIKE \?/i.test(sql)) {
       const like = params[cursor++] as string;
       const inner = like.slice(1, -1).replace(/\\([\\%_])/g, "$1");
