@@ -36,6 +36,45 @@ vi.mock("../src/orchestrator.js", () => ({
 
 const SECRET = "test-session-secret";
 
+// Mirrors the dynamic WHERE clause emitted by listDomainsForUserPaged. Used by
+// both the SELECT * paged listing and the SELECT COUNT(*) total query, so the
+// mock keeps the two consistent.
+function filterPagedDomains(
+  sql: string,
+  bindings: unknown[],
+  rows: Array<{
+    id: number;
+    user_id: string;
+    domain: string;
+    is_free: number;
+    scan_frequency: string;
+    last_scanned_at: number | null;
+    last_grade: string | null;
+    created_at: number;
+  }>,
+) {
+  let cursor = 0;
+  const userId = bindings[cursor++] as string;
+  let out = rows.filter((r) => r.user_id === userId);
+  if (/LOWER\(domain\) LIKE \?/i.test(sql)) {
+    const like = bindings[cursor++] as string;
+    const inner = like.slice(1, -1).replace(/\\([\\%_])/g, "$1");
+    out = out.filter((r) => r.domain.toLowerCase().includes(inner));
+  }
+  if (/last_grade IS NULL/i.test(sql)) {
+    out = out.filter((r) => r.last_grade === null);
+  } else if (/last_grade = \?/i.test(sql)) {
+    const grade = bindings[cursor++] as string;
+    out = out.filter((r) => r.last_grade === grade);
+  }
+  if (/scan_frequency = \?/i.test(sql)) {
+    const freq = bindings[cursor++] as string;
+    out = out.filter((r) => r.scan_frequency === freq);
+  }
+  // Default sort matches the route's default (sort=domain asc).
+  return [...out].sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
 // Minimal D1-like mock that routes calls to in-memory data
 function createMockDB(data: {
   domains?: Array<{
@@ -135,13 +174,25 @@ function createMockDB(data: {
         const sub = subscriptions.find((s) => s.user_id === bindings[0]);
         return (sub ? { status: sub.status } : null) as T | null;
       }
+      if (/^\s*SELECT COUNT\(\*\) AS n FROM domains/i.test(sql)) {
+        const rows = filterPagedDomains(sql, bindings, domains);
+        return { n: rows.length } as T;
+      }
       return null as T | null;
     },
     all: async <T>() => {
       if (sql.includes("SELECT * FROM domains WHERE user_id")) {
-        return {
-          results: domains.filter((d) => d.user_id === bindings[0]) as T[],
-        };
+        // Paged listing path (used by Pro dashboard) — applies search / grade
+        // / frequency filters + LIMIT/OFFSET. The simpler unpaged select used
+        // by the free path still falls through here with no LIMIT/OFFSET, in
+        // which case the slice is a no-op.
+        const filtered = filterPagedDomains(sql, bindings, domains);
+        if (/LIMIT \? OFFSET \?/i.test(sql)) {
+          const limit = bindings[bindings.length - 2] as number;
+          const offset = bindings[bindings.length - 1] as number;
+          return { results: filtered.slice(offset, offset + limit) as T[] };
+        }
+        return { results: filtered as T[] };
       }
       if (sql.includes("SELECT grade, scanned_at FROM scan_history")) {
         return { results: scanHistory as T[] };
@@ -368,6 +419,157 @@ describe("dashboard/routes", () => {
       });
       const body = await res.text();
       expect(body).toContain("No domains");
+    });
+
+    it("does not render the search toolbar for free-plan users", async () => {
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 1,
+            scan_frequency: "monthly",
+            last_scanned_at: null,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).not.toContain('<form class="domain-toolbar"');
+    });
+
+    it("renders search toolbar + pagination for Pro-plan users", async () => {
+      const proDomains = Array.from({ length: 30 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_pro",
+        domain: `domain-${String(i + 1).padStart(2, "0")}.com`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: 1700000000 + i,
+        last_grade: i % 3 === 0 ? "A" : i % 3 === 1 ? "B" : "F",
+        created_at: 1700000000 + i,
+      }));
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_pro",
+            email: "pro@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: "cus_x",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        domains: proDomains,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const res = await app.request("/dashboard", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain('<form class="domain-toolbar"');
+      // Default page size is 25, so 30 domains span two pages.
+      expect(body).toContain("Showing 1–25 of 30");
+      expect(body).toContain('rel="next"');
+      // First-page rows, last-page rows excluded.
+      expect(body).toContain("domain-01.com");
+      expect(body).toContain("domain-25.com");
+      expect(body).not.toContain("domain-26.com");
+    });
+
+    it("filters by search query for Pro users", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_pro",
+            email: "pro@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: "cus_x",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        domains: [
+          {
+            id: 1,
+            user_id: "user_pro",
+            domain: "alpha.example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+          {
+            id: 2,
+            user_id: "user_pro",
+            domain: "beta.io",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "B",
+            created_at: 1700000001,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const res = await app.request("/dashboard?q=alpha", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).toContain("alpha.example.com");
+      expect(body).not.toContain("beta.io");
+      expect(body).toContain("Showing 1–1 of 1");
+    });
+
+    it("renders 'no matches' empty state when filters yield zero rows", async () => {
+      const db = createMockDB({
+        users: [
+          {
+            id: "user_pro",
+            email: "pro@example.com",
+            email_domain: "example.com",
+            stripe_customer_id: "cus_x",
+            email_alerts_enabled: 1,
+            api_key_retirement_acknowledged_at: 1700000000,
+            created_at: 1700000000,
+          },
+        ],
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        domains: [
+          {
+            id: 1,
+            user_id: "user_pro",
+            domain: "alpha.example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const res = await app.request("/dashboard?q=zzz", {
+        headers: { Cookie: cookie },
+      });
+      const body = await res.text();
+      expect(body).toContain("No domains match these filters");
     });
   });
 
