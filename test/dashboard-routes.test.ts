@@ -1621,6 +1621,141 @@ describe("dashboard/routes", () => {
       );
       expect(inserted?.bindings[1]).toBe("example.com");
     });
+
+    it("rejects net-new domain with 400 when a free user is at the cap", async () => {
+      const seedDomains = Array.from({ length: 3 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_1",
+        domain: `seed${i}.example`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000,
+      }));
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ domains: seedDomains, writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "newdomain.example" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(html).toMatch(/Free plan limit reached/);
+      expect(html).toMatch(/Upgrade to Pro/);
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("rejects net-new domain with 400 when a Pro user is at the cap", async () => {
+      // Pro user already at the cap of 25.
+      const seedDomains = Array.from({ length: 25 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_1",
+        domain: `seed${i}.example`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000,
+      }));
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({
+        domains: seedDomains,
+        subscriptions: [{ user_id: "user_1", status: "active" }],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "overflow.example" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(html).toMatch(/Pro plan limit of 25 domains/);
+      expect(html).toContain("support@dmarc.mx");
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("still redirects to the existing domain detail page for a duplicate even when at cap", async () => {
+      // Grandfather: a free user already over cap can still re-visit
+      // existing domains via the duplicate-redirect path. Net-new is what
+      // gets blocked.
+      const seedDomains = Array.from({ length: 5 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_1",
+        domain: `seed${i}.example`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000,
+      }));
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const db = createMockDB({ domains: seedDomains, writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "seed0.example" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe(
+        "/dashboard/domain/seed0.example",
+      );
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("renders the add-domain form with usage hint for a free user under cap", async () => {
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "first.example",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1_700_000_000,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/add", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toMatch(/1 of 3 Free domains used/);
+    });
   });
 
   describe("POST /dashboard/domain/:domain/delete", () => {
@@ -1937,9 +2072,10 @@ describe("dashboard/routes", () => {
       });
       const app = createTestApp(db);
       const cookie = await makeSessionCookie("user_1", "alice@example.com");
-      // 32 valid domains → 30 scanned, 2 queued.
+      // 27 valid domains, Pro cap = 25 → 25 scanned, 2 over-cap rejected.
+      // Stays under inBandCap (30) so we don't mix with queued behavior.
       const inputDomains = Array.from(
-        { length: 32 },
+        { length: 27 },
         (_, i) => `d${i}.example`,
       ).join("\n");
       const body = new URLSearchParams({ domains: inputDomains });
@@ -1954,9 +2090,9 @@ describe("dashboard/routes", () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain('class="bulk-status scanned"');
-      expect(html).toContain('class="bulk-status queued"');
       expect(html).toContain("Results");
-      expect(html).toMatch(/32 submitted/);
+      expect(html).toMatch(/27 submitted/);
+      expect(html).toContain("Watchlist limit reached");
     });
 
     it("returns 400 when more than 100 domains are submitted", async () => {

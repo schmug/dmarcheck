@@ -47,6 +47,7 @@ import {
 } from "./rate-limit.js";
 import { normalizeDomain } from "./shared/domain.js";
 import { listIndexableScanDomains } from "./shared/indexable-domains.js";
+import { watchlistCapForPlan } from "./shared/limits.js";
 import { CSS_PATH, JS_PATH } from "./views/assets.js";
 import {
   APPLE_TOUCH_ICON_BASE64,
@@ -904,6 +905,7 @@ app.post("/api/bulk-scan", async (c) => {
     db,
     userId: bearer.userId,
     rawDomains,
+    watchlistCap: watchlistCapForPlan(plan),
   });
   if (isCapExceeded(outcome)) {
     return c.json(

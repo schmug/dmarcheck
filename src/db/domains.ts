@@ -33,6 +33,37 @@ export async function getDomainsByUser(
   return result.results;
 }
 
+export async function countDomainsByUser(
+  db: D1Database,
+  userId: string,
+): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM domains WHERE user_id = ?")
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+// Returns the subset of `domains` that the user already owns. Used by
+// `processBulkScan` to distinguish net-new adds (which consume watchlist
+// slots) from re-submits (which don't), so a user near their cap can still
+// re-scan domains they already track without seeing them rejected.
+export async function findExistingDomainsForUser(
+  db: D1Database,
+  userId: string,
+  domains: string[],
+): Promise<Set<string>> {
+  if (domains.length === 0) return new Set();
+  const placeholders = domains.map(() => "?").join(",");
+  const result = await db
+    .prepare(
+      `SELECT domain FROM domains WHERE user_id = ? AND domain IN (${placeholders})`,
+    )
+    .bind(userId, ...domains)
+    .all<{ domain: string }>();
+  return new Set(result.results.map((r) => r.domain));
+}
+
 export type DomainSortColumn = "domain" | "grade" | "last_scanned" | "created";
 export type DomainSortDirection = "asc" | "desc";
 
