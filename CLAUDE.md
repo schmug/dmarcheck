@@ -101,15 +101,6 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Mock DNS client for unit tests (`vi.mock`)
 - Test scoring boundaries and analyzer parsing
 
-## Staging
-
-- `staging.dmarc.mx` runs the same Worker code as prod against a separate D1 (`dmarcheck-db-staging`), a WorkOS sandbox, separate Stripe **test-mode** webhook endpoint, and a distinct `SESSION_SECRET`. Configured via `[env.staging]` in `wrangler.toml`.
-- The staging worker has `IS_STAGING = "1"` set as a var. That flag drives a sticky red banner on every HTML response, an injected `<meta name="robots" content="noindex,nofollow">`, and `/robots.txt` flipping to `Disallow: /`.
-- Sentry events from staging are tagged `environment=staging` with `tracesSampler` cranked to 1.0 (everything is interesting on staging).
-- Staging has **no cron triggers** — it exists for migration smoke tests and manual e2e, not for nightly rescans.
-- Deployment: a single Cloudflare Workers Builds connection on `main` runs the production deploy command `npx wrangler deploy --env staging && curl -fsS https://staging.dmarc.mx/health && npx wrangler deploy`. Staging deploys first; prod follows only if staging built cleanly and `/health` returns 200.
-- Staging is not public-facing — don't link to it from prod, and respond to bug reports against `staging.dmarc.mx` URLs by asking for a repro on dmarc.mx.
-
 ## Releases
 
 - Automated via GitHub Actions on push to main (after CI passes)

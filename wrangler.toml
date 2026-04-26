@@ -29,35 +29,3 @@ migrations_dir = "src/db/migrations"
 [[send_email]]
 name = "EMAIL"
 allowed_sender_addresses = ["alerts@dmarc.mx"]
-
-# Staging environment. Mirrors prod with three deliberate differences:
-#   - separate D1 (dmarcheck-db-staging) so migrations land here first
-#   - no cron triggers (staging is for migration smoke + manual e2e only)
-#   - IS_STAGING=1 surfaces a noindex meta tag, a STAGING banner, and tags
-#     Sentry events with environment=staging at sample rate 1.0
-#
-# Deployment pattern: a single Cloudflare Workers Builds connection on main
-# runs `wrangler deploy --env staging` first, then a /health smoke check,
-# then `wrangler deploy` for prod. See README "Deployment" for the
-# production-branch deploy-command string.
-[env.staging]
-name = "dmarcheck-staging"
-routes = [
-  { pattern = "staging.dmarc.mx", custom_domain = true },
-]
-
-[env.staging.vars]
-IS_STAGING = "1"
-
-[[env.staging.d1_databases]]
-binding = "DB"
-database_name = "dmarcheck-db-staging"
-database_id = "8f1e2627-1a4b-43f2-87c3-8acf2792128c"
-migrations_dir = "src/db/migrations"
-
-# Mirror the prod email binding so the dispatcher's no-op-on-unverified-sender
-# fallback is the only thing that fires on staging unless a sender is
-# explicitly verified for the staging worker.
-[[env.staging.send_email]]
-name = "EMAIL"
-allowed_sender_addresses = ["alerts@dmarc.mx"]
