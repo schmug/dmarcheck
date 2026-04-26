@@ -670,6 +670,35 @@ describe("SEO routes", () => {
     const res = await app.request("/sitemap.xml");
     expect(res.headers.get("X-Robots-Tag")).toBeNull();
   });
+
+  it("staging /robots.txt blanket-disallows so the preview never lands in search", async () => {
+    const res = await app.request("/robots.txt", undefined, {
+      DEPLOY_ENV: "staging",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("User-agent: *");
+    expect(body).toContain("Disallow: /");
+    expect(body).not.toContain("Allow: /");
+    expect(body).not.toContain("Sitemap:");
+  });
+});
+
+describe("staging surface", () => {
+  it("injects a STAGING banner and noindex meta on HTML responses when DEPLOY_ENV=staging", async () => {
+    const res = await app.request("/", undefined, { DEPLOY_ENV: "staging" });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('content="noindex,nofollow"');
+    expect(html).toContain("STAGING");
+  });
+
+  it("does not inject the banner when DEPLOY_ENV is unset (prod / self-host)", async () => {
+    const res = await app.request("/");
+    const html = await res.text();
+    expect(html).not.toContain("noindex,nofollow");
+    expect(html).not.toMatch(/STAGING — non-production data, do not link/);
+  });
 });
 
 describe("Learn pages", () => {

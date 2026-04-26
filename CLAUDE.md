@@ -92,8 +92,15 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - Migrations live in `src/db/migrations/`, named `NNNN_description.sql` with a monotonically-increasing 4-digit prefix. Pick the next prefix by listing the directory — never reuse one (PR #154 collided on `0003_` and had to be renamed).
 - Every schema change updates **both** `src/db/schema.sql` (fresh-DB shape) and a new migration file (delta against prod). The migration is what runs against the live D1; `schema.sql` is what self-hosters apply on first install.
 - **Additive-only**: new tables, new nullable or defaulted columns, new indexes. Column drops, renames, and type changes go through a two-PR expand/contract because `.github/workflows/migrate.yml` and the Cloudflare Git auto-deploy run in parallel — there is no ordering guarantee between schema change and code change.
-- Migrations apply automatically: `.github/workflows/migrate.yml` runs `wrangler d1 migrations apply dmarcheck-db --remote` after CI passes on `main`. **Do not** run `npx wrangler d1 execute --file=...` by hand anymore.
-- Wrangler tracks applied migrations in the `d1_migrations` table. If a migration is added, applied manually, and then automation tries to replay it, `ALTER TABLE ADD COLUMN` will fail. If you ever apply one out of band, also `INSERT INTO d1_migrations (name) VALUES ('NNNN_description.sql')` so the workflow skips it.
+- Migrations apply automatically through staging then prod: `.github/workflows/migrate.yml` runs `wrangler d1 migrations apply dmarcheck-db-staging --remote --env staging`, smoke-tests `https://staging.dmarc.mx/health`, then waits on the `prod-migrations` GitHub Environment for an approval click before applying to `dmarcheck-db`. **Do not** run `npx wrangler d1 execute --file=...` by hand anymore.
+- Wrangler tracks applied migrations per-database in the `d1_migrations` table. If a migration is added, applied manually, and then automation tries to replay it, `ALTER TABLE ADD COLUMN` will fail. If you ever apply one out of band, also `INSERT INTO d1_migrations (name) VALUES ('NNNN_description.sql')` so the workflow skips it. Do this on **both** `dmarcheck-db-staging` and `dmarcheck-db` if the manual apply landed in both.
+
+## Staging
+
+- `staging.dmarc.mx` is a non-public preview surface for migration promotion (#195). HTML responses get a sticky red banner injected via the middleware, a `<meta name="robots" content="noindex,nofollow">`, and `robots.txt` blanket-disallows. Don't link to staging from anywhere indexable; if you find it via a Google result, that's a bug — file an issue.
+- Staging runs the same code as prod (deployed by `.github/workflows/deploy-staging.yml` on every main commit), against a separate D1 database (`dmarcheck-db-staging`), separate WorkOS sandbox tenant, and Stripe test-mode keys. The `DEPLOY_ENV=staging` var (set in `wrangler.toml [env.staging.vars]`) is what every env-aware code path keys off.
+- Sentry events from staging are tagged `environment: staging` with full `tracesSampler` (1.0). Use that filter in the Sentry UI to keep prod dashboards clean.
+- `CF_ANALYTICS_TOKEN` is intentionally not set on staging — the beacon stays out of analytics so prod dashboards aren't polluted by tester traffic.
 
 ## Testing
 

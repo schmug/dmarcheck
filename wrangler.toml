@@ -29,3 +29,50 @@ migrations_dir = "src/db/migrations"
 [[send_email]]
 name = "EMAIL"
 allowed_sender_addresses = ["alerts@dmarc.mx"]
+
+# ---- Staging environment ----------------------------------------------------
+# staging.dmarc.mx is a non-public testing surface for migration promotion
+# (#195). The migrate workflow applies new D1 schema migrations to staging,
+# smoke-tests the deploy, and gates the prod migration on a manual approval.
+#
+# One-time setup before this env activates:
+#   1. Create D1 database `dmarcheck-db-staging` and paste the id into
+#      `database_id` below.
+#   2. Add DNS record `staging.dmarc.mx` pointing at the staging Worker.
+#   3. Set staging-only secrets via:
+#        npx wrangler secret put SESSION_SECRET --env staging
+#        npx wrangler secret put WORKOS_CLIENT_ID --env staging
+#        npx wrangler secret put WORKOS_CLIENT_SECRET --env staging
+#        npx wrangler secret put STRIPE_SECRET_KEY --env staging       # test mode
+#        npx wrangler secret put STRIPE_WEBHOOK_SECRET --env staging   # test mode
+#        npx wrangler secret put STRIPE_PRICE_ID_PRO --env staging     # test mode
+#      (Don't set CF_ANALYTICS_TOKEN — staging stays out of analytics.)
+#   4. Set the non-secret `DEPLOY_ENV` so the Worker tags Sentry events,
+#      enables the staging banner, and noindexes:
+#        npx wrangler deploy --env staging
+#      ↳ the [env.staging.vars] block below ships DEPLOY_ENV automatically.
+[env.staging]
+name = "dmarcheck-staging"
+routes = [
+  { pattern = "staging.dmarc.mx/*", zone_name = "dmarc.mx" },
+]
+
+[env.staging.vars]
+DEPLOY_ENV = "staging"
+
+# Match prod's cron cadence so staging exercises the same code path. Apps
+# that don't want cron noise on staging can comment this block out.
+[env.staging.triggers]
+crons = ["33 23 * * *", "50 23 * * *"]
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "dmarcheck-db-staging"
+# TODO(#195): paste the staging D1 database id after running
+# `npx wrangler d1 create dmarcheck-db-staging`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "src/db/migrations"
+
+[[env.staging.send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["alerts@dmarc.mx"]

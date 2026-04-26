@@ -163,6 +163,13 @@ If you skip the secrets, the workflow will fail and you can either delete
 `.github/workflows/migrate.yml` from your fork or apply migrations manually
 with `npx wrangler d1 migrations apply dmarcheck-db --remote`.
 
+The hosted tier promotes migrations through `staging.dmarc.mx` first: the
+workflow applies to `dmarcheck-db-staging`, smoke-tests the staging
+deploy, then waits on the `prod-migrations` GitHub Environment for an
+approval click before touching prod. Self-host forks that don't run a
+staging environment can either delete the `apply-staging` job from the
+workflow or remove the `--env staging` overrides and skip the gate.
+
 ### Optional: paid-tier env vars
 
 These unlock the same Pro features the hosted tier at `dmarc.mx` offers — see the [three ways to use dmarcheck](#three-ways-to-use-dmarcheck) table up top. They're all optional: the free scanner, dashboard, and API work without any of them. Set any as wrangler secrets (`wrangler secret put NAME`):

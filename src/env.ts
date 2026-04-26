@@ -21,4 +21,10 @@ export interface Env {
   // but lives here so self-host forks don't accidentally ship data to the
   // hosted tier's dashboard.
   CF_ANALYTICS_TOKEN?: string;
+  // Deploy environment marker. Set to "staging" via wrangler.toml's
+  // [env.staging.vars] block; unset (or any other value) on prod and on
+  // self-host deploys, which both behave as production. Drives the Sentry
+  // `environment` tag, the staging banner injection, the noindex meta tag,
+  // and the robots.txt Disallow:/ on staging. Non-secret.
+  DEPLOY_ENV?: string;
 }

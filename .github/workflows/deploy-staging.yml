@@ -1,0 +1,38 @@
+name: Deploy Staging Worker
+
+# Pushes the dmarcheck Worker to the [env.staging] config in wrangler.toml
+# on every commit to main, so staging.dmarc.mx mirrors prod's code. The
+# Cloudflare Git integration handles prod independently. See #195.
+#
+# This workflow deliberately runs unconditionally on push (not gated on the
+# CI workflow_run) — a fast staging deploy is the value here. CI still
+# blocks merges to main via branch protection, so the only way for code to
+# arrive on main is via a green CI run on the merging PR.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Deploy to staging
+        env:
+          # The same token used for D1 migrations works here as long as it
+          # also has Workers Scripts:Edit on the account. If you'd rather
+          # have a scope-restricted deploy token, create a new one with
+          # only Workers Scripts:Edit + Workers Routes:Edit and store it
+          # as CLOUDFLARE_STAGING_DEPLOY_TOKEN; then swap the secret name.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --env staging

@@ -1,15 +1,23 @@
 name: Migrate D1
 
-# Applies pending D1 migrations from src/db/migrations/ to the remote
-# database after CI passes on main. The Cloudflare Git integration deploys the
-# Worker in parallel, so all migrations MUST be additive (new tables, new
-# nullable/defaulted columns, new indexes) — see CLAUDE.md "Database
-# migrations".
+# Promotes pending D1 migrations from src/db/migrations/ through staging
+# into prod after CI passes on main. The Cloudflare Git integration deploys
+# the Worker code in parallel, so all migrations MUST be additive (new
+# tables, new nullable/defaulted columns, new indexes) — see CLAUDE.md
+# "Database migrations".
 #
-# Bootstrap (one-time, manual): seed the d1_migrations tracking table with the
-# names of every migration already applied out-of-band, otherwise the first
-# run of `wrangler d1 migrations apply` will replay them and fail on
-# ALTER TABLE statements.
+# Flow (#195):
+#   1. apply-staging: apply migrations to dmarcheck-db-staging, then
+#      smoke-test https://staging.dmarc.mx/health.
+#   2. apply-prod: gated on the `prod-migrations` GitHub Environment so a
+#      human approves before prod schema moves. After approval, apply
+#      migrations to dmarcheck-db.
+#
+# Bootstrap (one-time, manual): seed the d1_migrations tracking table with
+# the names of every migration already applied out-of-band, otherwise the
+# first run of `wrangler d1 migrations apply` will replay them and fail on
+# ALTER TABLE statements. Repeat for the staging database the first time
+# this workflow runs against it.
 on:
   workflow_run:
     workflows: [CI]
@@ -20,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  migrate:
+  apply-staging:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
@@ -30,12 +38,54 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
-      - name: List pending migrations
+      - name: List pending staging migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations list dmarcheck-db-staging --remote --env staging
+      - name: Apply pending staging migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply dmarcheck-db-staging --remote --env staging
+      - name: Smoke-test staging
+        # /health is unauthenticated. A 200 here proves the migrated schema
+        # is compatible with the currently-deployed staging Worker code. Up
+        # to 50s of polling so a just-deployed Worker has time to settle
+        # behind the route.
+        run: |
+          for i in 1 2 3 4 5; do
+            status=$(curl -fsS -o /dev/null -w "%{http_code}" https://staging.dmarc.mx/health || true)
+            if [ "$status" = "200" ]; then
+              echo "staging /health -> 200 on attempt $i"
+              exit 0
+            fi
+            echo "staging /health -> $status on attempt $i (waiting 10s)"
+            sleep 10
+          done
+          echo "staging /health did not return 200 after 5 attempts"
+          exit 1
+
+  apply-prod:
+    needs: apply-staging
+    runs-on: ubuntu-latest
+    # Gate prod migrations on the `prod-migrations` GitHub Environment.
+    # Configure the environment with required reviewers (see #195) so a
+    # human click is needed before prod schema moves.
+    environment: prod-migrations
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: List pending prod migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler d1 migrations list dmarcheck-db --remote
-      - name: Apply pending migrations
+      - name: Apply pending prod migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

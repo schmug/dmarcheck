@@ -221,6 +221,23 @@ app.use("*", async (c, next) => {
         headers: c.res.headers,
       });
     }
+
+    // Staging surface: tag every HTML response with a top-of-page banner
+    // and a noindex meta. Same buffered-string-replace shape as the
+    // analytics beacon — keeps tests runnable without HTMLRewriter.
+    if ((c.env as Env | undefined)?.DEPLOY_ENV === "staging") {
+      const body = await c.res.text();
+      const noindex = '<meta name="robots" content="noindex,nofollow">';
+      const banner = `<div role="status" style="position:sticky;top:0;z-index:9999;background:#b91c1c;color:#fff;text-align:center;padding:0.4rem 1rem;font-family:system-ui,sans-serif;font-size:0.875rem;font-weight:600">STAGING — non-production data, do not link</div>`;
+      const injected = body
+        .replace("</head>", `${noindex}</head>`)
+        .replace("<body>", `<body>${banner}`);
+      c.res = new Response(injected, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: c.res.headers,
+      });
+    }
   } else {
     // `frame-ancestors` does not inherit from `default-src`, so it must be
     // declared explicitly to keep JSON/CSV/SSE responses unframable.
@@ -709,9 +726,16 @@ app.get("/docs/api", (c) => {
 
 // Crawl guidance for search engines. Block the API namespace (Google was
 // logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
-// noise) and point to the sitemap.
+// noise) and point to the sitemap. Staging blanket-disallows so the
+// preview surface never enters search indexes; the per-page noindex meta
+// is the secondary backstop.
 app.get("/robots.txt", (c) => {
-  const body = `User-agent: *
+  const isStaging = (c.env as Env | undefined)?.DEPLOY_ENV === "staging";
+  const body = isStaging
+    ? `User-agent: *
+Disallow: /
+`
+    : `User-agent: *
 Allow: /
 Disallow: /api/
 Sitemap: https://dmarc.mx/sitemap.xml
@@ -1220,14 +1244,17 @@ const handler: ExportedHandler<Env> = {
   scheduled,
 };
 
-export default Sentry.withSentry<Env>(
-  (env) => ({
+export default Sentry.withSentry<Env>((env) => {
+  const isStaging = env?.DEPLOY_ENV === "staging";
+  return {
     dsn: env?.SENTRY_DSN ?? "",
+    environment: isStaging ? "staging" : "production",
     tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
       if (samplingContext.parentSampled !== undefined)
         return samplingContext.parentSampled;
-      return 0.3;
+      // Staging gets full sampling — every event is interesting there and
+      // the volume is bounded by the lone tester.
+      return isStaging ? 1.0 : 0.3;
     },
-  }),
-  handler,
-);
+  };
+}, handler);
