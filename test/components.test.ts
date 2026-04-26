@@ -1,14 +1,88 @@
 import { describe, expect, it } from "vitest";
+import type { ScanResult } from "../src/analyzers/types";
+import type { GradeBreakdown } from "../src/shared/scoring";
 import {
   esc,
   generateCreature,
   gradeToMood,
+  monitorSnapshotCard,
   mxTable,
   statusDot,
   themeToggle,
 } from "../src/views/components";
 import { renderError, renderLandingPage } from "../src/views/html";
 import { CSS } from "../src/views/styles";
+
+function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
+  return {
+    domain: "example.com",
+    timestamp: "2026-03-31T12:00:00.000Z",
+    grade: "B",
+    breakdown: {
+      grade: "B",
+      tier: "B",
+      tierReason: "",
+      modifier: 0,
+      modifierLabel: "",
+      factors: [],
+      recommendations: [],
+      protocolSummaries: {},
+    } as GradeBreakdown,
+    summary: {
+      mx_records: 0,
+      mx_providers: [],
+      dmarc_policy: "reject",
+      spf_result: "pass",
+      spf_lookups: "3/10",
+      dkim_selectors_found: 1,
+      bimi_enabled: false,
+      mta_sts_mode: null,
+    },
+    protocols: {
+      mx: {
+        status: "info",
+        records: [],
+        providers: [],
+        validations: [],
+      },
+      dmarc: {
+        status: "pass",
+        record: "v=DMARC1; p=reject",
+        tags: { v: "DMARC1", p: "reject" },
+        validations: [],
+      },
+      spf: {
+        status: "pass",
+        record: "v=spf1 include:_spf.google.com ~all",
+        lookups_used: 3,
+        lookup_limit: 10,
+        include_tree: null,
+        validations: [],
+      },
+      dkim: {
+        status: "pass",
+        selectors: {
+          google: { found: true, key_type: "rsa", key_bits: 2048 },
+          selector1: { found: false },
+        },
+        validations: [],
+      },
+      bimi: {
+        status: "fail",
+        record: null,
+        tags: null,
+        validations: [],
+      },
+      mta_sts: {
+        status: "fail",
+        dns_record: null,
+        policy: null,
+        validations: [],
+      },
+    },
+    ...overrides,
+  };
+}
 
 describe("esc", () => {
   it("escapes ampersands", () => {
@@ -180,6 +254,55 @@ describe("CSS theme variables", () => {
 
   it("includes theme toggle styles", () => {
     expect(CSS).toContain(".theme-toggle");
+  });
+});
+
+describe("monitorSnapshotCard", () => {
+  it("renders + for passing protocols and · for missing ones", () => {
+    const html = monitorSnapshotCard(makeScanResult());
+    // 3 passing: DMARC p=reject, SPF pass, DKIM 1 selector found
+    const plusMatches = html.match(/<span class="snap-mark">\+<\/span>/g) ?? [];
+    expect(plusMatches).toHaveLength(3);
+    // 1 muted: BIMI not configured (middle-dot is \u00b7)
+    expect(html).toContain(
+      '<div class="snap-row snap-row-muted">\n      <span class="snap-mark">\u00b7</span>',
+    );
+  });
+
+  it("embeds the CTA pointing at the login page with a monitor prompt", () => {
+    const html = monitorSnapshotCard(makeScanResult());
+    expect(html).toContain(
+      "/auth/login?next=/dashboard&amp;prompt=monitor:example.com",
+    );
+    expect(html).toContain('class="monitor-cta"');
+  });
+
+  it("escapes the domain in both the heading and the CTA href", () => {
+    const html = monitorSnapshotCard(makeScanResult({ domain: "<evil>.test" }));
+    expect(html).not.toContain("<evil>.test</strong>");
+    expect(html).toContain("&lt;evil&gt;.test</strong>");
+    // encodeURIComponent escapes < and > before esc() runs
+    expect(html).toContain("%3Cevil%3E.test");
+  });
+
+  it("mutes DMARC row when policy is p=none", () => {
+    const html = monitorSnapshotCard(
+      makeScanResult({
+        protocols: {
+          ...makeScanResult().protocols,
+          dmarc: {
+            status: "warn",
+            record: "v=DMARC1; p=none",
+            tags: { v: "DMARC1", p: "none" },
+            validations: [],
+          },
+        },
+      }),
+    );
+    // DMARC row should be muted (p=none is not reject/quarantine)
+    expect(html).toMatch(
+      /snap-row snap-row-muted">\s*<span class="snap-mark">\u00b7<\/span>\s*<span class="snap-label">DMARC policy/,
+    );
   });
 });
 

@@ -10,3 +10,22 @@ routes = [
 
 [dev]
 port = 8790
+
+# TEMPORARY test cron — primary fire at 23:33 UTC with a 23:50 UTC safety
+# net to validate the end-to-end alert email pipeline against a seeded
+# alerts row. Revert to ["17 6 * * *"] after verification.
+[triggers]
+crons = ["33 23 * * *", "50 23 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dmarcheck-db"
+database_id = "7e6e7e64-5477-458f-b206-941ea58b7dba"
+migrations_dir = "src/db/migrations"
+
+# Cloudflare Email Sending for grade-drop alerts. alerts@dmarc.mx must be a
+# verified sender in the Cloudflare dashboard before this binding delivers
+# mail; the dispatcher catches E_SENDER_NOT_VERIFIED and skips gracefully.
+[[send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["alerts@dmarc.mx"]
