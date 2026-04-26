@@ -36,6 +36,7 @@ function makeDb(): D1Database {
     params: unknown[];
     run: () => Promise<{ success: true; meta: { changes: number } }>;
     first: <T>() => Promise<T | null>;
+    all: <T>() => Promise<{ results: T[] }>;
   };
 
   const applyWrite = async (sql: string, params: unknown[]) => {
@@ -85,7 +86,30 @@ function makeDb(): D1Database {
           (d) => d.user_id === params[0] && d.domain === params[1],
         ) ?? null) as T | null;
       }
+      if (
+        /^\s*SELECT COUNT\(\*\) AS n FROM domains WHERE user_id = \?/i.test(sql)
+      ) {
+        const userId = params[0] as string;
+        return {
+          n: domainStore.filter((d) => d.user_id === userId).length,
+        } as T;
+      }
       return null as T | null;
+    },
+    all: async <T>() => {
+      if (
+        /^\s*SELECT domain FROM domains WHERE user_id = \? AND domain IN/i.test(
+          sql,
+        )
+      ) {
+        const [userId, ...wanted] = params as [string, ...string[]];
+        const wantedSet = new Set(wanted);
+        const rows = domainStore
+          .filter((d) => d.user_id === userId && wantedSet.has(d.domain))
+          .map((d) => ({ domain: d.domain }));
+        return { results: rows as T[] };
+      }
+      return { results: [] as T[] };
     },
   });
 
@@ -178,6 +202,9 @@ describe("processBulkScan", () => {
       scanFn,
       inBandCap: 30,
       batchSize: 10,
+      // Watchlist cap raised so this test exercises inBandCap → queued
+      // behavior without colliding with the watchlist limit (default 25).
+      watchlistCap: 1000,
     });
     if (isCapExceeded(out)) throw new Error("unexpected cap");
     expect(out.accepted).toBe(35);
@@ -279,11 +306,101 @@ describe("processBulkScan", () => {
       rawDomains: submitted,
       scanFn,
       batchSize: 10,
+      // Same intent as the queued test above — exercise inBandCap, not the
+      // watchlist cap.
+      watchlistCap: 1000,
     });
     if (isCapExceeded(out)) throw new Error("unexpected cap");
     expect(out.accepted).toBe(BULK_IN_BAND_CAP);
     expect(scanFn).toHaveBeenCalledTimes(BULK_IN_BAND_CAP);
     expect(out.results.every((r) => r.status === "scanned")).toBe(true);
+  });
+
+  describe("watchlist cap enforcement", () => {
+    it("rejects net-new domains beyond the remaining slots as 'Watchlist limit reached'", async () => {
+      const scanFn = vi.fn(async (d: string) => okScan(d));
+      const out = await processBulkScan({
+        db: makeDb(),
+        userId: "user_1",
+        rawDomains: ["a.example", "b.example", "c.example", "d.example"],
+        scanFn,
+        watchlistCap: 2,
+      });
+      if (isCapExceeded(out)) throw new Error("unexpected cap");
+      const scanned = out.results.filter((r) => r.status === "scanned");
+      const rejected = out.results.filter(
+        (r) => r.status === "error" && r.error === "Watchlist limit reached",
+      );
+      expect(scanned).toHaveLength(2);
+      expect(rejected.map((r) => r.domain)).toEqual(["c.example", "d.example"]);
+      expect(scanFn).toHaveBeenCalledTimes(2);
+      expect(domainStore).toHaveLength(2);
+    });
+
+    it("rejects everything new when the user is already at or above cap (grandfathered)", async () => {
+      // Grandfathered Pro user already over a tighter cap.
+      for (let i = 0; i < 5; i++) {
+        domainStore.push({
+          id: i + 1,
+          user_id: "user_1",
+          domain: `legacy${i}.example`,
+          is_free: 0,
+          scan_frequency: "weekly",
+          last_scanned_at: 1700000000,
+          last_grade: "A",
+        });
+      }
+      const scanFn = vi.fn(async (d: string) => okScan(d));
+      const out = await processBulkScan({
+        db: makeDb(),
+        userId: "user_1",
+        rawDomains: ["new1.example", "new2.example"],
+        scanFn,
+        watchlistCap: 3,
+      });
+      if (isCapExceeded(out)) throw new Error("unexpected cap");
+      const rejected = out.results.filter(
+        (r) => r.status === "error" && r.error === "Watchlist limit reached",
+      );
+      expect(rejected.map((r) => r.domain)).toEqual([
+        "new1.example",
+        "new2.example",
+      ]);
+      expect(scanFn).not.toHaveBeenCalled();
+      // Existing rows preserved — grandfather behavior.
+      expect(domainStore).toHaveLength(5);
+    });
+
+    it("re-scans domains the user already owns even when at cap (slots not consumed)", async () => {
+      domainStore.push({
+        id: 1,
+        user_id: "user_1",
+        domain: "owned.example",
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: 1700000000,
+        last_grade: "A",
+      });
+      const scanFn = vi.fn(async (d: string) => okScan(d));
+      const out = await processBulkScan({
+        db: makeDb(),
+        userId: "user_1",
+        rawDomains: ["owned.example", "newly.example"],
+        scanFn,
+        watchlistCap: 1,
+      });
+      if (isCapExceeded(out)) throw new Error("unexpected cap");
+      const scanned = out.results.filter((r) => r.status === "scanned");
+      const rejected = out.results.filter(
+        (r) => r.status === "error" && r.error === "Watchlist limit reached",
+      );
+      // Re-scan of the existing domain succeeds despite cap == current count;
+      // only the net-new domain is rejected.
+      expect(scanned.map((r) => r.domain)).toEqual(["owned.example"]);
+      expect(rejected.map((r) => r.domain)).toEqual(["newly.example"]);
+      // No new row inserted.
+      expect(domainStore).toHaveLength(1);
+    });
   });
 
   it("returns empty results for an empty submission", async () => {

@@ -20,6 +20,7 @@ import {
   revokeApiKey,
 } from "../db/api-keys.js";
 import {
+  countDomainsByUser,
   createDomain,
   type DomainSortColumn,
   type DomainSortDirection,
@@ -38,6 +39,7 @@ import {
 import { getRecentDeliveriesForUser } from "../db/webhook-deliveries.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
+import { PRO_WATCHLIST_CAP, watchlistCapForPlan } from "../shared/limits.js";
 import {
   renderAddDomainPage,
   renderApiKeysPage,
@@ -182,22 +184,33 @@ dashboardRoutes.get("/", async (c) => {
           unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
         })),
         controls: null,
+        usage: {
+          plan,
+          current: domains.length,
+          cap: watchlistCapForPlan(plan),
+        },
       }),
     );
   }
 
   const query = parseDomainListQuery(new URL(c.req.url));
   const offset = (query.page - 1) * query.pageSize;
-  const page = await listDomainsForUserPaged(db, {
-    userId: session.sub,
-    search: query.search || undefined,
-    grade: query.grade ?? undefined,
-    frequency: query.frequency ?? undefined,
-    sort: query.sort,
-    direction: query.direction,
-    limit: query.pageSize,
-    offset,
-  });
+  // Unfiltered watchlist count, separate from `page.total` (which respects
+  // the search/grade/frequency filters). The toolbar usage hint reflects
+  // the user's full watchlist regardless of what's currently filtered.
+  const [page, totalForUser] = await Promise.all([
+    listDomainsForUserPaged(db, {
+      userId: session.sub,
+      search: query.search || undefined,
+      grade: query.grade ?? undefined,
+      frequency: query.frequency ?? undefined,
+      sort: query.sort,
+      direction: query.direction,
+      limit: query.pageSize,
+      offset,
+    }),
+    countDomainsByUser(db, session.sub),
+  ]);
 
   // Clamp out-of-range pages so a deep-linked stale URL doesn't render an
   // empty table when results exist.
@@ -229,6 +242,11 @@ dashboardRoutes.get("/", async (c) => {
         pageSize: query.pageSize,
         totalPages,
         total: page.total,
+      },
+      usage: {
+        plan,
+        current: totalForUser,
+        cap: watchlistCapForPlan(plan),
       },
     }),
   );
@@ -315,9 +333,20 @@ dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
 // Add-domain form. Simple GET → form; POST → validate + insert.
 // `/domain/add` is matched before `/domain/:domain` because Hono picks routes
 // in registration order for literal-vs-param collisions.
-dashboardRoutes.get("/domain/add", (c) => {
+dashboardRoutes.get("/domain/add", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
-  return c.html(renderAddDomainPage({ email: session.email, error: null }));
+  const db = (c.env as { DB: D1Database }).DB;
+  const [plan, current] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsByUser(db, session.sub),
+  ]);
+  return c.html(
+    renderAddDomainPage({
+      email: session.email,
+      error: null,
+      usage: { plan, current, cap: watchlistCapForPlan(plan) },
+    }),
+  );
 });
 
 dashboardRoutes.post("/domain/add", async (c) => {
@@ -325,23 +354,42 @@ dashboardRoutes.post("/domain/add", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const body = await c.req.parseBody();
   const normalized = normalizeDomain(body.domain as string | undefined);
+  const [plan, currentCount] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsByUser(db, session.sub),
+  ]);
+  const cap = watchlistCapForPlan(plan);
+  const usage = { plan, current: currentCount, cap };
   if (!normalized) {
     return c.html(
       renderAddDomainPage({
         email: session.email,
         error: "Enter a valid domain (e.g. example.com).",
+        usage,
       }),
       400,
     );
   }
 
   // Prevent duplicates per-user cleanly rather than surfacing the raw
-  // UNIQUE(user_id, domain) constraint violation from D1.
+  // UNIQUE(user_id, domain) constraint violation from D1. Re-submits
+  // bypass the cap check below — they don't consume a new slot.
   const existing = await getDomainByUserAndName(db, session.sub, normalized);
   if (existing) {
     return c.redirect(
       `/dashboard/domain/${encodeURIComponent(normalized)}`,
       303,
+    );
+  }
+
+  if (currentCount >= cap) {
+    const error =
+      plan === "pro"
+        ? `You've reached the Pro plan limit of ${cap} domains. Email support@dmarc.mx if you need more.`
+        : `Free plan limit reached (${cap} domains). Upgrade to Pro for up to ${PRO_WATCHLIST_CAP}.`;
+    return c.html(
+      renderAddDomainPage({ email: session.email, error, usage }),
+      400,
     );
   }
 
@@ -401,6 +449,7 @@ dashboardRoutes.post("/bulk", async (c) => {
     db,
     userId: session.sub,
     rawDomains: lines,
+    watchlistCap: watchlistCapForPlan(plan),
   });
   if (isCapExceeded(outcome)) {
     return c.html(

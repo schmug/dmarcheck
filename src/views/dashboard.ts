@@ -908,9 +908,11 @@ function renderPagination(controls: DashboardControls): string {
 export function renderDomainPanel({
   domains,
   controls,
+  usage,
 }: {
   domains: DashboardDomain[];
   controls: DashboardControls | null;
+  usage?: WatchlistUsage;
 }): string {
   const isFiltered =
     controls !== null &&
@@ -978,10 +980,13 @@ export function renderDomainPanel({
   const toolbar = controls ? renderDomainToolbar(controls) : "";
   const pagination = controls ? renderPagination(controls) : "";
 
+  const usageHint = usage ? renderUsageHint(usage) : "";
+
   // data-pro="1" is the signal the client script uses to enable live
   // search/swap. Free users render the same wrapper so a future plan upgrade
   // doesn't need a markup migration, but the script bails out early.
   return `<div id="domain-panel" data-pro="${controls ? "1" : "0"}">
+${usageHint}
 ${toolbar}
 ${tableBody}
 ${pagination}
@@ -993,6 +998,7 @@ export function renderDashboardPage({
   alerts = [],
   domains,
   controls = null,
+  usage,
 }: {
   email: string;
   alerts?: DashboardAlert[];
@@ -1000,12 +1006,15 @@ export function renderDashboardPage({
   // Set only for Pro accounts; gates the search/sort/pagination UI.
   plan?: "free" | "pro";
   controls?: DashboardControls | null;
+  // Cap usage shown in the panel header. Optional so older callers (and
+  // the fragment route under live search) can omit it.
+  usage?: WatchlistUsage;
 }): string {
   return dashboardPage(
     "Domains — dmarc.mx",
     `<h1 class="dashboard-title">Your Domains</h1>
 ${renderAlertsSection(alerts)}
-${renderDomainPanel({ domains, controls })}`,
+${renderDomainPanel({ domains, controls, usage })}`,
     email,
   );
 }
@@ -1235,19 +1244,32 @@ ${upgradePrompt}
   return dashboardPage(`History — ${domain} — dmarc.mx`, body, email);
 }
 
+export interface WatchlistUsage {
+  plan: "free" | "pro";
+  current: number;
+  cap: number;
+}
+
 export function renderAddDomainPage({
   email,
   error,
+  usage,
 }: {
   email: string;
   error: string | null;
+  usage: WatchlistUsage;
 }): string {
   const errorBlock = error
     ? `<div class="settings-section" style="border-color:var(--clr-danger, #b91c1c);color:var(--clr-danger, #b91c1c)">${esc(error)}</div>`
     : "";
 
+  const usageBlock = renderUsageHint(usage);
+  const atCap = usage.current >= usage.cap;
+  const submitDisabled = atCap ? " disabled" : "";
+
   const body = `<h1 class="dashboard-title">Add Domain</h1>
 ${errorBlock}
+${usageBlock}
 <form method="POST" action="/dashboard/domain/add" class="settings-section">
   <label for="domain-input" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Domain to monitor</label>
   <input
@@ -1267,12 +1289,33 @@ ${errorBlock}
     We'll run a full DMARC/SPF/DKIM/BIMI/MTA-STS scan and notify you if the grade drops.
   </p>
   <div class="action-row">
-    <button type="submit" class="btn">Add Domain</button>
+    <button type="submit" class="btn"${submitDisabled}>Add Domain</button>
     <a href="/dashboard" class="btn btn-secondary">Cancel</a>
   </div>
 </form>`;
 
   return dashboardPage("Add Domain — dmarc.mx", body, email);
+}
+
+// Shared "X of N domains used" hint shown above the add-domain form and
+// in the main dashboard's domain panel toolbar. Free plans get an upgrade
+// CTA, Pro plans show a contact pointer when at cap.
+export function renderUsageHint(usage: WatchlistUsage): string {
+  const atCap = usage.current >= usage.cap;
+  const planLabel = usage.plan === "pro" ? "Pro" : "Free";
+  const cta =
+    usage.plan === "free"
+      ? `<a href="/dashboard/billing/subscribe" style="color:var(--clr-accent);text-decoration:none">Upgrade →</a>`
+      : atCap
+        ? `<a href="mailto:support@dmarc.mx" style="color:var(--clr-accent);text-decoration:none">Contact support</a>`
+        : "";
+  const tone = atCap
+    ? "color:var(--clr-danger, #b91c1c);font-weight:600"
+    : "color:var(--clr-text-muted)";
+  return `<p class="watchlist-usage" style="font-size:0.875rem;margin:0 0 1rem;${tone}">
+  <span>${esc(String(usage.current))} of ${esc(String(usage.cap))} ${planLabel} domains used.</span>
+  ${cta}
+</p>`;
 }
 
 export interface BulkResultRow {
