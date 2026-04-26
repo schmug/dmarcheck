@@ -33,25 +33,44 @@ export async function fireScanCompletedWebhook(
   }
 }
 
+// Bounded concurrency so a 30-domain bulk doesn't hit a single chat receiver
+// with 30 simultaneous POSTs. Mirrors `BULK_BATCH_SIZE` in api/bulk-scan.
+const WEBHOOK_BATCH_SIZE = 10;
+
 // Fires one `scan.completed` event per successfully-scanned entry in a bulk
-// outcome. Best-effort and serial — callers should hand this to `waitUntil`
-// so it never blocks the response. Queued/invalid/error entries are skipped
-// (no scan happened, nothing to report).
+// outcome. Best-effort and bounded-parallel — callers should hand this to
+// `waitUntil` so it never blocks the response. Queued/invalid/error entries
+// are skipped (no scan happened, nothing to report).
+//
+// Parallel matters: a serial loop over N webhooks accumulates wall-clock
+// time inside the waitUntil budget. Once the runtime decides to recycle the
+// isolate, every pending fetch is aborted with the literal "operation
+// aborted due to timeout" message — including ones whose request bytes
+// already left and were acked by the chat platform. Batching keeps total
+// wall-clock under budget while still capping the burst per receiver.
 export async function fireBulkScanWebhooks(
   db: D1Database,
   userId: string,
   results: BulkResultEntry[],
   trigger: ScanCompletedData["trigger"],
 ): Promise<void> {
-  for (const entry of results) {
-    if (entry.status !== "scanned" || !entry.grade) continue;
-    await fireScanCompletedWebhook(db, userId, {
-      domain: entry.domain,
-      grade: entry.grade,
-      // Bulk scans don't surface a stable scan_history.id; receivers can
-      // re-fetch by domain via /api/domain/:name/history.
-      scanId: entry.domain,
-      trigger,
-    });
+  const toFire = results.filter(
+    (entry): entry is BulkResultEntry & { grade: string } =>
+      entry.status === "scanned" && !!entry.grade,
+  );
+  for (let i = 0; i < toFire.length; i += WEBHOOK_BATCH_SIZE) {
+    const batch = toFire.slice(i, i + WEBHOOK_BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map((entry) =>
+        fireScanCompletedWebhook(db, userId, {
+          domain: entry.domain,
+          grade: entry.grade,
+          // Bulk scans don't surface a stable scan_history.id; receivers can
+          // re-fetch by domain via /api/domain/:name/history.
+          scanId: entry.domain,
+          trigger,
+        }),
+      ),
+    );
   }
 }
