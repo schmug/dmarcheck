@@ -670,6 +670,63 @@ describe("SEO routes", () => {
     const res = await app.request("/sitemap.xml");
     expect(res.headers.get("X-Robots-Tag")).toBeNull();
   });
+
+  it("sitemap includes the curated /check?domain=… allowlist", async () => {
+    const res = await app.request("/sitemap.xml");
+    const body = await res.text();
+    // Spot-check a few representative entries from each category — full
+    // round-trip against listIndexableScanDomains() is in the unit tests.
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=gmail.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=outlook.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=github.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=stripe.com</loc>",
+    );
+    expect(body).toContain("<loc>https://dmarc.mx/check?domain=dmarc.mx</loc>");
+  });
+
+  it("sitemap excludes domains not in the allowlist", async () => {
+    const res = await app.request("/sitemap.xml");
+    const body = await res.text();
+    expect(body).not.toContain("example.com");
+  });
+});
+
+describe("/check meta tags and noindex gating", () => {
+  it("emits the free + open-source description for an allowlisted domain", async () => {
+    const res = await app.request("/check?domain=github.com");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      'content="Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for github.com. See the current grade, records, and fixes. No signup, no email required."',
+    );
+  });
+
+  it("emits the new title format for the streaming loading page", async () => {
+    const res = await app.request("/check?domain=github.com");
+    const html = await res.text();
+    expect(html).toContain(
+      "<title>github.com DMARC report — Free check | dmarcheck</title>",
+    );
+  });
+
+  it("does NOT mark allowlisted scan pages noindex", async () => {
+    const res = await app.request("/check?domain=github.com");
+    const html = await res.text();
+    expect(html).not.toContain('name="robots" content="noindex,follow"');
+  });
+
+  it("marks non-allowlisted scan pages noindex,follow", async () => {
+    const res = await app.request("/check?domain=example.com");
+    const html = await res.text();
+    expect(html).toContain('<meta name="robots" content="noindex,follow">');
+  });
 });
 
 describe("Learn pages", () => {

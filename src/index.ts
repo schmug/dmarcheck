@@ -46,6 +46,7 @@ import {
   rateLimitHeaders,
 } from "./rate-limit.js";
 import { normalizeDomain } from "./shared/domain.js";
+import { listIndexableScanDomains } from "./shared/indexable-domains.js";
 import { CSS_PATH, JS_PATH } from "./views/assets.js";
 import {
   APPLE_TOUCH_ICON_BASE64,
@@ -722,11 +723,11 @@ Sitemap: https://dmarc.mx/sitemap.xml
   });
 });
 
-// Static URLs worth reinforcing to search engines. The three example domains
-// are already in Google's index and one of them ranks position 9 for a
-// long-tail query — listing them as canonical crawl targets is a cheap
-// authority signal.
-const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
+// Static URLs worth reinforcing to search engines. The /check entries are
+// generated from the curated allowlist in src/shared/indexable-domains.ts —
+// every domain listed there is also marked indexable on its scan page, so
+// the sitemap and the per-page robots meta stay in sync.
+const STATIC_SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
   { loc: "https://dmarc.mx/pricing", priority: "0.9" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
@@ -737,17 +738,24 @@ const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/learn/dkim", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/bimi", priority: "0.6" },
   { loc: "https://dmarc.mx/learn/mta-sts", priority: "0.7" },
-  { loc: "https://dmarc.mx/check?domain=dmarc.mx", priority: "0.6" },
-  { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
-  { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
 ];
-const SITEMAP_LASTMOD = "2026-04-23";
+const SITEMAP_LASTMOD = "2026-04-26";
+
+function buildSitemapUrls(): Array<{ loc: string; priority: string }> {
+  const scanUrls = listIndexableScanDomains().map((domain) => ({
+    loc: `https://dmarc.mx/check?domain=${encodeURIComponent(domain)}`,
+    priority: "0.6",
+  }));
+  return [...STATIC_SITEMAP_URLS, ...scanUrls];
+}
 
 app.get("/sitemap.xml", (c) => {
-  const urls = SITEMAP_URLS.map(
-    ({ loc, priority }) =>
-      `  <url><loc>${loc}</loc><lastmod>${SITEMAP_LASTMOD}</lastmod><priority>${priority}</priority></url>`,
-  ).join("\n");
+  const urls = buildSitemapUrls()
+    .map(
+      ({ loc, priority }) =>
+        `  <url><loc>${loc}</loc><lastmod>${SITEMAP_LASTMOD}</lastmod><priority>${priority}</priority></url>`,
+    )
+    .join("\n");
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}

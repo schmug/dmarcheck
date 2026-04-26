@@ -7,6 +7,7 @@ import type {
   ScanResult,
   SpfResult,
 } from "../analyzers/types.js";
+import { isIndexableScanDomain } from "../shared/indexable-domains.js";
 import { CSS_PATH, JS_PATH } from "./assets.js";
 import {
   dkimSelectorGrid,
@@ -320,9 +321,10 @@ function reportBody(result: ScanResult): string {
 
 export function renderReport(result: ScanResult): string {
   return page({
-    title: `${result.domain} — dmarcheck`,
+    title: `${result.domain} DMARC report — Free check | dmarcheck`,
     path: `/check?domain=${encodeURIComponent(result.domain)}`,
-    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${result.domain}. Grade: ${result.grade}.`,
+    description: `Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${result.domain}. See the current grade, records, and fixes. No signup, no email required.`,
+    noindex: !isIndexableScanDomain(result.domain),
     body: reportBody(result),
   });
 }
@@ -385,9 +387,10 @@ export function renderStreamingLoading(
     : `domain=${encodeURIComponent(domain)}`;
 
   return page({
-    title: `Scanning ${domain} — dmarcheck`,
+    title: `${domain} DMARC report — Free check | dmarcheck`,
     path: `/check?domain=${encodeURIComponent(domain)}`,
-    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${domain}.`,
+    description: `Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${domain}. See the current grade, records, and fixes. No signup, no email required.`,
+    noindex: !isIndexableScanDomain(domain),
     body: `<main class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
