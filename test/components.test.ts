@@ -7,6 +7,9 @@ import {
   gradeToMood,
   monitorSnapshotCard,
   mxTable,
+  singlePointTrendStub,
+  sparkline,
+  statCard,
   statusDot,
   themeToggle,
 } from "../src/views/components";
@@ -138,6 +141,128 @@ describe("generateCreature", () => {
   it("includes aria-hidden for decorative use", () => {
     const html = generateCreature("md");
     expect(html).toContain('aria-hidden="true"');
+  });
+
+  it("adds creature-walking class when walking=true", () => {
+    const html = generateCreature("md", "content", false, true);
+    expect(html).toContain("creature-walking");
+  });
+
+  it("omits creature-walking when walking is undefined or false", () => {
+    expect(generateCreature("md")).not.toContain("creature-walking");
+    expect(generateCreature("md", "content", true, false)).not.toContain(
+      "creature-walking",
+    );
+  });
+
+  it("composes walking with mood and partyHat without leaking classes", () => {
+    const html = generateCreature("lg", "celebrating", true, true);
+    expect(html).toContain("creature-celebrating");
+    expect(html).toContain("creature-partying");
+    expect(html).toContain("creature-walking");
+    expect(html).toContain('<div class="creature-hat"></div>');
+  });
+});
+
+describe("statCard", () => {
+  it("renders label, value, and sub", () => {
+    const html = statCard("Domains", 12, "of 25 total");
+    expect(html).toContain("stat-card");
+    expect(html).toContain("Domains");
+    expect(html).toContain("12");
+    expect(html).toContain("of 25 total");
+  });
+
+  it("escapes user-controlled label and sub", () => {
+    const html = statCard("<bad>", 0, "x&y");
+    expect(html).toContain("&lt;bad&gt;");
+    expect(html).toContain("x&amp;y");
+    expect(html).not.toContain("<bad>");
+  });
+
+  it("adds status-tinted class when status given", () => {
+    expect(statCard("Failing", 1, "needs fix", "fail")).toContain(
+      "stat-card-fail",
+    );
+    expect(statCard("Healthy", 5, "ok", "pass")).toContain("stat-card-pass");
+    expect(statCard("Drifting", 2, "warn", "warn")).toContain("stat-card-warn");
+  });
+
+  it("omits tint when no status", () => {
+    const html = statCard("Total", 7, "all domains");
+    expect(html).not.toMatch(/stat-card-(pass|warn|fail)/);
+  });
+});
+
+describe("sparkline", () => {
+  it("emits svg with polyline for non-empty values", () => {
+    const html = sparkline([1, 2, 3, 4], "var(--clr-accent)");
+    expect(html).toContain("<svg");
+    expect(html).toContain("polyline");
+    expect(html).toContain("var(--clr-accent)");
+  });
+
+  it("returns empty svg when values are empty", () => {
+    const html = sparkline([], "var(--clr-accent)");
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("polyline");
+  });
+
+  it("optionally renders an area fill", () => {
+    const html = sparkline([1, 2, 3], "var(--clr-pass)", { fill: true });
+    expect(html).toContain("<polygon");
+    expect(html).toContain('opacity="0.12"');
+  });
+
+  it("clamps values outside [min,max]", () => {
+    const html = sparkline([-5, 50], "var(--clr-fail)", { min: 0, max: 12 });
+    // No NaN should appear in points
+    expect(html).not.toContain("NaN");
+  });
+
+  it("uses width and height options", () => {
+    const html = sparkline([1, 2], "var(--clr-accent)", {
+      width: 120,
+      height: 40,
+    });
+    expect(html).toContain('width="120"');
+    expect(html).toContain('height="40"');
+  });
+
+  it("escapes color to prevent attribute injection", () => {
+    const html = sparkline([1, 2], '"><script>x</script>');
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("adds role and aria-label when provided", () => {
+    const html = sparkline([1, 2], "var(--clr-accent)", {
+      ariaLabel: "Trend over 7 days",
+    });
+    expect(html).toContain('role="img"');
+    expect(html).toContain('aria-label="Trend over 7 days"');
+  });
+
+  it("uses aria-hidden when no label provided", () => {
+    const html = sparkline([1, 2], "var(--clr-accent)");
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain('role="img"');
+  });
+});
+
+describe("singlePointTrendStub", () => {
+  it("renders dashed baseline + dot + 'new' label", () => {
+    const html = singlePointTrendStub();
+    expect(html).toContain("trend-stub");
+    expect(html).toContain("stroke-dasharray");
+    expect(html).toContain("<circle");
+    expect(html).toContain("new");
+  });
+
+  it("is keyboard-focusable with an aria-label", () => {
+    const html = singlePointTrendStub();
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain("aria-label");
   });
 });
 

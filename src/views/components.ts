@@ -77,11 +77,13 @@ export function generateCreature(
   size: CreatureSize,
   mood?: CreatureMood,
   partyHat?: boolean,
+  walking?: boolean,
 ): string {
   const moodClass = mood ? ` creature-${mood}` : "";
   const hatClass = partyHat ? " creature-partying" : "";
+  const walkClass = walking ? " creature-walking" : "";
   const hatHtml = partyHat ? '<div class="creature-hat"></div>' : "";
-  return `<div class="creature creature-${size}${moodClass}${hatClass}" aria-hidden="true">
+  return `<div class="creature creature-${size}${moodClass}${hatClass}${walkClass}" aria-hidden="true">
   ${hatHtml}<div class="creature-body">@<div class="creature-eyes"><div class="creature-eye"><div class="creature-pupil"></div></div><div class="creature-eye"><div class="creature-pupil"></div></div></div></div>
   <div class="creature-legs"><div class="creature-leg"></div><div class="creature-leg"></div><div class="creature-leg"></div></div>
 </div>`;
@@ -164,6 +166,73 @@ export function gradeToMood(grade: string): CreatureMood {
   if (letter === "C") return "worried";
   if (letter === "D") return "scared";
   return "panicked";
+}
+
+export type StatCardStatus = "pass" | "warn" | "fail";
+
+export function statCard(
+  label: string,
+  value: number | string,
+  sub: string,
+  status?: StatCardStatus,
+): string {
+  const tint = status ? ` stat-card-${status}` : "";
+  return `<div class="stat-card${tint}">
+    <div class="stat-card-label">${esc(label)}</div>
+    <div class="stat-card-value">${esc(String(value))}</div>
+    <div class="stat-card-sub">${esc(sub)}</div>
+  </div>`;
+}
+
+export interface SparklineOptions {
+  width?: number;
+  height?: number;
+  max?: number;
+  min?: number;
+  fill?: boolean;
+  ariaLabel?: string;
+}
+
+export function sparkline(
+  values: number[],
+  color: string,
+  opts: SparklineOptions = {},
+): string {
+  const width = opts.width ?? 80;
+  const height = opts.height ?? 22;
+  const max = opts.max ?? 12;
+  const min = opts.min ?? 0;
+  const range = Math.max(1, max - min);
+  if (values.length === 0) {
+    return `<svg class="dash-spark" width="${width}" height="${height}" aria-hidden="true"></svg>`;
+  }
+  const stepX = values.length > 1 ? width / (values.length - 1) : width;
+  const points = values
+    .map((v, i) => {
+      const clamped = Math.max(min, Math.min(max, v));
+      const x = i * stepX;
+      const y = height - ((clamped - min) / range) * (height - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const safeColor = esc(color);
+  const area = opts.fill
+    ? `<polygon points="0,${height} ${points} ${width},${height}" fill="${safeColor}" opacity="0.12" />`
+    : "";
+  const ariaAttrs = opts.ariaLabel
+    ? ` role="img" aria-label="${esc(opts.ariaLabel)}"`
+    : ' aria-hidden="true"';
+  return `<svg class="dash-spark" width="${width}" height="${height}"${ariaAttrs}>${area}<polyline points="${points}" fill="none" stroke="${safeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
+}
+
+export function singlePointTrendStub(): string {
+  return `<span class="trend-stub" tabindex="0" aria-label="Just added — trend appears after the next scan">
+    <svg width="80" height="22" aria-hidden="true">
+      <line x1="4" y1="11" x2="76" y2="11" stroke="var(--clr-border-hover)" stroke-width="1" stroke-dasharray="2 3"/>
+      <circle cx="72" cy="11" r="3" fill="var(--clr-accent)"/>
+    </svg>
+    <span class="trend-stub-label">new</span>
+  </span>`;
 }
 
 export function statusDot(status: Status): string {
