@@ -233,9 +233,9 @@ if (!window.__dmarcheckBound) {
 (function() {
   var toggles = document.querySelectorAll('.theme-toggle');
   if (!toggles.length) return;
-  var sunIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>';
-  var moonIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z"/></svg>';
-  var autoIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="10" rx="1.5"/><path d="M5 15h6M8 12v3"/></svg>';
+  var sunIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>';
+  var moonIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13.5 8.5a5.5 5.5 0 01-7-7 5.5 5.5 0 107 7z"/></svg>';
+  var autoIcon = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="2" width="14" height="10" rx="1.5"/><path d="M5 15h6M8 12v3"/></svg>';
 
   function updateToggles() {
     var stored = localStorage.getItem('theme');
@@ -626,5 +626,172 @@ if (!window.__dmarcheckBound) {
     }
     isActive = false;
   }
+})();
+
+/* WebMCP: expose the domain scan as a tool to in-browser agents.
+   No-op in browsers without navigator.modelContext — silently does nothing. */
+if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigator.modelContext.provideContext === 'function') {
+  try {
+    navigator.modelContext.provideContext({
+      tools: [{
+        name: 'scan_domain',
+        description: "Run a DNS email-security scan (DMARC, SPF, DKIM, BIMI, MTA-STS, MX) on a domain and return the graded JSON result.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            domain: { type: 'string', description: 'Domain to scan, e.g. example.com' },
+            selectors: { type: 'string', description: 'Optional comma-separated DKIM selectors' }
+          },
+          required: ['domain']
+        },
+        execute: async function(args) {
+          var url = new URL('/api/check', location.origin);
+          url.searchParams.set('domain', args.domain);
+          if (args.selectors) url.searchParams.set('selectors', args.selectors);
+          var r = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+          if (!r.ok) throw new Error('Scan failed: ' + r.status);
+          return await r.json();
+        }
+      }]
+    });
+  } catch (e) { /* ignore */ }
+}
+
+/* Pro dashboard live search/filter/sort. Looks for #domain-panel[data-pro="1"]
+   and progressively enhances the toolbar form: typing in the search box,
+   changing a filter, clicking a sort header, or paginating swaps the panel
+   via /dashboard/domains instead of doing a full page reload. The form still
+   submits as a normal GET if JS fails or is disabled, so the Apply button
+   stays in the markup — we just hide it once the script boots. */
+(function() {
+  var initial = document.getElementById('domain-panel');
+  if (!initial || initial.getAttribute('data-pro') !== '1') return;
+
+  function getPanel() { return document.getElementById('domain-panel'); }
+  function getForm() {
+    var p = getPanel();
+    return p ? p.querySelector('form.domain-toolbar') : null;
+  }
+  function hideApplyButton() {
+    var form = getForm();
+    if (!form) return;
+    var btn = form.querySelector('.toolbar-actions button[type="submit"]');
+    if (btn) btn.style.display = 'none';
+  }
+  hideApplyButton();
+
+  var inflight = null;
+  var searchTimer = null;
+
+  function paramsFromForm() {
+    var form = getForm();
+    var p = new URLSearchParams();
+    if (!form) return p;
+    var fd = new FormData(form);
+    fd.forEach(function(value, key) {
+      var s = String(value);
+      if (s !== '') p.set(key, s);
+    });
+    return p;
+  }
+
+  function paramsFromHref(href) {
+    try { return new URL(href, location.origin).searchParams; }
+    catch (e) { return new URLSearchParams(); }
+  }
+
+  function loadFragment(params) {
+    if (inflight) inflight.abort();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    inflight = ctrl;
+    var qs = params.toString();
+    var panelEl = getPanel();
+    if (panelEl) panelEl.setAttribute('aria-busy', 'true');
+    var fragmentUrl = '/dashboard/domains' + (qs ? '?' + qs : '');
+    var opts = { credentials: 'same-origin', headers: { 'Accept': 'text/html' } };
+    if (ctrl) opts.signal = ctrl.signal;
+    fetch(fragmentUrl, opts)
+      .then(function(res) {
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.text();
+      })
+      .then(function(html) {
+        var current = getPanel();
+        if (!current) return;
+        /* DOMParser parses without executing scripts and without touching the
+           live document; safer than innerHTML on a detached node. The fragment
+           is same-origin authenticated HTML and domains go through esc() on
+           the server, but parse-don't-execute is the right default. */
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var fresh = doc.getElementById('domain-panel');
+        if (!fresh) return;
+        var imported = document.importNode(fresh, true);
+        /* Preserve cursor + focus on the search input across the swap so
+           rapid typing doesn't flicker or strand the caret. */
+        var prev = current.querySelector('input[name="q"]');
+        var refocus = document.activeElement === prev;
+        var selStart = prev ? prev.selectionStart : null;
+        var selEnd = prev ? prev.selectionEnd : null;
+        current.replaceWith(imported);
+        hideApplyButton();
+        if (refocus) {
+          var next = imported.querySelector('input[name="q"]');
+          if (next) {
+            next.focus();
+            try {
+              if (selStart !== null && selEnd !== null) {
+                next.setSelectionRange(selStart, selEnd);
+              }
+            } catch (e) { /* readonly inputs etc. */ }
+          }
+        }
+        var dashUrl = '/dashboard' + (qs ? '?' + qs : '');
+        history.replaceState(null, '', dashUrl);
+      })
+      .catch(function() { /* aborted or network error — leave panel as-is */ })
+      .finally(function() {
+        if (inflight === ctrl) inflight = null;
+        var p = getPanel();
+        if (p) p.removeAttribute('aria-busy');
+      });
+  }
+
+  document.addEventListener('input', function(e) {
+    if (!e.target || !e.target.matches) return;
+    if (!e.target.matches('form.domain-toolbar input[name="q"]')) return;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function() {
+      var p = paramsFromForm();
+      p.delete('page');
+      loadFragment(p);
+    }, 250);
+  });
+
+  document.addEventListener('change', function(e) {
+    if (!e.target || !e.target.matches) return;
+    if (!e.target.matches('form.domain-toolbar select')) return;
+    var p = paramsFromForm();
+    p.delete('page');
+    loadFragment(p);
+  });
+
+  document.addEventListener('submit', function(e) {
+    if (!e.target || !e.target.matches || !e.target.matches('form.domain-toolbar')) return;
+    e.preventDefault();
+    if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+    loadFragment(paramsFromForm());
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target || !e.target.closest) return;
+    /* Skip modified clicks so cmd/ctrl-click still opens new tabs. */
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    var link = e.target.closest('#domain-panel a.sort-link, #domain-panel .domain-pagination a');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (!href || href.charAt(0) !== '/') return;
+    e.preventDefault();
+    loadFragment(paramsFromHref(href));
+  });
 })();
 `;

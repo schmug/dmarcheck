@@ -48,7 +48,7 @@ function learnJsonLd(opts: {
             url: `${SITE_ORIGIN}/logo.svg`,
           },
         },
-        image: `${SITE_ORIGIN}/og-image.svg`,
+        image: `${SITE_ORIGIN}/og-image.png`,
         mainEntityOfPage: `${SITE_ORIGIN}/learn/${opts.slug}`,
       },
       {
@@ -123,7 +123,7 @@ function learnCta(placeholder: string): string {
     <div class="bd-card-body">
       <form action="/check" method="GET" class="learn-cta-form">
         <div class="search-box">
-          <input type="text" name="domain" placeholder="${esc(placeholder)}" aria-label="Enter a domain" required>
+          <input type="text" name="domain" placeholder="${esc(placeholder)}" aria-label="Enter a domain" autocapitalize="none" autocorrect="off" spellcheck="false" required>
           <button type="submit">Scan</button>
         </div>
       </form>
