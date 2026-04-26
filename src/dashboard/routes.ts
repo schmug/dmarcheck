@@ -20,6 +20,7 @@ import {
   revokeApiKey,
 } from "../db/api-keys.js";
 import {
+  countDomainsForUser,
   createDomain,
   type DomainSortColumn,
   type DomainSortDirection,
@@ -38,6 +39,7 @@ import {
 import { getRecentDeliveriesForUser } from "../db/webhook-deliveries.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
+import { getWatchlistCap } from "../shared/limits.js";
 import {
   renderAddDomainPage,
   renderApiKeysPage,
@@ -315,9 +317,22 @@ dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
 // Add-domain form. Simple GET → form; POST → validate + insert.
 // `/domain/add` is matched before `/domain/:domain` because Hono picks routes
 // in registration order for literal-vs-param collisions.
-dashboardRoutes.get("/domain/add", (c) => {
+dashboardRoutes.get("/domain/add", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
-  return c.html(renderAddDomainPage({ email: session.email, error: null }));
+  const db = (c.env as { DB: D1Database }).DB;
+  const [plan, used] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsForUser(db, session.sub),
+  ]);
+  return c.html(
+    renderAddDomainPage({
+      email: session.email,
+      error: null,
+      plan,
+      used,
+      cap: getWatchlistCap(plan),
+    }),
+  );
 });
 
 dashboardRoutes.post("/domain/add", async (c) => {
@@ -325,23 +340,52 @@ dashboardRoutes.post("/domain/add", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const body = await c.req.parseBody();
   const normalized = normalizeDomain(body.domain as string | undefined);
+  const [plan, used] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsForUser(db, session.sub),
+  ]);
+  const cap = getWatchlistCap(plan);
   if (!normalized) {
     return c.html(
       renderAddDomainPage({
         email: session.email,
         error: "Enter a valid domain (e.g. example.com).",
+        plan,
+        used,
+        cap,
       }),
       400,
     );
   }
 
   // Prevent duplicates per-user cleanly rather than surfacing the raw
-  // UNIQUE(user_id, domain) constraint violation from D1.
+  // UNIQUE(user_id, domain) constraint violation from D1. Duplicate adds
+  // are allowed even when the user is at or over the cap — they're not
+  // creating a new row, just navigating to an existing one.
   const existing = await getDomainByUserAndName(db, session.sub, normalized);
   if (existing) {
     return c.redirect(
       `/dashboard/domain/${encodeURIComponent(normalized)}`,
       303,
+    );
+  }
+
+  // Watchlist cap enforcement. Existing-overshoot accounts (e.g. early Pro
+  // users above 25) keep their rows but can't add more — the check fires
+  // identically for at-cap and over-cap. See #187 / #188.
+  if (used >= cap) {
+    return c.html(
+      renderAddDomainPage({
+        email: session.email,
+        error:
+          plan === "pro"
+            ? `You've reached the Pro plan cap of ${cap} domains. Remove one to add another.`
+            : `Free plan tracks up to ${cap} domains. Upgrade to Pro to monitor up to ${getWatchlistCap("pro")}.`,
+        plan,
+        used,
+        cap,
+      }),
+      403,
     );
   }
 

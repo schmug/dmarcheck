@@ -1621,6 +1621,149 @@ describe("dashboard/routes", () => {
       );
       expect(inserted?.bindings[1]).toBe("example.com");
     });
+
+    it("rejects when a free user is already at the free watchlist cap", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const existing = Array.from({ length: 3 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_1",
+        domain: `existing${i}.com`,
+        is_free: 1,
+        scan_frequency: "monthly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000 + i,
+      }));
+      const db = createMockDB({ domains: existing, writes });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const body = new URLSearchParams({ domain: "newone.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(403);
+      const html = await res.text();
+      expect(html).toMatch(/free plan|Upgrade/i);
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("rejects when a Pro user is already at the Pro watchlist cap", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const existing = Array.from({ length: 25 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_pro",
+        domain: `existing${i}.com`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000 + i,
+      }));
+      const db = createMockDB({
+        domains: existing,
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const body = new URLSearchParams({ domain: "newone.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(403);
+      const html = await res.text();
+      expect(html).toMatch(/25 domain|Pro plan|cap/i);
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("rejects when a Pro user is already over the cap (grandfathered, can't add more)", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const existing = Array.from({ length: 50 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_pro",
+        domain: `existing${i}.com`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000 + i,
+      }));
+      const db = createMockDB({
+        domains: existing,
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const body = new URLSearchParams({ domain: "newone.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(403);
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
+
+    it("still 303-redirects an at-cap user to an existing domain (no new row)", async () => {
+      const writes: Array<{ sql: string; bindings: unknown[] }> = [];
+      const existing = Array.from({ length: 25 }, (_, i) => ({
+        id: i + 1,
+        user_id: "user_pro",
+        domain: `existing${i}.com`,
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1_700_000_000 + i,
+      }));
+      const db = createMockDB({
+        domains: existing,
+        subscriptions: [{ user_id: "user_pro", status: "active" }],
+        writes,
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_pro", "pro@example.com");
+      const body = new URLSearchParams({ domain: "existing0.com" });
+      const res = await app.request("/dashboard/domain/add", {
+        method: "POST",
+        headers: {
+          Cookie: cookie,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("Location")).toBe(
+        "/dashboard/domain/existing0.com",
+      );
+      const inserted = writes.find((w) =>
+        w.sql.includes("INSERT INTO domains"),
+      );
+      expect(inserted).toBeUndefined();
+    });
   });
 
   describe("POST /dashboard/domain/:domain/delete", () => {

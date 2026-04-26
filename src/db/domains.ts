@@ -22,6 +22,17 @@ export async function createDomain(
     .run();
 }
 
+export async function countDomainsForUser(
+  db: D1Database,
+  userId: string,
+): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM domains WHERE user_id = ?")
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export async function getDomainsByUser(
   db: D1Database,
   userId: string,

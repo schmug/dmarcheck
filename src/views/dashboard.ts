@@ -1238,16 +1238,37 @@ ${upgradePrompt}
 export function renderAddDomainPage({
   email,
   error,
+  plan,
+  used,
+  cap,
 }: {
   email: string;
   error: string | null;
+  plan: "free" | "pro";
+  used: number;
+  cap: number;
 }): string {
   const errorBlock = error
     ? `<div class="settings-section" style="border-color:var(--clr-danger, #b91c1c);color:var(--clr-danger, #b91c1c)">${esc(error)}</div>`
     : "";
 
+  // Show usage as "X of N domains used". Over-cap accounts (grandfathered
+  // legacy state) read as "26 of 25" — clamping would hide the situation
+  // from the user and from us in support.
+  const atCap = used >= cap;
+  const upgradeCta =
+    plan === "free" && atCap
+      ? ` <a href="/dashboard/billing/subscribe">Upgrade to Pro →</a>`
+      : "";
+  const usageBlock = `<p style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0 0 1rem">
+  ${used} of ${cap} ${plan === "pro" ? "Pro" : "free"} watchlist slots used.${upgradeCta}
+</p>`;
+
+  const submitDisabled = atCap ? " disabled" : "";
+
   const body = `<h1 class="dashboard-title">Add Domain</h1>
 ${errorBlock}
+${usageBlock}
 <form method="POST" action="/dashboard/domain/add" class="settings-section">
   <label for="domain-input" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Domain to monitor</label>
   <input
@@ -1267,7 +1288,7 @@ ${errorBlock}
     We'll run a full DMARC/SPF/DKIM/BIMI/MTA-STS scan and notify you if the grade drops.
   </p>
   <div class="action-row">
-    <button type="submit" class="btn">Add Domain</button>
+    <button type="submit" class="btn"${submitDisabled}>Add Domain</button>
     <a href="/dashboard" class="btn btn-secondary">Cancel</a>
   </div>
 </form>`;
