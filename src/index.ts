@@ -19,7 +19,6 @@ import {
   processBulkScan,
 } from "./api/bulk-scan.js";
 import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
-import { clampHistoryLimit, fetchDomainHistory } from "./api/history.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
@@ -77,18 +76,14 @@ import {
   renderLearnMtaSts,
   renderLearnSpf,
 } from "./views/learn.js";
-import { renderPrivacyPage } from "./views/legal.js";
 import {
   renderApiDocsMarkdown,
   renderErrorMarkdown,
   renderLandingMarkdown,
   renderLearnHubMarkdown,
-  renderPricingMarkdown,
-  renderPrivacyMarkdown,
   renderReportMarkdown,
   renderScoringRubricMarkdown,
 } from "./views/markdown.js";
-import { renderPricingPage } from "./views/pricing.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
 
@@ -154,16 +149,6 @@ const AGENT_DISCOVERY_LINK_HEADER = [
 // over `frame-ancestors`, which would defeat this allowlist.
 const EMBED_ALLOWED_ORIGINS = ["https://cortech.online"];
 
-// Paths that skip Cloudflare Web Analytics beacon injection. Dashboard and
-// auth pages can expose user-specific URL patterns (e.g. domain names in
-// the path); we deliberately keep those out of analytics even though the
-// beacon itself is cookieless.
-const ANALYTICS_SKIP_PATH_PREFIXES = ["/dashboard", "/auth", "/webhooks"];
-
-// Cloudflare Web Analytics tokens are 32-char lowercase hex. Guard against
-// a misconfigured env var injecting arbitrary strings into HTML.
-const CF_ANALYTICS_TOKEN_RE = /^[a-f0-9]{32}$/;
-
 app.use("*", async (c, next) => {
   await next();
   c.res.headers.set("X-Content-Type-Options", "nosniff");
@@ -191,29 +176,6 @@ app.use("*", async (c, next) => {
         "Cache-Control",
         "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
       );
-    }
-
-    // Inject the Cloudflare Web Analytics beacon on public HTML pages.
-    // Skipped when the token isn't configured (self-host default) and on
-    // auth/dashboard/webhook paths whose URLs can carry user-specific detail.
-    // Our HTML responses are already buffered strings (never streamed), so a
-    // simple `</body>` replace is both correct and keeps tests in the Node
-    // pool runnable without HTMLRewriter.
-    const token = (c.env as Env | undefined)?.CF_ANALYTICS_TOKEN;
-    const path = c.req.path;
-    const isAnalyticsEligible =
-      token &&
-      CF_ANALYTICS_TOKEN_RE.test(token) &&
-      !ANALYTICS_SKIP_PATH_PREFIXES.some((p) => path.startsWith(p));
-    if (isAnalyticsEligible) {
-      const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${token}"}'></script>`;
-      const body = await c.res.text();
-      const injected = body.replace("</body>", `${beacon}</body>`);
-      c.res = new Response(injected, {
-        status: c.res.status,
-        statusText: c.res.statusText,
-        headers: c.res.headers,
-      });
     }
   } else {
     // `frame-ancestors` does not inherit from `default-src`, so it must be
@@ -408,18 +370,6 @@ app.use(
   ),
 );
 
-// Per-domain API endpoints (currently only /api/domain/:name/history). Path
-// prefix instead of exact-match so future per-domain endpoints inherit the
-// same limiter without re-wiring. Hono matches `/api/domain/*` after the
-// exact-match routes above, so /api/check and /api/bulk-scan aren't affected.
-// This middleware is what populates `c.get("bearer")` via resolveRateLimitScope.
-app.use(
-  "/api/domain/*",
-  rateLimitMiddleware((c, result, headers) =>
-    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
-  ),
-);
-
 // The SSE streaming endpoint fans out ~50 DNS lookups per request and is
 // bypassed by the `/api/check` middleware above (Hono matches exact paths).
 // Give it its own limiter so it cannot be used as a DNS amplification vector.
@@ -487,21 +437,20 @@ app.get("/api/check/stream", async (c) => {
         "bimi",
         "mta_sts",
       ];
+      // ⚡ Bolt Optimization: Batch multiple sequential SSE events into a single
+      // stream.write() call for cached result replays. This avoids ~7
+      // async microtask yields and reduces latency significantly on this hot path.
+      let batchedSSE = "";
       for (const id of protocolIds) {
         const html = protocolRenderers[id](cached.protocols[id]);
-        await stream.writeSSE({
-          event: "protocol",
-          data: JSON.stringify({ id, html }),
-        });
+        batchedSSE += `event: protocol\ndata: ${JSON.stringify({ id, html })}\n\n`;
       }
-      await stream.writeSSE({
-        event: "done",
-        data: JSON.stringify({
-          grade: cached.grade,
-          headerHtml: renderReportHeader(cached),
-          footerHtml: renderReportFooter(cached),
-        }),
-      });
+      batchedSSE += `event: done\ndata: ${JSON.stringify({
+        grade: cached.grade,
+        headerHtml: renderReportHeader(cached),
+        footerHtml: renderReportFooter(cached),
+      })}\n\n`;
+      await stream.write(batchedSSE);
       return;
     }
 
@@ -705,9 +654,7 @@ Sitemap: https://dmarc.mx/sitemap.xml
 // authority signal.
 const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
-  { loc: "https://dmarc.mx/pricing", priority: "0.9" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
-  { loc: "https://dmarc.mx/legal/privacy", priority: "0.3" },
   { loc: "https://dmarc.mx/learn", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/dmarc", priority: "0.8" },
   { loc: "https://dmarc.mx/learn/spf", priority: "0.8" },
@@ -718,7 +665,7 @@ const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
   { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
 ];
-const SITEMAP_LASTMOD = "2026-04-23";
+const SITEMAP_LASTMOD = "2026-04-11";
 
 app.get("/sitemap.xml", (c) => {
   const urls = SITEMAP_URLS.map(
@@ -756,15 +703,6 @@ app.get("/learn/spf", (c) => c.html(renderLearnSpf()));
 app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
 app.get("/learn/bimi", (c) => c.html(renderLearnBimi()));
 app.get("/learn/mta-sts", (c) => c.html(renderLearnMtaSts()));
-
-app.get("/pricing", (c) => {
-  if (wantsMarkdown(c)) return markdownResponse(c, renderPricingMarkdown());
-  return c.html(renderPricingPage());
-});
-app.get("/legal/privacy", (c) => {
-  if (wantsMarkdown(c)) return markdownResponse(c, renderPrivacyMarkdown());
-  return c.html(renderPrivacyPage());
-});
 
 app.get("/api/check", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
@@ -885,52 +823,6 @@ app.post("/api/bulk-scan", async (c) => {
     );
   }
   return c.json(outcome);
-});
-
-// Scan history for a watched domain — Pro-only, bearer-authenticated. Thin
-// wrapper around the same `getScanHistoryWithProtocols` helper the dashboard
-// uses (src/dashboard/routes.ts `/dashboard/domain/:domain/history`), so the
-// HTML view and the JSON API return the same rows. Check order is deliberate:
-// auth → plan → domain validation → ownership. The ownership check must run
-// after the plan check, otherwise a free-tier bearer could probe which
-// domains belong to a pro user. It must also not echo anything about the
-// domain on 404 — existence is not revealed.
-app.get("/api/domain/:name/history", async (c) => {
-  const bearer =
-    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
-  if (!bearer) {
-    return c.json(
-      {
-        error:
-          "Bearer token required. Generate one at /dashboard/settings/api-keys.",
-      },
-      401,
-    );
-  }
-  const db = (c.env as { DB?: D1Database }).DB;
-  if (!db) {
-    return c.json({ error: "Database not configured" }, 500);
-  }
-  const plan = await getPlanForUser(db, bearer.userId);
-  if (plan !== "pro") {
-    return c.json(
-      {
-        error: "Scan history requires a Pro plan.",
-        upgrade: `${CANONICAL_ORIGIN}/dashboard/billing/subscribe`,
-      },
-      402,
-    );
-  }
-  const domain = normalizeDomain(c.req.param("name"));
-  if (!domain) {
-    return c.json({ error: "Missing or invalid domain parameter" }, 400);
-  }
-  const limit = clampHistoryLimit(c.req.query("limit"));
-  const resp = await fetchDomainHistory(db, bearer.userId, domain, limit);
-  if (!resp) {
-    return c.json({ error: "Domain not found" }, 404);
-  }
-  return c.json(resp);
 });
 
 // Fire-and-forget: look up the (user, domain) pair and record a scan_history

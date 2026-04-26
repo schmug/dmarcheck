@@ -26,10 +26,6 @@ export function buildApiCatalog(origin: string = CANONICAL_ORIGIN): ApiCatalog {
     linkset: [
       { anchor: `${origin}/api/check`, ...sharedRefs },
       { anchor: `${origin}/api/bulk-scan`, ...sharedRefs },
-      // RFC 6570 URI template — RFC 9727 §3 permits templates in linkset
-      // anchors for parameterized resources. Agents resolve `{name}` from
-      // the OpenAPI path parameter.
-      { anchor: `${origin}/api/domain/{name}/history`, ...sharedRefs },
     ],
   };
 }
