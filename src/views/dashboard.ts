@@ -1,3 +1,4 @@
+import type { WebhookFormat } from "../webhooks/formats/index.js";
 import {
   esc,
   generateCreature,
@@ -504,6 +505,113 @@ const DASHBOARD_CSS = `
   font-size: 0.875rem;
   margin-bottom: 1rem;
 }
+.domain-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: stretch;
+  margin-bottom: 0.75rem;
+}
+.domain-toolbar input,
+.domain-toolbar select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.domain-toolbar input:focus,
+.domain-toolbar select:focus {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: 1px;
+  border-color: var(--clr-accent);
+}
+.domain-toolbar .toolbar-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.domain-toolbar .toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.domain-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--clr-text-muted);
+}
+.domain-table th a.sort-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--clr-text-muted);
+  text-decoration: none;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.domain-table th a.sort-link:hover {
+  color: var(--clr-accent);
+}
+.domain-table th a.sort-link.active {
+  color: var(--clr-text);
+}
+.domain-table th .sort-arrow {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+.domain-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--clr-text-muted);
+}
+.domain-pagination .pagination-links {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.domain-pagination a,
+.domain-pagination span.page-current,
+.domain-pagination span.page-disabled {
+  display: inline-block;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--clr-border);
+  border-radius: 4px;
+  background: var(--clr-surface);
+  color: var(--clr-text-muted);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  min-width: 1.75rem;
+  text-align: center;
+}
+.domain-pagination a:hover {
+  border-color: var(--clr-accent);
+  color: var(--clr-accent);
+  text-decoration: none;
+}
+.domain-pagination span.page-current {
+  background: var(--clr-accent);
+  color: #fff;
+  border-color: var(--clr-accent);
+  font-weight: 600;
+}
+.domain-pagination span.page-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 `;
 
 function dashboardPage(title: string, body: string, email: string): string {
@@ -614,7 +722,7 @@ export function renderAlertsSection(
   <span class="alert-message">${esc(describeAlert(a))}</span>
   <span class="alert-time">${esc(relativeTime(a.createdAt, now))}</span>
   <form method="post" action="${ackHref}">
-    <button type="submit" class="btn-dismiss">Dismiss</button>
+    <button type="submit" class="btn-dismiss" aria-label="Dismiss alert for ${esc(a.domain)}">Dismiss</button>
   </form>
 </li>`;
     })
@@ -625,19 +733,204 @@ export function renderAlertsSection(
 </section>`;
 }
 
-export function renderDashboardPage({
-  email,
-  alerts = [],
+export type DashboardSortColumn =
+  | "domain"
+  | "grade"
+  | "last_scanned"
+  | "created";
+export type DashboardSortDirection = "asc" | "desc";
+
+export interface DashboardControls {
+  search: string;
+  grade: string | null;
+  frequency: "weekly" | "monthly" | null;
+  sort: DashboardSortColumn;
+  direction: DashboardSortDirection;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  total: number;
+}
+
+const GRADE_FILTER_OPTIONS = [
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "F",
+  "ungraded",
+];
+
+// Build a URL-encoded query string for /dashboard from the current control
+// state plus a set of overrides. Centralizes the "preserve every other knob"
+// rule so sort headers and pagination links don't drop filters.
+function buildDashboardHref(
+  controls: DashboardControls,
+  overrides: Partial<{
+    sort: DashboardSortColumn;
+    direction: DashboardSortDirection;
+    page: number;
+  }>,
+): string {
+  const params = new URLSearchParams();
+  if (controls.search) params.set("q", controls.search);
+  if (controls.grade) params.set("grade", controls.grade);
+  if (controls.frequency) params.set("frequency", controls.frequency);
+  const sort = overrides.sort ?? controls.sort;
+  const direction = overrides.direction ?? controls.direction;
+  if (sort !== "domain") params.set("sort", sort);
+  if (direction !== "asc") params.set("dir", direction);
+  const page = overrides.page ?? controls.page;
+  if (page > 1) params.set("page", String(page));
+  if (controls.pageSize !== 25) {
+    params.set("pageSize", String(controls.pageSize));
+  }
+  const qs = params.toString();
+  return qs ? `/dashboard?${qs}` : "/dashboard";
+}
+
+function renderSortableHeader(
+  controls: DashboardControls,
+  column: DashboardSortColumn,
+  label: string,
+): string {
+  const isActive = controls.sort === column;
+  // Toggle direction when re-clicking the active column; otherwise default to
+  // ascending so users see best→worst for grade and oldest→newest for dates
+  // unless they explicitly flip it.
+  const nextDirection: DashboardSortDirection = isActive
+    ? controls.direction === "asc"
+      ? "desc"
+      : "asc"
+    : "asc";
+  const arrow = isActive ? (controls.direction === "asc" ? "▲" : "▼") : "";
+  const href = buildDashboardHref(controls, {
+    sort: column,
+    direction: nextDirection,
+    page: 1,
+  });
+  return `<th><a class="sort-link${isActive ? " active" : ""}" href="${esc(href)}">${esc(label)}<span class="sort-arrow">${arrow}</span></a></th>`;
+}
+
+function renderDomainToolbar(controls: DashboardControls): string {
+  const gradeOpts = GRADE_FILTER_OPTIONS.map((g) => {
+    const sel = controls.grade === g ? " selected" : "";
+    const label = g === "ungraded" ? "Not yet scanned" : g;
+    return `<option value="${esc(g)}"${sel}>${esc(label)}</option>`;
+  }).join("");
+  const freqOpts = ["weekly", "monthly"]
+    .map(
+      (f) =>
+        `<option value="${esc(f)}"${controls.frequency === f ? " selected" : ""}>${esc(f.charAt(0).toUpperCase() + f.slice(1))}</option>`,
+    )
+    .join("");
+  return `<form class="domain-toolbar" method="get" action="/dashboard" role="search">
+  <input
+    type="search"
+    class="toolbar-search"
+    name="q"
+    value="${esc(controls.search)}"
+    placeholder="Search domains…"
+    aria-label="Search domains"
+    maxlength="60"
+  >
+  <select name="grade" aria-label="Filter by grade">
+    <option value="">All grades</option>
+    ${gradeOpts}
+  </select>
+  <select name="frequency" aria-label="Filter by scan frequency">
+    <option value="">All frequencies</option>
+    ${freqOpts}
+  </select>
+  ${controls.sort !== "domain" ? `<input type="hidden" name="sort" value="${esc(controls.sort)}">` : ""}
+  ${controls.direction !== "asc" ? `<input type="hidden" name="dir" value="${esc(controls.direction)}">` : ""}
+  ${controls.pageSize !== 25 ? `<input type="hidden" name="pageSize" value="${controls.pageSize}">` : ""}
+  <div class="toolbar-actions">
+    <button type="submit" class="btn">Apply</button>
+    <a href="/dashboard" class="btn btn-secondary">Reset</a>
+  </div>
+</form>`;
+}
+
+function renderPagination(controls: DashboardControls): string {
+  if (controls.total === 0) return "";
+  const start = (controls.page - 1) * controls.pageSize + 1;
+  const end = Math.min(controls.page * controls.pageSize, controls.total);
+  const prev = controls.page > 1;
+  const next = controls.page < controls.totalPages;
+
+  // Window of page numbers around the current page so the link list stays
+  // readable when a user has many domains.
+  const window: number[] = [];
+  const span = 2;
+  const lo = Math.max(1, controls.page - span);
+  const hi = Math.min(controls.totalPages, controls.page + span);
+  for (let p = lo; p <= hi; p += 1) window.push(p);
+
+  const pageLinks = window
+    .map((p) =>
+      p === controls.page
+        ? `<span class="page-current" aria-current="page">${p}</span>`
+        : `<a href="${esc(buildDashboardHref(controls, { page: p }))}">${p}</a>`,
+    )
+    .join("");
+
+  const prevLink = prev
+    ? `<a href="${esc(buildDashboardHref(controls, { page: controls.page - 1 }))}" rel="prev">‹ Prev</a>`
+    : `<span class="page-disabled">‹ Prev</span>`;
+  const nextLink = next
+    ? `<a href="${esc(buildDashboardHref(controls, { page: controls.page + 1 }))}" rel="next">Next ›</a>`
+    : `<span class="page-disabled">Next ›</span>`;
+
+  return `<nav class="domain-pagination" aria-label="Domain list pagination">
+  <span>Showing ${start}–${end} of ${controls.total}</span>
+  <span class="pagination-links">
+    ${prevLink}
+    ${pageLinks}
+    ${nextLink}
+  </span>
+</nav>`;
+}
+
+// Renders just the toolbar + table + pagination, wrapped in a stable
+// `#domain-panel` element so the live-search client script can swap it in
+// place via /dashboard/domains. Used both inline by renderDashboardPage and
+// directly by the fragment route — keep the wrapper markup identical between
+// the two so the swap is a clean replace.
+export function renderDomainPanel({
   domains,
+  controls,
+  usage,
 }: {
-  email: string;
-  alerts?: DashboardAlert[];
   domains: DashboardDomain[];
+  controls: DashboardControls | null;
+  usage?: WatchlistUsage;
 }): string {
+  const isFiltered =
+    controls !== null &&
+    (controls.search !== "" ||
+      controls.grade !== null ||
+      controls.frequency !== null);
+
   let tableBody: string;
 
   if (domains.length === 0) {
-    tableBody = `<div class="empty-state">
+    // Filtered-empty differs from "no domains at all" — keep the upgrade /
+    // add-domain CTA out of the way when the user is just narrowing a list.
+    tableBody = isFiltered
+      ? `<div class="empty-state">
+  <p>No domains match these filters.</p>
+  <a href="/dashboard" class="btn btn-secondary">Clear filters</a>
+</div>`
+      : `<div class="empty-state">
   <p>No domains yet. Add your first domain to start monitoring.</p>
   <a href="/dashboard/domain/add" class="btn">Add Domain</a>
 </div>`;
@@ -662,24 +955,66 @@ export function renderDashboardPage({
       })
       .join("");
 
-    tableBody = `<table class="domain-table">
-  <thead>
-    <tr>
+    const headerRow = controls
+      ? `<tr>
+      ${renderSortableHeader(controls, "domain", "Domain")}
+      ${renderSortableHeader(controls, "grade", "Grade")}
+      <th>Frequency</th>
+      ${renderSortableHeader(controls, "last_scanned", "Last Scan")}
+    </tr>`
+      : `<tr>
       <th>Domain</th>
       <th>Grade</th>
       <th>Frequency</th>
       <th>Last Scan</th>
-    </tr>
-  </thead>
+    </tr>`;
+
+    tableBody = `<table class="domain-table">
+  <thead>${headerRow}</thead>
   <tbody>${rows}</tbody>
 </table>`;
   }
 
+  // Pro accounts get the full toolbar + pagination. Free accounts cap out at
+  // a tiny list, so the controls only add noise.
+  const toolbar = controls ? renderDomainToolbar(controls) : "";
+  const pagination = controls ? renderPagination(controls) : "";
+
+  const usageHint = usage ? renderUsageHint(usage) : "";
+
+  // data-pro="1" is the signal the client script uses to enable live
+  // search/swap. Free users render the same wrapper so a future plan upgrade
+  // doesn't need a markup migration, but the script bails out early.
+  return `<div id="domain-panel" data-pro="${controls ? "1" : "0"}">
+${usageHint}
+${toolbar}
+${tableBody}
+${pagination}
+</div>`;
+}
+
+export function renderDashboardPage({
+  email,
+  alerts = [],
+  domains,
+  controls = null,
+  usage,
+}: {
+  email: string;
+  alerts?: DashboardAlert[];
+  domains: DashboardDomain[];
+  // Set only for Pro accounts; gates the search/sort/pagination UI.
+  plan?: "free" | "pro";
+  controls?: DashboardControls | null;
+  // Cap usage shown in the panel header. Optional so older callers (and
+  // the fragment route under live search) can omit it.
+  usage?: WatchlistUsage;
+}): string {
   return dashboardPage(
     "Domains — dmarc.mx",
     `<h1 class="dashboard-title">Your Domains</h1>
 ${renderAlertsSection(alerts)}
-${tableBody}`,
+${renderDomainPanel({ domains, controls, usage })}`,
     email,
   );
 }
@@ -731,7 +1066,7 @@ export function renderDomainDetailPage({
   </form>
   <a href="/check?domain=${encodeURIComponent(domain)}" class="btn btn-secondary">View Full Report</a>
   <form method="POST" action="/dashboard/domain/${encodeURIComponent(domain)}/delete" style="display:inline" onsubmit="return confirm('Stop monitoring ${esc(domain)}?');">
-    <button type="submit" class="btn btn-secondary">Delete</button>
+    <button type="submit" class="btn btn-secondary" aria-label="Delete domain ${esc(domain)}">Delete</button>
   </form>
 </div>
 <div class="section-card">
@@ -909,19 +1244,32 @@ ${upgradePrompt}
   return dashboardPage(`History — ${domain} — dmarc.mx`, body, email);
 }
 
+export interface WatchlistUsage {
+  plan: "free" | "pro";
+  current: number;
+  cap: number;
+}
+
 export function renderAddDomainPage({
   email,
   error,
+  usage,
 }: {
   email: string;
   error: string | null;
+  usage: WatchlistUsage;
 }): string {
   const errorBlock = error
     ? `<div class="settings-section" style="border-color:var(--clr-danger, #b91c1c);color:var(--clr-danger, #b91c1c)">${esc(error)}</div>`
     : "";
 
+  const usageBlock = renderUsageHint(usage);
+  const atCap = usage.current >= usage.cap;
+  const submitDisabled = atCap ? " disabled" : "";
+
   const body = `<h1 class="dashboard-title">Add Domain</h1>
 ${errorBlock}
+${usageBlock}
 <form method="POST" action="/dashboard/domain/add" class="settings-section">
   <label for="domain-input" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Domain to monitor</label>
   <input
@@ -941,12 +1289,33 @@ ${errorBlock}
     We'll run a full DMARC/SPF/DKIM/BIMI/MTA-STS scan and notify you if the grade drops.
   </p>
   <div class="action-row">
-    <button type="submit" class="btn">Add Domain</button>
+    <button type="submit" class="btn"${submitDisabled}>Add Domain</button>
     <a href="/dashboard" class="btn btn-secondary">Cancel</a>
   </div>
 </form>`;
 
   return dashboardPage("Add Domain — dmarc.mx", body, email);
+}
+
+// Shared "X of N domains used" hint shown above the add-domain form and
+// in the main dashboard's domain panel toolbar. Free plans get an upgrade
+// CTA, Pro plans show a contact pointer when at cap.
+export function renderUsageHint(usage: WatchlistUsage): string {
+  const atCap = usage.current >= usage.cap;
+  const planLabel = usage.plan === "pro" ? "Pro" : "Free";
+  const cta =
+    usage.plan === "free"
+      ? `<a href="/dashboard/billing/subscribe" style="color:var(--clr-accent);text-decoration:none">Upgrade →</a>`
+      : atCap
+        ? `<a href="mailto:support@dmarc.mx" style="color:var(--clr-accent);text-decoration:none">Contact support</a>`
+        : "";
+  const tone = atCap
+    ? "color:var(--clr-danger, #b91c1c);font-weight:600"
+    : "color:var(--clr-text-muted)";
+  return `<p class="watchlist-usage" style="font-size:0.875rem;margin:0 0 1rem;${tone}">
+  <span>${esc(String(usage.current))} of ${esc(String(usage.cap))} ${planLabel} domains used.</span>
+  ${cta}
+</p>`;
 }
 
 export interface BulkResultRow {
@@ -1019,7 +1388,7 @@ ${error ? `<div class="bulk-error">${esc(error)}</div>` : ""}`;
     : "";
 
   const body = `<h1 class="dashboard-title">Bulk Scan</h1>
-<p class="bulk-summary">
+<p id="bulk-help" class="bulk-summary">
   Paste up to <strong>${totalCap}</strong> domains (one per line, or comma-separated). The first
   <strong>${inBandCap}</strong> will be scanned immediately; the rest queue for the next cron pass.
 </p>
@@ -1035,6 +1404,7 @@ ${errorBlock}
     autocorrect="off"
     spellcheck="false"
     required
+    aria-describedby="bulk-help"
   ></textarea>
   <div class="action-row">
     <button type="submit" class="btn">Scan</button>
@@ -1062,20 +1432,40 @@ function renderBulkRow(row: BulkResultRow): string {
 </tr>`;
 }
 
+export interface RecentWebhookDelivery {
+  eventType: string;
+  ok: boolean;
+  statusCode: number | null;
+  error: string | null;
+  attemptedAt: number;
+}
+
+export interface WebhookTestFlash {
+  ok: boolean;
+  statusCode: number | null;
+  error: string | null;
+}
+
 export function renderSettingsPage({
   email,
   webhookUrl,
+  webhookFormat = "raw",
   plan,
   billingEnabled,
   emailAlertsEnabled,
   showRetirementBanner,
+  recentDeliveries = [],
+  testFlash = null,
 }: {
   email: string;
   webhookUrl: string | null;
+  webhookFormat?: WebhookFormat;
   plan: "free" | "pro";
   billingEnabled: boolean;
   emailAlertsEnabled: boolean;
   showRetirementBanner: boolean;
+  recentDeliveries?: RecentWebhookDelivery[];
+  testFlash?: WebhookTestFlash | null;
 }): string {
   const retirementBanner = showRetirementBanner
     ? `<div class="settings-section" style="border-color:var(--clr-accent);background:var(--clr-accent-muted, rgba(249,115,22,0.08))">
@@ -1109,6 +1499,12 @@ ${retirementBanner}
 
 <div class="settings-section">
   <h2>Webhook</h2>
+  <p style="font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.75rem">
+    Receive a POST when a scan completes. Pick a format: the raw JSON
+    envelope is signed with a <code>Dmarcheck-Signature</code> header
+    (HMAC-SHA256 over <code>&lt;timestamp&gt;.&lt;body&gt;</code>), or
+    target a Slack / Google Chat incoming webhook for chat delivery.
+  </p>
   <form method="POST" action="/dashboard/settings/webhook">
     <label for="webhook-url" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Webhook URL</label>
     <input
@@ -1122,8 +1518,26 @@ ${retirementBanner}
       autocorrect="off"
       spellcheck="false"
     >
+    <label for="webhook-format" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem;margin-top:0.75rem">Format</label>
+    <select id="webhook-format" class="settings-input" name="format">
+      <option value="raw"${webhookFormat === "raw" ? " selected" : ""}>Raw (signed JSON envelope)</option>
+      <option value="slack"${webhookFormat === "slack" ? " selected" : ""}>Slack incoming webhook</option>
+      <option value="google_chat"${webhookFormat === "google_chat" ? " selected" : ""}>Google Chat incoming webhook</option>
+    </select>
+    <p style="font-size:0.8125rem;color:var(--clr-text-muted);margin:0.4rem 0 0.75rem">
+      Raw posts the signed envelope for your own receiver. Slack and Google Chat send a chat message and omit the signature header (those platforms don't verify it).
+    </p>
     <button type="submit" class="btn">Save Webhook</button>
   </form>
+  ${
+    webhookUrl
+      ? `<form method="POST" action="/dashboard/settings/webhook/test" style="margin-top:0.5rem">
+    <button type="submit" class="btn btn-secondary">Send test event</button>
+  </form>`
+      : ""
+  }
+  ${renderWebhookTestFlash(testFlash)}
+  ${renderWebhookDeliveries(recentDeliveries)}
 </div>
 
 <div class="settings-section">
@@ -1146,6 +1560,49 @@ ${retirementBanner}
 </div>`;
 
   return dashboardPage("Settings — dmarc.mx", body, email);
+}
+
+function renderWebhookTestFlash(flash: WebhookTestFlash | null): string {
+  if (!flash) return "";
+  const headline = flash.ok
+    ? `Test event delivered (HTTP ${flash.statusCode ?? "?"})`
+    : flash.statusCode !== null
+      ? `Test event failed: HTTP ${flash.statusCode}`
+      : `Test event failed: ${flash.error ?? "network error"}`;
+  const tone = flash.ok
+    ? "var(--clr-success, #16a34a)"
+    : "var(--clr-danger, #dc2626)";
+  return `<p style="margin-top:0.75rem;color:${tone};font-size:0.875rem">${esc(headline)}</p>`;
+}
+
+function renderWebhookDeliveries(rows: RecentWebhookDelivery[]): string {
+  if (rows.length === 0) return "";
+  const items = rows
+    .map((row) => {
+      const when = new Date(row.attemptedAt * 1000).toLocaleString();
+      const result = row.ok
+        ? `HTTP ${row.statusCode ?? "?"} ✓`
+        : row.statusCode !== null
+          ? `HTTP ${row.statusCode} ✗`
+          : `${esc(row.error ?? "error")} ✗`;
+      return `<tr>
+  <td style="padding:0.25rem 0.5rem">${esc(when)}</td>
+  <td style="padding:0.25rem 0.5rem"><code>${esc(row.eventType)}</code></td>
+  <td style="padding:0.25rem 0.5rem">${result}</td>
+</tr>`;
+    })
+    .join("");
+  return `<details style="margin-top:1rem">
+  <summary style="cursor:pointer;font-size:0.875rem;color:var(--clr-text-muted)">Recent deliveries (${rows.length})</summary>
+  <table style="margin-top:0.5rem;font-size:0.8125rem;border-collapse:collapse;width:100%">
+    <thead><tr style="text-align:left;color:var(--clr-text-muted)">
+      <th style="padding:0.25rem 0.5rem">When</th>
+      <th style="padding:0.25rem 0.5rem">Event</th>
+      <th style="padding:0.25rem 0.5rem">Result</th>
+    </tr></thead>
+    <tbody>${items}</tbody>
+  </table>
+</details>`;
 }
 
 export interface ApiKeyListEntry {
@@ -1224,11 +1681,12 @@ export function renderApiKeysPage({
         const lastUsed = k.lastUsedAt
           ? esc(k.lastUsedAt)
           : '<span style="color:var(--clr-text-muted)">Never</span>';
+        const labelName = k.name ? esc(k.name) : "unnamed";
         const actions = k.revoked
           ? ""
           : `<form method="POST" action="/dashboard/settings/api-keys/revoke" style="display:inline" onsubmit="return confirm('Revoke this key? Requests using it will start failing.');">
               <input type="hidden" name="id" value="${esc(k.id)}">
-              <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.6rem;font-size:0.8125rem">Revoke</button>
+              <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.6rem;font-size:0.8125rem" aria-label="Revoke API key ${labelName}">Revoke</button>
             </form>`;
         return `<tr>
   <td>${name}</td>
@@ -1261,10 +1719,10 @@ ${retirementBanner}
 ${justCreatedBanner}
 <div class="settings-section">
   <h2>Generate a new key</h2>
-  <p>Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
+  <p id="api-keys-help">Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
   <form method="POST" action="/dashboard/settings/api-keys/generate">
     <label for="api-key-name" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Label (optional)</label>
-    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="api-keys-help">
     <div class="action-row">
       <button type="submit" class="btn">Generate API Key</button>
       <a href="/dashboard/settings" class="btn btn-secondary">Back to Settings</a>

@@ -40,11 +40,14 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 ## Agent discovery
 
 - `/.well-known/api-catalog` — RFC 9727 linkset (`application/linkset+json`) pointing to OpenAPI + docs + health
+- `/.well-known/agent-skills/index.json` — Cloudflare Agent Skills Discovery RFC v0.2.0 index. Lists `scan_domain` in two formats (markdown SKILL.md + OpenAPI) with sha256 digests computed lazily over the served bytes
+- `/.well-known/agent-skills/scan-domain/SKILL.md` — prose description of the `scan_domain` skill, served as `text/markdown`
 - `/openapi.json` — OpenAPI 3.1 service description (`application/openapi+json`)
 - `/docs/api` — Human-readable API reference (HTML, or markdown with `Accept: text/markdown`)
-- Every HTML page ships a `Link` header advertising four relations (`api-catalog`, `service-desc`, `service-doc`, `status`)
+- Every HTML page ships a `Link` header advertising five relations (`api-catalog`, `https://agentskills.io/rel/index`, `service-desc`, `service-doc`, `status`)
 - Content negotiation: `Accept: text/markdown` (or `?format=md`) on `/`, `/check`, `/scoring`, `/learn`, `/docs/api` returns a markdown rendering (noindexed)
 - The client JS bundle registers a WebMCP `scan_domain` tool via `navigator.modelContext.provideContext()` when that API is available — silent no-op in browsers without WebMCP
+- **Intentionally not published**: `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/.well-known/mcp/server-card.json`. We are not an OAuth/OIDC issuer (WorkOS AuthKit is — we're the relying party), our protected APIs use dmarcheck-minted bearer API keys (not OAuth-issued tokens, so RFC 9728 doesn't fit), and we don't yet run a remote MCP server. Tracked: [#181](https://github.com/schmug/dmarcheck/issues/181) for the MCP server.
 
 ## Conventions
 
