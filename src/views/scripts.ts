@@ -794,4 +794,312 @@ if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigat
     loadFragment(paramsFromHref(href));
   });
 })();
+
+/* ============================================================
+   Dashboard drawer + add-domain wizard (PR 3)
+   Opens the drawer in-place when a row's domain link is clicked,
+   hydrating from /dashboard/domain/:domain.json. Falls back to the
+   existing HTML route /dashboard/domain/:domain when JS is off (the
+   anchor's href still points there). Wizard is a self-contained
+   3-step modal that posts to /dashboard/domain/add.
+   ============================================================ */
+(function() {
+  var drawer = document.getElementById('domain-drawer');
+  var wizard = document.getElementById('add-wizard');
+  if (!drawer && !wizard) return;
+
+  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  var lastFocusedBeforeOpen = null;
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      for (var k in attrs) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'style') node.setAttribute('style', attrs[k]);
+        else if (k === 'text') node.textContent = attrs[k];
+        else node.setAttribute(k, attrs[k]);
+      }
+    }
+    if (children) {
+      for (var i = 0; i < children.length; i++) {
+        if (children[i]) node.appendChild(children[i]);
+      }
+    }
+    return node;
+  }
+
+  function setOpen(target, open) {
+    if (!target) return;
+    var overlay = document.querySelector('[data-overlay-for="' + target.id + '"]');
+    if (open) {
+      target.hidden = false;
+      if (overlay) overlay.hidden = false;
+      requestAnimationFrame(function() {
+        target.setAttribute('data-open', '1');
+        if (overlay) overlay.setAttribute('data-open', '1');
+      });
+    } else {
+      target.removeAttribute('data-open');
+      if (overlay) overlay.removeAttribute('data-open');
+      setTimeout(function() {
+        target.hidden = true;
+        if (overlay) overlay.hidden = true;
+      }, 250);
+    }
+  }
+
+  function trapFocus(scope, ev) {
+    if (ev.key !== 'Tab') return;
+    var nodes = Array.prototype.slice.call(scope.querySelectorAll(FOCUSABLE)).filter(function(n) {
+      return !n.hidden && n.offsetParent !== null;
+    });
+    if (nodes.length === 0) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (ev.shiftKey && document.activeElement === first) {
+      ev.preventDefault();
+      last.focus();
+    } else if (!ev.shiftKey && document.activeElement === last) {
+      ev.preventDefault();
+      first.focus();
+    }
+  }
+
+  /* ---- Drawer ---- */
+  function setDrawerStatus(text, kind) {
+    var bodyEl = drawer.querySelector('[data-drawer-body]');
+    if (!bodyEl) return;
+    bodyEl.replaceChildren(el('div', {
+      class: kind === 'error' ? 'domain-drawer-error' : 'domain-drawer-loading',
+      text: text
+    }));
+  }
+
+  function openDrawer(domain, triggerEl) {
+    if (!drawer) return;
+    lastFocusedBeforeOpen = triggerEl || document.activeElement;
+    var titleEl = drawer.querySelector('.domain-drawer-title');
+    if (titleEl) titleEl.textContent = domain;
+    setDrawerStatus('Loading…');
+    setOpen(drawer, true);
+    setTimeout(function() {
+      var closeBtn = drawer.querySelector('[data-drawer-close]');
+      if (closeBtn) closeBtn.focus();
+    }, 30);
+
+    fetch('/dashboard/domain/' + encodeURIComponent(domain) + '.json', {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'same-origin'
+    }).then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function(data) {
+      renderDrawerBody(data);
+    }).catch(function() {
+      var bodyEl = drawer.querySelector('[data-drawer-body]');
+      if (!bodyEl) return;
+      var fallback = el('a', {
+        href: '/dashboard/domain/' + encodeURIComponent(domain),
+        text: 'Open the full page instead.'
+      });
+      bodyEl.replaceChildren(
+        el('div', { class: 'domain-drawer-error' }, [
+          document.createTextNode('Couldn\\u2019t load detail. '),
+          fallback
+        ])
+      );
+    });
+  }
+
+  function renderDrawerBody(data) {
+    var bodyEl = drawer.querySelector('[data-drawer-body]');
+    if (!bodyEl) return;
+    var lastScan = data.lastScannedAt
+      ? new Date(data.lastScannedAt * 1000).toLocaleString()
+      : 'Never';
+
+    function metaSpan(label, value) {
+      var strong = el('strong', { text: label + ':' });
+      var span = el('span');
+      span.appendChild(strong);
+      span.appendChild(document.createTextNode(' ' + (value || '\\u2014')));
+      return span;
+    }
+    var meta = el('div', { class: 'domain-drawer-meta' }, [
+      metaSpan('Grade', data.grade),
+      metaSpan('Last scan', lastScan),
+      metaSpan('Frequency', data.scanFrequency)
+    ]);
+
+    var historyEl;
+    var rows = data.history || [];
+    if (rows.length === 0) {
+      historyEl = el('p', {
+        style: 'color:var(--clr-text-muted);font-size:0.85rem;',
+        text: 'No scan history yet.'
+      });
+    } else {
+      var tbody = el('tbody');
+      rows.slice(0, 8).forEach(function(h) {
+        var when = new Date(h.scannedAt * 1000).toLocaleDateString();
+        tbody.appendChild(el('tr', null, [
+          el('td', {
+            style: 'padding:4px 0;color:var(--clr-text-muted);font-size:0.8rem;',
+            text: when
+          }),
+          el('td', {
+            style: 'padding:4px 0;font-weight:600;',
+            text: String(h.grade)
+          })
+        ]));
+      });
+      historyEl = el('table', {
+        style: 'width:100%;border-collapse:collapse;margin-top:0.5rem;'
+      }, [tbody]);
+    }
+
+    var actions = el('div', { class: 'domain-drawer-actions' }, [
+      el('a', {
+        href: '/dashboard/domain/' + encodeURIComponent(data.domain),
+        class: 'dashboard-add-btn',
+        style: 'background:transparent;color:var(--clr-text);border-color:var(--clr-border);',
+        text: 'Open full page'
+      }),
+      (function() {
+        var form = el('form', {
+          method: 'post',
+          action: '/dashboard/domain/' + encodeURIComponent(data.domain) + '/scan',
+          style: 'margin:0;'
+        }, [
+          el('button', { type: 'submit', class: 'dashboard-add-btn', text: 'Re-scan now' })
+        ]);
+        return form;
+      })()
+    ]);
+
+    bodyEl.replaceChildren(meta, historyEl, actions);
+  }
+
+  function closeDrawer() {
+    if (!drawer) return;
+    setOpen(drawer, false);
+    if (lastFocusedBeforeOpen && lastFocusedBeforeOpen.focus) {
+      lastFocusedBeforeOpen.focus();
+    }
+  }
+
+  if (drawer) {
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      var link = t.closest('[data-drawer-link]');
+      if (!link) return;
+      var row = link.closest('[data-domain]');
+      var domain = row ? row.getAttribute('data-domain') : link.textContent.trim();
+      if (!domain) return;
+      e.preventDefault();
+      openDrawer(domain, link);
+    });
+
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.matches) return;
+      if (t.matches('[data-drawer-close]') || t.matches('[data-overlay-for="domain-drawer"]')) {
+        closeDrawer();
+      }
+    });
+
+    drawer.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeDrawer();
+      else trapFocus(drawer, e);
+    });
+  }
+
+  /* ---- Wizard ---- */
+  if (wizard) {
+    var form = wizard.querySelector('[data-wizard-form]');
+    var pill = wizard.querySelector('[data-wizard-pill]');
+    var backBtn = wizard.querySelector('[data-wizard-back]');
+    var nextBtn = wizard.querySelector('[data-wizard-next]');
+    var submitBtn = wizard.querySelector('[data-wizard-submit]');
+    var errorEl = wizard.querySelector('[data-wizard-error]');
+    var domainInput = wizard.querySelector('#wizard-domain');
+    var freqSelect = wizard.querySelector('#wizard-frequency');
+    var confirmDom = wizard.querySelector('[data-wizard-confirm-domain]');
+    var confirmFreq = wizard.querySelector('[data-wizard-confirm-frequency]');
+    var step = 1;
+
+    function showStep(n) {
+      step = n;
+      var steps = wizard.querySelectorAll('[data-step]');
+      for (var i = 0; i < steps.length; i++) {
+        var stepNum = parseInt(steps[i].getAttribute('data-step'), 10);
+        if (stepNum === n) steps[i].setAttribute('data-active', '1');
+        else steps[i].removeAttribute('data-active');
+      }
+      if (pill) pill.textContent = 'Step ' + n + ' of 3';
+      if (backBtn) backBtn.hidden = n === 1;
+      if (nextBtn) nextBtn.hidden = n === 3;
+      if (submitBtn) submitBtn.hidden = n !== 3;
+      setTimeout(function() {
+        var active = wizard.querySelector('[data-step="' + n + '"]');
+        if (!active) return;
+        var first = active.querySelector('input, select, textarea, button');
+        if (first) first.focus();
+      }, 50);
+    }
+
+    function openWizard(triggerEl) {
+      lastFocusedBeforeOpen = triggerEl || document.activeElement;
+      if (form) form.reset();
+      if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+      showStep(1);
+      setOpen(wizard, true);
+    }
+    function closeWizard() {
+      setOpen(wizard, false);
+      if (lastFocusedBeforeOpen && lastFocusedBeforeOpen.focus) {
+        lastFocusedBeforeOpen.focus();
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.matches) return;
+      if (t.matches('[data-wizard-open]')) {
+        e.preventDefault();
+        openWizard(t);
+      } else if (t.matches('[data-wizard-close]') || t.matches('[data-overlay-for="add-wizard"]')) {
+        closeWizard();
+      } else if (t.matches('[data-wizard-back]')) {
+        if (step > 1) showStep(step - 1);
+      } else if (t.matches('[data-wizard-next]')) {
+        if (step === 1) {
+          var raw = domainInput && domainInput.value.trim().toLowerCase();
+          if (!raw || !/^[a-z0-9.-]+\\.[a-z]{2,}$/.test(raw)) {
+            if (errorEl) {
+              errorEl.textContent = 'Enter a valid domain like example.com.';
+              errorEl.hidden = false;
+            }
+            return;
+          }
+          if (errorEl) errorEl.hidden = true;
+          if (confirmDom) confirmDom.textContent = raw;
+          showStep(2);
+        } else if (step === 2) {
+          var freq = freqSelect ? freqSelect.value : 'weekly';
+          if (confirmFreq) confirmFreq.textContent = freq;
+          showStep(3);
+        }
+      }
+    });
+
+    wizard.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeWizard();
+      else trapFocus(wizard, e);
+    });
+  }
+})();
 `;

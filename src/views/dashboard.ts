@@ -763,6 +763,237 @@ const DASHBOARD_CSS = `
   .dashboard-hero-mascot { justify-content: flex-start; }
   .dashboard-hero-score { align-items: flex-start; }
 }
+
+/* ============================================================
+   Drawer + add-domain wizard (PR 3)
+   Hidden until JS toggles [data-open]. Server still renders the
+   per-domain HTML page at /dashboard/domain/:domain so deep links
+   keep working when JS is off.
+   ============================================================ */
+.dashboard-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease-out;
+}
+.dashboard-overlay[data-open="1"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.domain-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--clr-surface);
+  border-left: 1px solid var(--clr-border);
+  box-shadow: -8px 0 32px var(--clr-shadow);
+  z-index: 101;
+  transform: translateX(100%);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.domain-drawer[data-open="1"] { transform: translateX(0); }
+.domain-drawer-header {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--clr-border);
+  flex-shrink: 0;
+}
+.domain-drawer-title {
+  flex: 1; min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--clr-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.domain-drawer-close {
+  background: var(--clr-surface-muted);
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--clr-text);
+  cursor: pointer;
+}
+.domain-drawer-close:hover { border-color: var(--clr-border-hover); }
+.domain-drawer-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.domain-drawer-meta {
+  display: flex; flex-wrap: wrap; gap: 1.25rem;
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 1rem;
+}
+.domain-drawer-meta strong { color: var(--clr-text); font-weight: 600; }
+.domain-drawer-actions {
+  display: flex; gap: 0.5rem; flex-wrap: wrap;
+  padding-top: 1rem;
+  border-top: 1px solid var(--clr-border);
+  margin-top: 1rem;
+}
+.domain-drawer-actions form { margin: 0; }
+.domain-drawer-loading,
+.domain-drawer-error {
+  text-align: center;
+  color: var(--clr-text-muted);
+  font-size: 0.9rem;
+  padding: 2rem 0;
+}
+.domain-drawer-error { color: var(--clr-fail); }
+
+/* Wizard modal */
+.add-wizard {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  width: min(480px, 92vw);
+  max-height: 90vh;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px var(--clr-shadow);
+  z-index: 101;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s ease-out;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.add-wizard[data-open="1"] {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.add-wizard-header {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--clr-border);
+}
+.add-wizard-title {
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--clr-text);
+}
+.add-wizard-step-pill {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-faint);
+  font-weight: 600;
+}
+.add-wizard-body { padding: 1.25rem; }
+.add-wizard-step { display: none; }
+.add-wizard-step[data-active="1"] { display: block; }
+.add-wizard-step label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.add-wizard-step input[type="text"],
+.add-wizard-step select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: var(--clr-bg);
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  color: var(--clr-text);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.add-wizard-step input[type="text"]:focus,
+.add-wizard-step select:focus {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: 2px;
+}
+.add-wizard-step p {
+  margin: 0;
+  color: var(--clr-text);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.add-wizard-step p strong { color: var(--clr-accent); }
+.add-wizard-error {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--clr-fail);
+}
+.add-wizard-footer {
+  display: flex; justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--clr-border);
+}
+.add-wizard-footer button {
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.add-wizard-footer .wizard-secondary {
+  background: transparent;
+  border: 1px solid var(--clr-border);
+  color: var(--clr-text);
+}
+.add-wizard-footer .wizard-secondary:hover { border-color: var(--clr-border-hover); }
+.add-wizard-footer .wizard-primary {
+  background: var(--clr-accent);
+  border: 1px solid var(--clr-accent);
+  color: var(--clr-on-accent);
+}
+.add-wizard-footer .wizard-primary:hover { background: var(--clr-accent-hover); }
+.add-wizard-footer .wizard-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Re-scanning row pulse — drives the post-add row state. */
+@keyframes domain-row-pulse {
+  0%, 100% { background-color: var(--clr-accent-muted); }
+  50%      { background-color: rgba(249, 115, 22, 0.18); }
+}
+.domain-table tr.is-rescanning td {
+  animation: domain-row-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .domain-table tr.is-rescanning td {
+    animation: none;
+    background: var(--clr-accent-muted);
+  }
+}
+
+/* Add-domain trigger button on the dashboard */
+.dashboard-add-btn {
+  display: inline-flex; align-items: center;
+  padding: 0.5rem 0.95rem;
+  background: var(--clr-accent);
+  color: var(--clr-on-accent);
+  border: 1px solid var(--clr-accent);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dashboard-add-btn:hover { background: var(--clr-accent-hover); text-decoration: none; }
+
+@media (max-width: 720px) {
+  .domain-drawer { width: 100vw; }
+}
 `;
 
 function dashboardPage(title: string, body: string, email: string): string {
@@ -1093,9 +1324,9 @@ export function renderDomainPanel({
           alertCount > 0
             ? `<span class="badge-alert">${alertCount} alert${alertCount === 1 ? "" : "s"}</span>`
             : "";
-        return `<tr>
+        return `<tr data-domain="${esc(d.domain)}">
   <td>
-    <a href="/dashboard/domain/${encodeURIComponent(d.domain)}">${esc(d.domain)}</a>
+    <a href="/dashboard/domain/${encodeURIComponent(d.domain)}" data-drawer-link>${esc(d.domain)}</a>
     ${d.isFree ? '<span class="badge-free">Free</span>' : ""}
     ${alertBadge}
   </td>
@@ -1330,6 +1561,62 @@ function renderDashboardHero(
 </section>`;
 }
 
+function renderDomainDrawerShell(): string {
+  // Markup is hidden until the dashboard-drawer.js controller toggles
+  // [data-open]. The HTML route /dashboard/domain/:domain stays the source
+  // of truth for shareable deep links — the drawer hydrates from the JSON
+  // sibling, but a user with JS off (or who shares a link) lands on the
+  // same data via the legacy route.
+  return `<div class="dashboard-overlay" data-overlay-for="domain-drawer" hidden></div>
+<aside id="domain-drawer" class="domain-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1" hidden>
+  <div class="domain-drawer-header">
+    <span id="drawer-title" class="domain-drawer-title">Loading…</span>
+    <button type="button" class="domain-drawer-close" data-drawer-close aria-label="Close domain detail">Close</button>
+  </div>
+  <div class="domain-drawer-body" data-drawer-body>
+    <div class="domain-drawer-loading">Loading…</div>
+  </div>
+</aside>`;
+}
+
+function renderAddDomainWizardShell(): string {
+  return `<div class="dashboard-overlay" data-overlay-for="add-wizard" hidden></div>
+<div id="add-wizard" class="add-wizard" role="dialog" aria-modal="true" aria-labelledby="wizard-title" tabindex="-1" hidden>
+  <form data-wizard-form action="/dashboard/domain/add" method="post" novalidate>
+    <div class="add-wizard-header">
+      <span id="wizard-title" class="add-wizard-title">Add a domain</span>
+      <span class="add-wizard-step-pill" data-wizard-pill>Step 1 of 3</span>
+      <button type="button" class="domain-drawer-close" data-wizard-close aria-label="Close add-domain wizard">Close</button>
+    </div>
+    <div class="add-wizard-body">
+      <div class="add-wizard-step" data-active="1" data-step="1">
+        <label for="wizard-domain">Domain</label>
+        <input type="text" id="wizard-domain" name="domain" placeholder="example.com" autocomplete="off" required>
+        <div class="add-wizard-error" data-wizard-error hidden></div>
+      </div>
+      <div class="add-wizard-step" data-step="2">
+        <label for="wizard-frequency">Scan frequency</label>
+        <select id="wizard-frequency" name="frequency">
+          <option value="daily">Daily (Pro)</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div class="add-wizard-step" data-step="3">
+        <p>About to add <strong data-wizard-confirm-domain>—</strong> on a <strong data-wizard-confirm-frequency>—</strong> cadence.</p>
+        <p style="margin-top:0.75rem;color:var(--clr-text-muted);font-size:0.85rem;">First scan kicks off immediately. You'll see a grade in a few seconds.</p>
+      </div>
+    </div>
+    <div class="add-wizard-footer">
+      <button type="button" class="wizard-secondary" data-wizard-back hidden>Back</button>
+      <span style="flex:1"></span>
+      <button type="button" class="wizard-primary" data-wizard-next>Next</button>
+      <button type="submit" class="wizard-primary" data-wizard-submit hidden>Add domain</button>
+    </div>
+  </form>
+</div>`;
+}
+
 function renderDashboardStatStrip(domains: DashboardDomain[]): string {
   const stats = portfolioStats(domains);
   const totalCard = statCard(
@@ -1411,8 +1698,13 @@ export function renderDashboardPage({
 ${hero}
 ${statStrip}
 ${renderAlertsSection(alerts)}
-<h2 class="dashboard-title">Your Domains</h2>
-${renderDomainPanel({ domains, controls, usage })}`,
+<div class="dashboard-domains-header" style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;">
+  <h2 class="dashboard-title" style="margin:0;flex:1;">Your Domains</h2>
+  <button type="button" class="dashboard-add-btn" data-wizard-open>Add domain</button>
+</div>
+${renderDomainPanel({ domains, controls, usage })}
+${renderDomainDrawerShell()}
+${renderAddDomainWizardShell()}`,
     email,
   );
 }

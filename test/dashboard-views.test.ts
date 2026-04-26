@@ -468,6 +468,30 @@ describe("renderDashboardPage", () => {
       expect(html).toContain("Scanning your 2 domains");
     });
 
+    it("renders the drawer + wizard shells with data hooks but hidden", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A")],
+      });
+      // Drawer shell present and hidden by default
+      expect(html).toContain('id="domain-drawer"');
+      expect(html).toContain('role="dialog"');
+      expect(html).toContain('aria-modal="true"');
+      expect(html).toMatch(/<aside[^>]+id="domain-drawer"[^>]+hidden/);
+      expect(html).toContain("data-drawer-close");
+      // Wizard shell present and hidden by default
+      expect(html).toContain('id="add-wizard"');
+      expect(html).toMatch(/<div[^>]+id="add-wizard"[^>]+hidden/);
+      expect(html).toContain("data-wizard-form");
+      expect(html).toContain('action="/dashboard/domain/add"');
+      expect(html).toContain("Step 1 of 3");
+      // Add-domain trigger button rendered next to the table heading
+      expect(html).toContain("data-wizard-open");
+      // Each table row carries data-domain so the drawer JS knows what to load
+      expect(html).toContain('data-domain="example.com"');
+      expect(html).toContain("data-drawer-link");
+    });
+
     it("preserves the existing alerts section markup above the table", () => {
       const html = renderDashboardPage({
         email: "u@x.com",

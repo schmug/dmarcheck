@@ -501,6 +501,37 @@ dashboardRoutes.post("/bulk", async (c) => {
   );
 });
 
+// JSON sibling of /domain/:domain. Powers the dashboard drawer so a row
+// click loads detail in-place without a full navigation. Same auth + same
+// IDOR protection as the HTML route — getDomainByUserAndName only returns
+// rows owned by session.sub. Registered BEFORE /domain/:domain so the
+// `.json` suffix isn't swallowed by the greedy :domain match.
+dashboardRoutes.get("/domain/:domain{.+\\.json}", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const raw = c.req.param("domain");
+  const domainName = raw?.endsWith(".json") ? raw.slice(0, -5) : raw;
+  if (!domainName) return c.json({ error: "Domain not found" }, 404);
+  const domain = await getDomainByUserAndName(db, session.sub, domainName);
+  if (!domain) return c.json({ error: "Domain not found" }, 404);
+  const plan = await getPlanForUser(db, session.sub);
+  const limit = plan === "pro" ? HISTORY_LIMIT_PRO : HISTORY_LIMIT_FREE;
+  const rows = await getScanHistoryWithProtocols(db, domain.id, limit);
+  return c.json({
+    domain: domain.domain,
+    grade: domain.last_grade ?? "—",
+    lastScannedAt: domain.last_scanned_at,
+    scanFrequency: domain.scan_frequency,
+    isFree: domain.is_free === 1,
+    plan,
+    history: rows.map((row) => ({
+      scannedAt: row.scannedAt,
+      grade: row.grade,
+      protocols: row.protocols,
+    })),
+  });
+});
+
 // Domain detail
 dashboardRoutes.get("/domain/:domain", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
