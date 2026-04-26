@@ -34,24 +34,33 @@ export async function fireScanCompletedWebhook(
 }
 
 // Fires one `scan.completed` event per successfully-scanned entry in a bulk
-// outcome. Best-effort and serial — callers should hand this to `waitUntil`
-// so it never blocks the response. Queued/invalid/error entries are skipped
-// (no scan happened, nothing to report).
+// outcome. Best-effort; callers should hand this to `waitUntil` so it never
+// blocks the response. Queued/invalid/error entries are skipped (no scan
+// happened, nothing to report).
+//
+// Dispatch fans out via `Promise.allSettled` so cumulative wallclock is
+// max(per-call) rather than sum(per-call). A serial loop here previously
+// blew the waitUntil budget on 25-domain bulk adds: receivers got the
+// bytes but the AbortSignal fired on the tail before the response was
+// observed, recording every late delivery as a timeout. See #186.
 export async function fireBulkScanWebhooks(
   db: D1Database,
   userId: string,
   results: BulkResultEntry[],
   trigger: ScanCompletedData["trigger"],
 ): Promise<void> {
-  for (const entry of results) {
-    if (entry.status !== "scanned" || !entry.grade) continue;
-    await fireScanCompletedWebhook(db, userId, {
-      domain: entry.domain,
-      grade: entry.grade,
-      // Bulk scans don't surface a stable scan_history.id; receivers can
-      // re-fetch by domain via /api/domain/:name/history.
-      scanId: entry.domain,
-      trigger,
-    });
-  }
+  const dispatches = results
+    .filter((entry) => entry.status === "scanned" && entry.grade)
+    .map((entry) =>
+      fireScanCompletedWebhook(db, userId, {
+        domain: entry.domain,
+        // biome-ignore lint/style/noNonNullAssertion: filtered above.
+        grade: entry.grade!,
+        // Bulk scans don't surface a stable scan_history.id; receivers can
+        // re-fetch by domain via /api/domain/:name/history.
+        scanId: entry.domain,
+        trigger,
+      }),
+    );
+  await Promise.allSettled(dispatches);
 }
