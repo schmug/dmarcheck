@@ -20,10 +20,14 @@ import {
   revokeApiKey,
 } from "../db/api-keys.js";
 import {
+  countDomainsByUser,
   createDomain,
+  type DomainSortColumn,
+  type DomainSortDirection,
   deleteDomain,
   getDomainByUserAndName,
   getDomainsByUser,
+  listDomainsForUserPaged,
 } from "../db/domains.js";
 import { getScanHistoryWithProtocols, recordScan } from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
@@ -32,8 +36,10 @@ import {
   getUserById,
   setEmailAlertsEnabled,
 } from "../db/users.js";
+import { getRecentDeliveriesForUser } from "../db/webhook-deliveries.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
+import { PRO_WATCHLIST_CAP, watchlistCapForPlan } from "../shared/limits.js";
 import {
   renderAddDomainPage,
   renderApiKeysPage,
@@ -41,12 +47,91 @@ import {
   renderDashboardPage,
   renderDomainDetailPage,
   renderDomainHistoryPage,
+  renderDomainPanel,
   renderSettingsPage,
   toApiKeyListEntry,
 } from "../views/dashboard.js";
+import { dispatchWebhook } from "../webhooks/dispatcher.js";
+import {
+  isWebhookFormat,
+  type WebhookFormat,
+} from "../webhooks/formats/index.js";
+import {
+  fireBulkScanWebhooks,
+  fireScanCompletedWebhook,
+} from "../webhooks/triggers.js";
 
 const HISTORY_LIMIT_PRO = 30;
 const HISTORY_LIMIT_FREE = 5;
+
+// Page-size knobs for the Pro domain list. Cap is defensive: nothing in the
+// product needs >100 rows at once, and the LIMIT bounds the worst-case D1
+// scan even if a hostile query string asks for more.
+const DOMAINS_PAGE_SIZE_DEFAULT = 25;
+const DOMAINS_PAGE_SIZE_MAX = 100;
+const DOMAINS_SEARCH_MAX = 60;
+
+const VALID_GRADES = new Set([
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "D-",
+  "F",
+  "ungraded",
+]);
+const VALID_SORT_COLUMNS = new Set<DomainSortColumn>([
+  "domain",
+  "grade",
+  "last_scanned",
+  "created",
+]);
+
+interface DomainListQuery {
+  search: string;
+  grade: string | null;
+  frequency: "weekly" | "monthly" | null;
+  sort: DomainSortColumn;
+  direction: DomainSortDirection;
+  page: number;
+  pageSize: number;
+}
+
+function parseDomainListQuery(url: URL): DomainListQuery {
+  const params = url.searchParams;
+  const rawSearch = (params.get("q") ?? "").trim().slice(0, DOMAINS_SEARCH_MAX);
+  const grade = params.get("grade");
+  const frequencyRaw = params.get("frequency");
+  const sortRaw = params.get("sort");
+  const dirRaw = params.get("dir");
+  const pageRaw = Number.parseInt(params.get("page") ?? "1", 10);
+  const pageSizeRaw = Number.parseInt(params.get("pageSize") ?? "", 10);
+  return {
+    search: rawSearch,
+    grade: grade && VALID_GRADES.has(grade) ? grade : null,
+    frequency:
+      frequencyRaw === "weekly" || frequencyRaw === "monthly"
+        ? frequencyRaw
+        : null,
+    sort:
+      sortRaw && VALID_SORT_COLUMNS.has(sortRaw as DomainSortColumn)
+        ? (sortRaw as DomainSortColumn)
+        : "domain",
+    direction: dirRaw === "desc" ? "desc" : "asc",
+    page: Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1,
+    pageSize:
+      Number.isFinite(pageSizeRaw) && pageSizeRaw > 0
+        ? Math.min(pageSizeRaw, DOMAINS_PAGE_SIZE_MAX)
+        : DOMAINS_PAGE_SIZE_DEFAULT,
+  };
+}
 
 export const dashboardRoutes = new Hono();
 
@@ -63,23 +148,81 @@ dashboardRoutes.route("/billing", dashboardBillingRoutes);
 dashboardRoutes.get("/", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
-  const [domains, alerts, unackCounts] = await Promise.all([
-    getDomainsByUser(db, session.sub),
+  const plan = await getPlanForUser(db, session.sub);
+
+  const [alerts, unackCounts] = await Promise.all([
     listUnacknowledgedForUser(db, session.sub, 20),
     countUnacknowledgedByDomain(db, session.sub),
   ]);
+
+  const alertsView = alerts.map((a) => ({
+    id: a.id,
+    domain: a.domain,
+    alertType: a.alert_type,
+    previousValue: a.previous_value,
+    newValue: a.new_value,
+    createdAt: a.created_at,
+  }));
+
+  // Free-tier accounts cap out at a handful of domains, so we skip the
+  // search/sort/page UI for them entirely and serve the simple list.
+  if (plan !== "pro") {
+    const domains = await getDomainsByUser(db, session.sub);
+    return c.html(
+      renderDashboardPage({
+        email: session.email,
+        plan,
+        alerts: alertsView,
+        domains: domains.map((d) => ({
+          domain: d.domain,
+          grade: d.last_grade ?? "—",
+          frequency: d.scan_frequency,
+          lastScanned: d.last_scanned_at
+            ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
+            : null,
+          isFree: d.is_free === 1,
+          unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
+        })),
+        controls: null,
+        usage: {
+          plan,
+          current: domains.length,
+          cap: watchlistCapForPlan(plan),
+        },
+      }),
+    );
+  }
+
+  const query = parseDomainListQuery(new URL(c.req.url));
+  const offset = (query.page - 1) * query.pageSize;
+  // Unfiltered watchlist count, separate from `page.total` (which respects
+  // the search/grade/frequency filters). The toolbar usage hint reflects
+  // the user's full watchlist regardless of what's currently filtered.
+  const [page, totalForUser] = await Promise.all([
+    listDomainsForUserPaged(db, {
+      userId: session.sub,
+      search: query.search || undefined,
+      grade: query.grade ?? undefined,
+      frequency: query.frequency ?? undefined,
+      sort: query.sort,
+      direction: query.direction,
+      limit: query.pageSize,
+      offset,
+    }),
+    countDomainsByUser(db, session.sub),
+  ]);
+
+  // Clamp out-of-range pages so a deep-linked stale URL doesn't render an
+  // empty table when results exist.
+  const totalPages = Math.max(1, Math.ceil(page.total / query.pageSize));
+  const currentPage = Math.min(query.page, totalPages);
+
   return c.html(
     renderDashboardPage({
       email: session.email,
-      alerts: alerts.map((a) => ({
-        id: a.id,
-        domain: a.domain,
-        alertType: a.alert_type,
-        previousValue: a.previous_value,
-        newValue: a.new_value,
-        createdAt: a.created_at,
-      })),
-      domains: domains.map((d) => ({
+      plan,
+      alerts: alertsView,
+      domains: page.rows.map((d) => ({
         domain: d.domain,
         grade: d.last_grade ?? "—",
         frequency: d.scan_frequency,
@@ -89,6 +232,22 @@ dashboardRoutes.get("/", async (c) => {
         isFree: d.is_free === 1,
         unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
       })),
+      controls: {
+        search: query.search,
+        grade: query.grade,
+        frequency: query.frequency,
+        sort: query.sort,
+        direction: query.direction,
+        page: currentPage,
+        pageSize: query.pageSize,
+        totalPages,
+        total: page.total,
+      },
+      usage: {
+        plan,
+        current: totalForUser,
+        cap: watchlistCapForPlan(plan),
+      },
     }),
   );
 });
@@ -96,6 +255,66 @@ dashboardRoutes.get("/", async (c) => {
 // Dismiss a regression alert. IDOR-safe via SQL: acknowledgeAlert only updates
 // rows whose domain belongs to the session user. Returns 404 (not 500, not 303)
 // for invalid / cross-user / already-acked ids so the caller can distinguish.
+// Live-search fragment endpoint for the Pro domain list. Returns only the
+// `#domain-panel` markup (toolbar + table + pagination) so the client can
+// swap it in place when the user types or changes a filter — no full page
+// reload, no flicker, no focus loss. Free users get 404 because their
+// dashboard skips the search UI entirely; the full page already does the
+// right thing for them.
+dashboardRoutes.get("/domains", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const plan = await getPlanForUser(db, session.sub);
+  if (plan !== "pro") return c.notFound();
+
+  const query = parseDomainListQuery(new URL(c.req.url));
+  const offset = (query.page - 1) * query.pageSize;
+  const [page, unackCounts] = await Promise.all([
+    listDomainsForUserPaged(db, {
+      userId: session.sub,
+      search: query.search || undefined,
+      grade: query.grade ?? undefined,
+      frequency: query.frequency ?? undefined,
+      sort: query.sort,
+      direction: query.direction,
+      limit: query.pageSize,
+      offset,
+    }),
+    countUnacknowledgedByDomain(db, session.sub),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(page.total / query.pageSize));
+  const currentPage = Math.min(query.page, totalPages);
+
+  const html = renderDomainPanel({
+    domains: page.rows.map((d) => ({
+      domain: d.domain,
+      grade: d.last_grade ?? "—",
+      frequency: d.scan_frequency,
+      lastScanned: d.last_scanned_at
+        ? new Date(d.last_scanned_at * 1000).toLocaleDateString()
+        : null,
+      isFree: d.is_free === 1,
+      unacknowledgedAlerts: unackCounts.get(d.id) ?? 0,
+    })),
+    controls: {
+      search: query.search,
+      grade: query.grade,
+      frequency: query.frequency,
+      sort: query.sort,
+      direction: query.direction,
+      page: currentPage,
+      pageSize: query.pageSize,
+      totalPages,
+      total: page.total,
+    },
+  });
+
+  // no-store keeps a CDN from caching one user's domain list and serving it
+  // to another. The route is auth-required, but belt-and-suspenders.
+  return c.html(html, 200, { "Cache-Control": "no-store" });
+});
+
 dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
@@ -114,9 +333,20 @@ dashboardRoutes.post("/alerts/:id/acknowledge", async (c) => {
 // Add-domain form. Simple GET → form; POST → validate + insert.
 // `/domain/add` is matched before `/domain/:domain` because Hono picks routes
 // in registration order for literal-vs-param collisions.
-dashboardRoutes.get("/domain/add", (c) => {
+dashboardRoutes.get("/domain/add", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
-  return c.html(renderAddDomainPage({ email: session.email, error: null }));
+  const db = (c.env as { DB: D1Database }).DB;
+  const [plan, current] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsByUser(db, session.sub),
+  ]);
+  return c.html(
+    renderAddDomainPage({
+      email: session.email,
+      error: null,
+      usage: { plan, current, cap: watchlistCapForPlan(plan) },
+    }),
+  );
 });
 
 dashboardRoutes.post("/domain/add", async (c) => {
@@ -124,23 +354,42 @@ dashboardRoutes.post("/domain/add", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const body = await c.req.parseBody();
   const normalized = normalizeDomain(body.domain as string | undefined);
+  const [plan, currentCount] = await Promise.all([
+    getPlanForUser(db, session.sub),
+    countDomainsByUser(db, session.sub),
+  ]);
+  const cap = watchlistCapForPlan(plan);
+  const usage = { plan, current: currentCount, cap };
   if (!normalized) {
     return c.html(
       renderAddDomainPage({
         email: session.email,
         error: "Enter a valid domain (e.g. example.com).",
+        usage,
       }),
       400,
     );
   }
 
   // Prevent duplicates per-user cleanly rather than surfacing the raw
-  // UNIQUE(user_id, domain) constraint violation from D1.
+  // UNIQUE(user_id, domain) constraint violation from D1. Re-submits
+  // bypass the cap check below — they don't consume a new slot.
   const existing = await getDomainByUserAndName(db, session.sub, normalized);
   if (existing) {
     return c.redirect(
       `/dashboard/domain/${encodeURIComponent(normalized)}`,
       303,
+    );
+  }
+
+  if (currentCount >= cap) {
+    const error =
+      plan === "pro"
+        ? `You've reached the Pro plan limit of ${cap} domains. Email support@dmarc.mx if you need more.`
+        : `Free plan limit reached (${cap} domains). Upgrade to Pro for up to ${PRO_WATCHLIST_CAP}.`;
+    return c.html(
+      renderAddDomainPage({ email: session.email, error, usage }),
+      400,
     );
   }
 
@@ -200,6 +449,7 @@ dashboardRoutes.post("/bulk", async (c) => {
     db,
     userId: session.sub,
     rawDomains: lines,
+    watchlistCap: watchlistCapForPlan(plan),
   });
   if (isCapExceeded(outcome)) {
     return c.html(
@@ -215,6 +465,10 @@ dashboardRoutes.post("/bulk", async (c) => {
       400,
     );
   }
+  c.executionCtx.waitUntil(
+    fireBulkScanWebhooks(db, session.sub, outcome.results, "dashboard"),
+  );
+
   return c.html(
     renderBulkScanPage({
       email: session.email,
@@ -312,6 +566,15 @@ dashboardRoutes.post("/domain/:domain/scan", async (c) => {
     protocolResults: result.protocols,
   });
 
+  c.executionCtx.waitUntil(
+    fireScanCompletedWebhook(db, session.sub, {
+      domain: owned.domain,
+      grade: result.grade,
+      scanId: owned.id,
+      trigger: "dashboard",
+    }),
+  );
+
   return c.redirect(`/dashboard/domain/${encodeURIComponent(domainName)}`, 303);
 });
 
@@ -336,19 +599,48 @@ dashboardRoutes.get("/settings", async (c) => {
     return c.redirect("/auth/logout");
   }
   const webhook = await db
-    .prepare("SELECT url FROM webhooks WHERE user_id = ?")
+    .prepare("SELECT url, format FROM webhooks WHERE user_id = ?")
     .bind(session.sub)
-    .first<{ url: string }>();
+    .first<{ url: string; format: WebhookFormat }>();
   const plan = await getPlanForUser(db, session.sub);
   const env = c.env as { STRIPE_SECRET_KEY?: string };
+  const deliveries = await getRecentDeliveriesForUser(db, session.sub, 10);
+  const testParam = c.req.query("test");
+  let testFlash: {
+    ok: boolean;
+    statusCode: number | null;
+    error: string | null;
+  } | null = null;
+  if (testParam === "ok" || testParam === "fail") {
+    // Latest delivery row for this user is always the test we just ran (POST
+    // /webhook/test always inserts one). Pull it back so the flash carries the
+    // real status code without us needing to round-trip query params.
+    const latest = deliveries[0] ?? null;
+    if (latest) {
+      testFlash = {
+        ok: latest.ok === 1,
+        statusCode: latest.status_code,
+        error: latest.error,
+      };
+    }
+  }
   return c.html(
     renderSettingsPage({
       email: user.email,
       webhookUrl: webhook?.url ?? null,
+      webhookFormat: webhook?.format ?? "raw",
       plan,
       billingEnabled: Boolean(env.STRIPE_SECRET_KEY),
       emailAlertsEnabled: user.email_alerts_enabled === 1,
       showRetirementBanner: user.api_key_retirement_acknowledged_at === null,
+      recentDeliveries: deliveries.map((row) => ({
+        eventType: row.event_type,
+        ok: row.ok === 1,
+        statusCode: row.status_code,
+        error: row.error,
+        attemptedAt: row.attempted_at,
+      })),
+      testFlash,
     }),
   );
 });
@@ -434,7 +726,26 @@ dashboardRoutes.post("/settings/api-keys/revoke", async (c) => {
   return c.redirect("/dashboard/settings/api-keys", 303);
 });
 
-// Save webhook URL
+// Fires a synthetic `webhook.test` event through the dispatcher so the user
+// can verify their receiver + signing without waiting for a real scan. Awaits
+// the result (rather than waitUntil) so we can flash the outcome on redirect.
+dashboardRoutes.post("/settings/webhook/test", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const result = await dispatchWebhook(db, session.sub, {
+    type: "webhook.test",
+    data: { message: "Hello from dmarcheck" },
+  });
+  if (!result) {
+    return c.redirect("/dashboard/settings");
+  }
+  return c.redirect(
+    `/dashboard/settings?test=${result.ok ? "ok" : "fail"}`,
+    303,
+  );
+});
+
+// Save webhook URL + format
 dashboardRoutes.post("/settings/webhook", async (c) => {
   const session = c.get("user" as never) as SessionPayload;
   const db = (c.env as { DB: D1Database }).DB;
@@ -451,20 +762,33 @@ dashboardRoutes.post("/settings/webhook", async (c) => {
     return c.redirect("/dashboard/settings");
   }
 
+  // Missing `format` (older submissions) means the legacy signed-JSON path.
+  // Unknown values are rejected with a no-save redirect to match the URL
+  // validation above — silent coercion would hide typos in the receiver UI.
+  const rawFormat = body.format;
+  const formatCandidate =
+    typeof rawFormat === "string" && rawFormat !== "" ? rawFormat : "raw";
+  if (!isWebhookFormat(formatCandidate)) {
+    return c.redirect("/dashboard/settings");
+  }
+  const format: WebhookFormat = formatCandidate;
+
   const existing = await db
     .prepare("SELECT id FROM webhooks WHERE user_id = ?")
     .bind(session.sub)
     .first<{ id: number }>();
   if (existing) {
     await db
-      .prepare("UPDATE webhooks SET url = ? WHERE user_id = ?")
-      .bind(url, session.sub)
+      .prepare("UPDATE webhooks SET url = ?, format = ? WHERE user_id = ?")
+      .bind(url, format, session.sub)
       .run();
   } else {
     const secret = crypto.randomUUID();
     await db
-      .prepare("INSERT INTO webhooks (user_id, url, secret) VALUES (?, ?, ?)")
-      .bind(session.sub, url, secret)
+      .prepare(
+        "INSERT INTO webhooks (user_id, url, secret, format) VALUES (?, ?, ?, ?)",
+      )
+      .bind(session.sub, url, secret, format)
       .run();
   }
   return c.redirect("/dashboard/settings");
