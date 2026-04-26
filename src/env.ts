@@ -21,4 +21,9 @@ export interface Env {
   // but lives here so self-host forks don't accidentally ship data to the
   // hosted tier's dashboard.
   CF_ANALYTICS_TOKEN?: string;
+  // Set to "1" on the staging worker via wrangler.toml `[env.staging.vars]`.
+  // Toggles a STAGING banner + noindex meta on every HTML response, returns
+  // Disallow: / from /robots.txt, and tags Sentry events with
+  // environment=staging at sample rate 1.0.
+  IS_STAGING?: string;
 }
