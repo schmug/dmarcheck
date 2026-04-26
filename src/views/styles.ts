@@ -382,6 +382,9 @@ h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .card-body { padding: 0 20px 20px; border-top: 1px solid var(--clr-border); display: none; }
 .card.expanded .card-body { display: block; }
 .card.expanded .card-chevron { transform: rotate(90deg); }
+.card-learn-link { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--clr-border); font-size: 0.85rem; }
+.card-learn-link a { color: var(--clr-text-dim); text-decoration: underline; text-underline-offset: 2px; }
+.card-learn-link a:hover { color: var(--clr-accent); }
 
 /* Tag grid */
 .tag-grid {
@@ -712,6 +715,8 @@ h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .rubric-protocol { padding: 10px 0; border-bottom: 1px solid var(--clr-border-subtle); }
 .rubric-protocol:last-child { border-bottom: none; }
 .rubric-protocol h3 { font-size: 0.9rem; font-weight: 600; color: var(--clr-accent); margin-bottom: 4px; }
+.rubric-protocol h3 a { color: inherit; text-decoration: none; }
+.rubric-protocol h3 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .rubric-protocol p { font-size: 0.82rem; color: var(--clr-text-muted); line-height: 1.5; }
 .rubric-cta {
   display: inline-block; padding: 10px 24px; background: var(--clr-accent); color: var(--clr-on-accent);
