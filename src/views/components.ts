@@ -210,14 +210,16 @@ export function tagGrid(
   tooltips: Record<string, string> = DMARC_TOOLTIPS,
 ): string {
   if (!tags) return "";
-  const rows = Object.entries(tags)
-    .map(([key, value]) => {
-      const tip = tooltips[key]
-        ? `<span class="tooltip" tabindex="0" aria-label="${esc(key)}: ${esc(tooltips[key])}">${esc(key)}<span class="tooltip-text" aria-hidden="true">${esc(tooltips[key])}</span></span>`
-        : esc(key);
-      return `<span class="tag-name">${tip}</span><span class="tag-value">${esc(value)}</span>`;
-    })
-    .join("");
+  let rows = "";
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().map()
+  // Reduces GC pressure by avoiding array allocations on hot rendering paths
+  for (const key in tags) {
+    const value = tags[key];
+    const tip = tooltips[key]
+      ? `<span class="tooltip" tabindex="0" aria-label="${esc(key)}: ${esc(tooltips[key])}">${esc(key)}<span class="tooltip-text" aria-hidden="true">${esc(tooltips[key])}</span></span>`
+      : esc(key);
+    rows += `<span class="tag-name">${tip}</span><span class="tag-value">${esc(value)}</span>`;
+  }
   return `<div class="tag-grid">${rows}</div>`;
 }
 
@@ -227,7 +229,11 @@ export function protocolCard(
   subtitle: string,
   body: string,
   expanded = false,
+  learnSlug?: string,
 ): string {
+  const learnLink = learnSlug
+    ? `<div class="card-learn-link"><a href="/learn/${esc(learnSlug)}">Learn about ${esc(name)} &rarr;</a></div>`
+    : "";
   return `<div class="card${expanded ? " expanded" : ""}">
   <div class="card-header" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
     ${statusDot(status)}
@@ -235,7 +241,7 @@ export function protocolCard(
     <div class="card-subtitle">${esc(subtitle)}</div>
     <div class="card-chevron" aria-hidden="true">&#9654;</div>
   </div>
-  <div class="card-body">${body}</div>
+  <div class="card-body">${body}${learnLink}</div>
 </div>`;
 }
 
@@ -300,28 +306,29 @@ export function lookupCounter(used: number, limit: number): string {
 export function dkimSelectorGrid(
   selectors: Record<string, DkimSelectorResult>,
 ): string {
-  const found = Object.entries(selectors).filter(([, v]) => v.found);
-  const notFound = Object.entries(selectors).filter(([, v]) => !v.found);
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().filter().map()
+  // This single-pass approach avoids allocating and discarding multiple intermediate arrays
+  // (entries, found array, notFound array, mapped strings array) on the hot rendering path,
+  // significantly reducing GC pressure.
+  let foundItems = "";
+  let notFoundItems = "";
+  let notFoundCount = 0;
 
-  const foundItems = found
-    .map(
-      ([name, info]) =>
-        `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:var(--clr-text-dim);font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`,
-    )
-    .join("");
-
-  // Only show first 6 not-found to keep it manageable
-  const notFoundItems = notFound
-    .slice(0, 6)
-    .map(
-      ([name]) =>
-        `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:var(--clr-text-faint)">&#10007;</span> ${esc(name)}</div>`,
-    )
-    .join("");
+  for (const name in selectors) {
+    const info = selectors[name];
+    if (info.found) {
+      foundItems += `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:var(--clr-text-dim);font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`;
+    } else {
+      if (notFoundCount < 6) {
+        notFoundItems += `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:var(--clr-text-faint)">&#10007;</span> ${esc(name)}</div>`;
+      }
+      notFoundCount++;
+    }
+  }
 
   const extra =
-    notFound.length > 6
-      ? `<div class="selector-item selector-not-found" style="color:var(--clr-text-faint)">+${notFound.length - 6} more not found</div>`
+    notFoundCount > 6
+      ? `<div class="selector-item selector-not-found" style="color:var(--clr-text-faint)">+${notFoundCount - 6} more not found</div>`
       : "";
 
   return `<div class="selector-grid">${foundItems}${notFoundItems}${extra}</div>`;
@@ -381,12 +388,13 @@ export function scoreSnippet(result: ScanResult): string {
   ).search;
   const scoreUrl = `/check/score${selectors}`;
 
-  const dots = Object.entries(breakdown.protocolSummaries)
-    .map(
-      ([key, { status }]) =>
-        `<span class="snippet-proto"><span class="snippet-dot status-${status}"></span>${PROTO_LABELS[key] ?? key}</span>`,
-    )
-    .join("");
+  let dots = "";
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().map()
+  // Reduces GC pressure by avoiding array allocations on hot rendering paths
+  for (const key in breakdown.protocolSummaries) {
+    const status = breakdown.protocolSummaries[key].status;
+    dots += `<span class="snippet-proto"><span class="snippet-dot status-${status}"></span>${PROTO_LABELS[key] ?? key}</span>`;
+  }
 
   const tierClass =
     breakdown.tier === "F"
@@ -473,16 +481,17 @@ export function scoringFactorsTable(
 export function protocolContributionGrid(
   summaries: Record<string, { status: Status; summary: string }>,
 ): string {
-  const cells = Object.entries(summaries)
-    .map(
-      ([key, { status, summary }]) =>
-        `<div class="proto-cell">
+  let cells = "";
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().map()
+  // Reduces GC pressure by avoiding array allocations on hot rendering paths
+  for (const key in summaries) {
+    const { status, summary } = summaries[key];
+    cells += `<div class="proto-cell">
       <div class="snippet-dot status-${status}" style="margin:0 auto 6px"></div>
       <div class="proto-name">${esc(PROTO_LABELS[key] ?? key)}</div>
       <div class="proto-summary">${esc(summary)}</div>
-    </div>`,
-    )
-    .join("");
+    </div>`;
+  }
 
   return `<div class="bd-card">
   <div class="bd-card-title">Protocol contributions</div>

@@ -1,3 +1,4 @@
+import { constantTimeEqualHex, hmacSha256Hex } from "../shared/hmac.js";
 import type { BillingEnv } from "./feature-flag.js";
 
 // Minimal Stripe client built on the Workers Fetch API. We avoid the official
@@ -96,37 +97,6 @@ function parseSignatureHeader(header: string): ParsedSignature {
   return out;
 }
 
-async function hmacSha256Hex(secret: string, payload: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(payload),
-  );
-  return bytesToHex(new Uint8Array(sig));
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
-}
-
-function constantTimeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
 // Thin POST helper for Checkout / Portal / Customer calls.
 export async function stripeRequest<T>(
   env: BillingEnv,
@@ -190,6 +160,10 @@ export async function createCheckoutSession(
     customer: input.customerId,
     "line_items[0][price]": env.STRIPE_PRICE_ID_PRO,
     "line_items[0][quantity]": "1",
+    // Renders the "Add promotion code" link on the hosted Checkout page so
+    // operator-issued coupons (e.g. founder/free-Pro grants) can be redeemed
+    // without us minting one-off price IDs.
+    allow_promotion_codes: "true",
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     // Stripe copies this onto the created subscription; lets the webhook

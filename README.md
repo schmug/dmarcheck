@@ -17,6 +17,16 @@ Meet **DMarcus**, the @ creature who guards your inbox.
 
 **Live at [dmarc.mx](https://dmarc.mx)**
 
+## Three ways to use dmarcheck
+
+|  | Where | What you get |
+|---|---|---|
+| **Free scanner** | [dmarc.mx](https://dmarc.mx) | Unlimited on-demand scans, JSON API, 10 req/min per IP |
+| **Pro — $19/mo** | [dmarc.mx/pricing](https://dmarc.mx/pricing) | Nightly monitoring (25 domains), email alerts on grade drops, saved history, bulk scan, 60 req/hour API key |
+| **Self-host** | this repo | Clone, `wrangler deploy`, run your own. MIT-licensed. Pro features activate when you configure D1 / WorkOS / Stripe bindings — optional, see [below](#optional-paid-tier-env-vars). |
+
+The hosted tier at `dmarc.mx` exists for people who'd rather pay than run it. Everything is MIT and there is no crippled-OSS / paid-premium split.
+
 ## Features
 
 - **DMARC** — Policy parsing, validation, reporting URI checks
@@ -155,25 +165,27 @@ with `npx wrangler d1 migrations apply dmarcheck-db --remote`.
 
 ### Optional: paid-tier env vars
 
-The free scanner, dashboard, and API work without any of the following. They
-only activate on the hosted tier at `dmarc.mx`; self-host deploys can ignore
-them entirely. Set any of these as wrangler secrets (`wrangler secret put NAME`):
+These unlock the same Pro features the hosted tier at `dmarc.mx` offers — see the [three ways to use dmarcheck](#three-ways-to-use-dmarcheck) table up top. They're all optional: the free scanner, dashboard, and API work without any of them. Set any as wrangler secrets (`wrangler secret put NAME`):
 
 | Secret | Purpose |
 |--------|---------|
 | `STRIPE_SECRET_KEY` | Stripe API key for Checkout + Portal calls |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for the `/webhooks/stripe` endpoint |
 | `STRIPE_PRICE_ID_PRO` | Price ID for the Pro plan offered via Checkout |
+| `CF_ANALYTICS_TOKEN` | Cloudflare Web Analytics beacon token (32-char lowercase hex). Injects a cookieless beacon on public HTML pages; skipped on `/dashboard/*`, `/auth/*`, `/webhooks/*`. Leave unset to disable. |
 
-If any of the three are missing, `isBillingEnabled` returns false and all
+If any of the three Stripe secrets are missing, `isBillingEnabled` returns false and all
 paid-tier routes return 404. This keeps a fresh `wrangler deploy` working
-end-to-end for self-hosters who only want the free scanner.
+end-to-end for self-hosters who only want the free scanner. `CF_ANALYTICS_TOKEN`
+is independent — set it only if you want to send analytics to your own
+Cloudflare Web Analytics dashboard.
 
 ## Stack
 
 - [Hono](https://hono.dev) — lightweight web framework for Cloudflare Workers
 - TypeScript + `node:dns` via `nodejs_compat`
 - Rate limited via Cloudflare Cache API (no extra bindings needed)
+- Pro features (auth, billing, history, cron) use Cloudflare D1 + WorkOS + Stripe. The hosted tier at `dmarc.mx` runs on the same code and same stack — no private fork.
 
 ## License
 

@@ -1,7 +1,13 @@
-import { createDomain, getDomainByUserAndName } from "../db/domains.js";
+import {
+  countDomainsByUser,
+  createDomain,
+  findExistingDomainsForUser,
+  getDomainByUserAndName,
+} from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
 import { scan as defaultScan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
+import { PRO_WATCHLIST_CAP } from "../shared/limits.js";
 
 // Phase 4c — bulk scan core. Two callers (POST /api/bulk-scan with bearer
 // auth, POST /dashboard/bulk with session auth) share this logic; both must
@@ -46,6 +52,12 @@ export interface ProcessBulkScanInput {
   // Knobs for tests; defaults match the production caps above.
   inBandCap?: number;
   batchSize?: number;
+  // Plan-based watchlist cap. Net-new domains beyond `cap - currentCount`
+  // are returned as error rows tagged "Watchlist limit reached" rather than
+  // silently inserted. Re-submits of domains the user already owns don't
+  // consume slots. Defaults to PRO_WATCHLIST_CAP because both bulk callers
+  // are Pro-only.
+  watchlistCap?: number;
 }
 
 export interface BulkCapExceededError {
@@ -110,8 +122,36 @@ export async function processBulkScan(
     valid.push(normalized);
   }
 
-  const inBand = valid.slice(0, inBandCap);
-  const queued = valid.slice(inBandCap);
+  // Watchlist-cap enforcement. Pre-lookup which submitted domains the user
+  // already owns so a user near their cap can still re-scan tracked domains
+  // without seeing them rejected. Net-new domains past the remaining slots
+  // become error rows the caller surfaces row-by-row.
+  const cap = input.watchlistCap ?? PRO_WATCHLIST_CAP;
+  const currentCount = await countDomainsByUser(input.db, input.userId);
+  const existingSet = await findExistingDomainsForUser(
+    input.db,
+    input.userId,
+    valid,
+  );
+  const repeatDomains: string[] = [];
+  const newDomains: string[] = [];
+  for (const d of valid) {
+    if (existingSet.has(d)) repeatDomains.push(d);
+    else newDomains.push(d);
+  }
+  const remainingSlots = Math.max(0, cap - currentCount);
+  const acceptedNew = newDomains.slice(0, remainingSlots);
+  const capRejected: BulkResultEntry[] = newDomains
+    .slice(remainingSlots)
+    .map((d) => ({
+      domain: d,
+      status: "error",
+      error: "Watchlist limit reached",
+    }));
+  const accepted = [...repeatDomains, ...acceptedNew];
+
+  const inBand = accepted.slice(0, inBandCap);
+  const queued = accepted.slice(inBandCap);
 
   const inBandResults: BulkResultEntry[] = [];
   for (let i = 0; i < inBand.length; i += batchSize) {
@@ -148,14 +188,20 @@ export async function processBulkScan(
     }
   }
 
-  // Stable order: invalid first (so the user sees them), then in-band, then
-  // queued. This matches what the dashboard form will render top-to-bottom.
-  const results = [...invalidResults, ...inBandResults, ...queuedResults];
-  const accepted = results.filter(
+  // Stable order: invalid first (so the user sees them), then in-band,
+  // then queued, then cap-rejected last. This matches what the dashboard
+  // form will render top-to-bottom and keeps the over-cap rows together.
+  const results = [
+    ...invalidResults,
+    ...inBandResults,
+    ...queuedResults,
+    ...capRejected,
+  ];
+  const acceptedCount = results.filter(
     (r) => r.status === "scanned" || r.status === "queued",
   ).length;
-  const rejected = results.length - accepted;
-  return { accepted, rejected, results };
+  const rejectedCount = results.length - acceptedCount;
+  return { accepted: acceptedCount, rejected: rejectedCount, results };
 }
 
 async function scanOne(

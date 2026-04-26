@@ -5,6 +5,7 @@ import {
   deleteDomain,
   getDomainByUserAndName,
   getDomainsByUser,
+  listDomainsForUserPaged,
   updateLastScan,
 } from "../src/db/domains.js";
 
@@ -254,5 +255,328 @@ describe("db/domains", () => {
       expect(updated?.last_grade).toBe("A+");
       expect(updated?.last_scanned_at).toBe(1700001000);
     });
+  });
+});
+
+// Smarter mock for listDomainsForUserPaged that interprets the dynamic SQL
+// (filters/order-by/limit) instead of pattern-matching the whole string. Lives
+// here next to the tests so the coupling between the mock and the SQL the
+// function emits is obvious.
+function makePagedMock(seed: Domain[]): D1Database {
+  const data: Domain[] = seed.map((d) => ({ ...d }));
+
+  const gradeRank = (g: string | null): number => {
+    const ranks: Record<string, number> = {
+      "A+": 1,
+      A: 2,
+      "A-": 3,
+      "B+": 4,
+      B: 5,
+      "B-": 6,
+      "C+": 7,
+      C: 8,
+      "C-": 9,
+      "D+": 10,
+      D: 11,
+      "D-": 12,
+      F: 13,
+    };
+    if (g === null) return 99;
+    return ranks[g] ?? 99;
+  };
+
+  const applyFilter = (sql: string, params: unknown[]): Domain[] => {
+    let cursor = 0;
+    const userId = params[cursor++] as string;
+    let rows = data.filter((d) => d.user_id === userId);
+    // Mirror SQLite's runtime check: ESCAPE expression must be a single
+    // character. Catches the JS-string-literal trap where '\\\\' compiles to
+    // two backslashes in the actual SQL and D1 rejects the whole query.
+    const escapeMatch = sql.match(/ESCAPE '([^']*)'/);
+    if (escapeMatch && escapeMatch[1].length !== 1) {
+      throw new Error(
+        `D1_ERROR: ESCAPE expression must be a single character: SQLITE_ERROR (got ${JSON.stringify(escapeMatch[1])})`,
+      );
+    }
+    if (/LOWER\(domain\) LIKE \?/i.test(sql)) {
+      const like = params[cursor++] as string;
+      const inner = like.slice(1, -1).replace(/\\([\\%_])/g, "$1");
+      rows = rows.filter((d) => d.domain.toLowerCase().includes(inner));
+    }
+    if (/last_grade IS NULL/i.test(sql)) {
+      rows = rows.filter((d) => d.last_grade === null);
+    } else if (/last_grade = \?/i.test(sql)) {
+      const grade = params[cursor++] as string;
+      rows = rows.filter((d) => d.last_grade === grade);
+    }
+    if (/scan_frequency = \?/i.test(sql)) {
+      const freq = params[cursor++] as string;
+      rows = rows.filter((d) => d.scan_frequency === freq);
+    }
+    return rows;
+  };
+
+  const applyOrder = (sql: string, rows: Domain[]): Domain[] => {
+    const orderMatch = sql.match(/ORDER BY ([\s\S]+?) LIMIT/i);
+    if (!orderMatch) return rows;
+    const orderBy = orderMatch[1].trim();
+    const desc = / DESC/i.test(orderBy);
+    const sorted = [...rows];
+    if (/CASE last_grade/i.test(orderBy)) {
+      sorted.sort((a, b) => {
+        const cmp = gradeRank(a.last_grade) - gradeRank(b.last_grade);
+        return cmp !== 0
+          ? desc
+            ? -cmp
+            : cmp
+          : a.domain.localeCompare(b.domain);
+      });
+    } else if (/COALESCE\(last_scanned_at/i.test(orderBy)) {
+      sorted.sort((a, b) => {
+        const ax = a.last_scanned_at ?? 0;
+        const bx = b.last_scanned_at ?? 0;
+        const cmp = ax - bx;
+        return cmp !== 0
+          ? desc
+            ? -cmp
+            : cmp
+          : a.domain.localeCompare(b.domain);
+      });
+    } else if (/created_at/i.test(orderBy)) {
+      sorted.sort((a, b) => {
+        const cmp = a.created_at - b.created_at;
+        return cmp !== 0
+          ? desc
+            ? -cmp
+            : cmp
+          : a.domain.localeCompare(b.domain);
+      });
+    } else {
+      sorted.sort((a, b) =>
+        desc
+          ? b.domain.localeCompare(a.domain)
+          : a.domain.localeCompare(b.domain),
+      );
+    }
+    return sorted;
+  };
+
+  const prepare = (sql: string) => ({
+    bind: (...params: unknown[]) => ({
+      all: async <T>(): Promise<{ results: T[] }> => {
+        const filtered = applyFilter(sql, params);
+        const ordered = applyOrder(sql, filtered);
+        const limit = params[params.length - 2] as number;
+        const offset = params[params.length - 1] as number;
+        return { results: ordered.slice(offset, offset + limit) as T[] };
+      },
+      first: async <T>(): Promise<T | null> => {
+        if (/^\s*SELECT COUNT/i.test(sql)) {
+          const filtered = applyFilter(sql, params);
+          return { n: filtered.length } as T;
+        }
+        return null;
+      },
+    }),
+  });
+
+  return { prepare } as unknown as D1Database;
+}
+
+describe("listDomainsForUserPaged", () => {
+  const baseDomains: Domain[] = [
+    {
+      id: 1,
+      user_id: "u1",
+      domain: "alpha.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700000000,
+      last_grade: "A+",
+      created_at: 1690000000,
+    },
+    {
+      id: 2,
+      user_id: "u1",
+      domain: "beta.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700050000,
+      last_grade: "F",
+      created_at: 1690001000,
+    },
+    {
+      id: 3,
+      user_id: "u1",
+      domain: "gamma.example.com",
+      is_free: 0,
+      scan_frequency: "monthly",
+      last_scanned_at: null,
+      last_grade: null,
+      created_at: 1690002000,
+    },
+    {
+      id: 4,
+      user_id: "u1",
+      domain: "delta.io",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700100000,
+      last_grade: "B",
+      created_at: 1690003000,
+    },
+    {
+      id: 5,
+      user_id: "u2",
+      domain: "stranger.com",
+      is_free: 0,
+      scan_frequency: "weekly",
+      last_scanned_at: 1700000000,
+      last_grade: "A",
+      created_at: 1690000500,
+    },
+  ];
+
+  it("returns rows + total scoped to the user", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(4);
+    expect(page.rows.map((r) => r.domain)).toEqual([
+      "alpha.com",
+      "beta.com",
+      "delta.io",
+      "gamma.example.com",
+    ]);
+  });
+
+  it("filters by case-insensitive domain substring", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      search: "EXAMPLE",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.rows[0].domain).toBe("gamma.example.com");
+  });
+
+  it("filters by exact grade", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      grade: "F",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.rows[0].domain).toBe("beta.com");
+  });
+
+  it("filters by 'ungraded' (NULL last_grade)", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      grade: "ungraded",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.rows[0].domain).toBe("gamma.example.com");
+  });
+
+  it("filters by frequency", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      frequency: "monthly",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.rows[0].domain).toBe("gamma.example.com");
+  });
+
+  it("sorts by grade ascending (A+ first, ungraded last)", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      sort: "grade",
+      direction: "asc",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.rows.map((r) => r.last_grade)).toEqual(["A+", "B", "F", null]);
+  });
+
+  it("sorts by last_scanned descending (most recent first)", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      sort: "last_scanned",
+      direction: "desc",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.rows.map((r) => r.domain)).toEqual([
+      "delta.io",
+      "beta.com",
+      "alpha.com",
+      "gamma.example.com",
+    ]);
+  });
+
+  it("paginates via limit/offset while reporting full total", async () => {
+    const db = makePagedMock(baseDomains);
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      limit: 2,
+      offset: 2,
+    });
+    expect(page.total).toBe(4);
+    expect(page.rows.map((r) => r.domain)).toEqual([
+      "delta.io",
+      "gamma.example.com",
+    ]);
+  });
+
+  it("LIKE wildcards from user input are escaped (no '%' bypass)", async () => {
+    const evil: Domain[] = [
+      {
+        id: 10,
+        user_id: "u1",
+        domain: "literal100pct.com",
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1690000000,
+      },
+      {
+        id: 11,
+        user_id: "u1",
+        domain: "other.com",
+        is_free: 0,
+        scan_frequency: "weekly",
+        last_scanned_at: null,
+        last_grade: null,
+        created_at: 1690000000,
+      },
+    ];
+    const db = makePagedMock(evil);
+    // Searching for the literal "%" (which would otherwise be a wildcard) must
+    // only match domains containing a literal '%' character — there are none.
+    const page = await listDomainsForUserPaged(db, {
+      userId: "u1",
+      search: "%",
+      limit: 25,
+      offset: 0,
+    });
+    expect(page.total).toBe(0);
+    expect(page.rows).toHaveLength(0);
   });
 });

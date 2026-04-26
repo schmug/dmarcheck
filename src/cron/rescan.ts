@@ -9,6 +9,7 @@ import { recordAlert } from "../db/alerts.js";
 import { type Domain, getDueDomains } from "../db/domains.js";
 import { recordScan } from "../db/scans.js";
 import { scan as defaultScan } from "../orchestrator.js";
+import { fireScanCompletedWebhook } from "../webhooks/triggers.js";
 
 export interface RescanResult {
   scanned: number;
@@ -92,6 +93,13 @@ async function rescanOne(
     scoreFactors: result.breakdown.factors,
     protocolResults: result.protocols,
     scannedAt: deps.now,
+  });
+
+  await fireScanCompletedWebhook(deps.db, domain.user_id, {
+    domain: domain.domain,
+    grade: result.grade,
+    scanId: domain.id,
+    trigger: "cron",
   });
 
   const alerts: AlertPayload[] = [];
