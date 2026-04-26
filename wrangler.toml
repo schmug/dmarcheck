@@ -41,7 +41,7 @@ allowed_sender_addresses = ["alerts@dmarc.mx"]
 # then `wrangler deploy` for prod. See README "Deployment" for the
 # production-branch deploy-command string.
 [env.staging]
-name = "dmarcheck-staging"
+name = "dmarcheck"
 routes = [
   { pattern = "staging.dmarc.mx", custom_domain = true },
 ]
