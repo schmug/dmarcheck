@@ -306,28 +306,29 @@ export function lookupCounter(used: number, limit: number): string {
 export function dkimSelectorGrid(
   selectors: Record<string, DkimSelectorResult>,
 ): string {
-  const found = Object.entries(selectors).filter(([, v]) => v.found);
-  const notFound = Object.entries(selectors).filter(([, v]) => !v.found);
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().filter().map()
+  // This single-pass approach avoids allocating and discarding multiple intermediate arrays
+  // (entries, found array, notFound array, mapped strings array) on the hot rendering path,
+  // significantly reducing GC pressure.
+  let foundItems = "";
+  let notFoundItems = "";
+  let notFoundCount = 0;
 
-  const foundItems = found
-    .map(
-      ([name, info]) =>
-        `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:var(--clr-text-dim);font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`,
-    )
-    .join("");
-
-  // Only show first 6 not-found to keep it manageable
-  const notFoundItems = notFound
-    .slice(0, 6)
-    .map(
-      ([name]) =>
-        `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:var(--clr-text-faint)">&#10007;</span> ${esc(name)}</div>`,
-    )
-    .join("");
+  for (const name in selectors) {
+    const info = selectors[name];
+    if (info.found) {
+      foundItems += `<div class="selector-item selector-found"><span class="icon-pass" style="font-size:0.7rem">&#10003;</span> ${esc(name)}${info.key_bits ? ` <span style="color:var(--clr-text-dim);font-size:0.7rem">${info.key_bits}bit</span>` : ""}</div>`;
+    } else {
+      if (notFoundCount < 6) {
+        notFoundItems += `<div class="selector-item selector-not-found"><span style="font-size:0.7rem;color:var(--clr-text-faint)">&#10007;</span> ${esc(name)}</div>`;
+      }
+      notFoundCount++;
+    }
+  }
 
   const extra =
-    notFound.length > 6
-      ? `<div class="selector-item selector-not-found" style="color:var(--clr-text-faint)">+${notFound.length - 6} more not found</div>`
+    notFoundCount > 6
+      ? `<div class="selector-item selector-not-found" style="color:var(--clr-text-faint)">+${notFoundCount - 6} more not found</div>`
       : "";
 
   return `<div class="selector-grid">${foundItems}${notFoundItems}${extra}</div>`;
