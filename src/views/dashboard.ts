@@ -1345,7 +1345,7 @@ ${error ? `<div class="bulk-error">${esc(error)}</div>` : ""}`;
     : "";
 
   const body = `<h1 class="dashboard-title">Bulk Scan</h1>
-<p class="bulk-summary">
+<p id="bulk-help" class="bulk-summary">
   Paste up to <strong>${totalCap}</strong> domains (one per line, or comma-separated). The first
   <strong>${inBandCap}</strong> will be scanned immediately; the rest queue for the next cron pass.
 </p>
@@ -1361,6 +1361,7 @@ ${errorBlock}
     autocorrect="off"
     spellcheck="false"
     required
+    aria-describedby="bulk-help"
   ></textarea>
   <div class="action-row">
     <button type="submit" class="btn">Scan</button>
@@ -1675,10 +1676,10 @@ ${retirementBanner}
 ${justCreatedBanner}
 <div class="settings-section">
   <h2>Generate a new key</h2>
-  <p>Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
+  <p id="api-keys-help">Bearer tokens authenticate <code>/api/check</code> requests. Free and Pro plans share key generation; Pro users get higher per-key rate limits.</p>
   <form method="POST" action="/dashboard/settings/api-keys/generate">
     <label for="api-key-name" style="display:block;font-size:0.875rem;color:var(--clr-text-muted);margin-bottom:0.4rem">Label (optional)</label>
-    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60" autocapitalize="none" autocorrect="off" spellcheck="false">
+    <input id="api-key-name" class="settings-input" type="text" name="name" placeholder="ci-pipeline" maxlength="60" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="api-keys-help">
     <div class="action-row">
       <button type="submit" class="btn">Generate API Key</button>
       <a href="/dashboard/settings" class="btn btn-secondary">Back to Settings</a>
