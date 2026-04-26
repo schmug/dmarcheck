@@ -37,7 +37,6 @@ import { recordScan } from "./db/scans.js";
 import { getPlanForUser } from "./db/subscriptions.js";
 import { setEmailAlertsEnabled } from "./db/users.js";
 import type { Env } from "./env.js";
-import { isStaging, stagingMarker } from "./middleware/staging-marker.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
 import {
@@ -104,10 +103,6 @@ import { fireBulkScanWebhooks } from "./webhooks/triggers.js";
 // Runtime Workers use the Sentry-wrapped default export below, which adds
 // cron (`scheduled`) alongside `fetch`.
 export const app = new Hono<{ Bindings: Env }>();
-
-// Staging marker — runs first so the noindex/banner injection wraps the
-// final HTML response after every other middleware has set headers.
-app.use("*", stagingMarker);
 
 // Set Sentry scope context for every request
 app.use("*", async (c, next) => {
@@ -716,14 +711,9 @@ app.get("/docs/api", (c) => {
 
 // Crawl guidance for search engines. Block the API namespace (Google was
 // logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
-// noise) and point to the sitemap. The staging worker serves a Disallow-all
-// instead so the non-public URL doesn't get indexed if it ever leaks.
+// noise) and point to the sitemap.
 app.get("/robots.txt", (c) => {
-  const body = isStaging(c.env)
-    ? `User-agent: *
-Disallow: /
-`
-    : `User-agent: *
+  const body = `User-agent: *
 Allow: /
 Disallow: /api/
 Sitemap: https://dmarc.mx/sitemap.xml
@@ -1240,20 +1230,14 @@ const handler: ExportedHandler<Env> = {
   scheduled,
 };
 
-export default Sentry.withSentry<Env>((env) => {
-  const staging = env?.IS_STAGING === "1";
-  return {
+export default Sentry.withSentry<Env>(
+  (env) => ({
     dsn: env?.SENTRY_DSN ?? "",
-    // Staging gets its own bucket so prod alerts aren't polluted by
-    // pre-promotion noise. Sample rate cranked to 1.0 — every staging
-    // event is interesting.
-    environment: staging ? "staging" : "production",
-    tracesSampler: staging
-      ? () => 1.0
-      : (samplingContext: { parentSampled?: boolean }) => {
-          if (samplingContext.parentSampled !== undefined)
-            return samplingContext.parentSampled;
-          return 0.3;
-        },
-  };
-}, handler);
+    tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
+      if (samplingContext.parentSampled !== undefined)
+        return samplingContext.parentSampled;
+      return 0.3;
+    },
+  }),
+  handler,
+);

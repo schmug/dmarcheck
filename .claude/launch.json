@@ -6,12 +6,6 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 8790
-    },
-    {
-      "name": "wrangler-dev-staging",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["wrangler", "dev", "--env", "staging", "--port", "8792", "--local"],
-      "port": 8792
     }
   ]
 }

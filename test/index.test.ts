@@ -696,16 +696,6 @@ describe("SEO routes", () => {
     const body = await res.text();
     expect(body).not.toContain("example.com");
   });
-
-  it("staging /robots.txt returns Disallow-all and no sitemap pointer", async () => {
-    const res = await app.request("/robots.txt", {}, { IS_STAGING: "1" });
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("User-agent: *");
-    expect(body).toContain("Disallow: /");
-    expect(body).not.toContain("Allow:");
-    expect(body).not.toContain("Sitemap:");
-  });
 });
 
 describe("/check meta tags and noindex gating", () => {
