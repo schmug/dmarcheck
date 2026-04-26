@@ -309,20 +309,33 @@ function mtaStsFactors(mta_sts: MtaStsResult): ScoringFactor[] {
 
 function dkimFactors(dkim: DkimResult): ScoringFactor[] {
   const factors: ScoringFactor[] = [];
-  const found = Object.entries(dkim.selectors).filter(([, s]) => s.found);
-  const weakKeys = found.filter(([, s]) => s.key_bits && s.key_bits < 2048);
-  if (weakKeys.length > 0) {
-    const names = weakKeys.map(([n]) => n).join(", ");
+
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().filter()
+  // Reduces GC pressure on hot paths by avoiding array allocations for entries
+  let foundCount = 0;
+  const weakKeyNames: string[] = [];
+
+  for (const name in dkim.selectors) {
+    const s = dkim.selectors[name];
+    if (s.found) {
+      foundCount++;
+      if (s.key_bits && s.key_bits < 2048) {
+        weakKeyNames.push(name);
+      }
+    }
+  }
+
+  if (weakKeyNames.length > 0) {
     factors.push({
       protocol: "dkim",
-      label: `Key under 2048 bits (${names})`,
+      label: `Key under 2048 bits (${weakKeyNames.join(", ")})`,
       effect: -1,
     });
   }
-  if (found.length >= 2) {
+  if (foundCount >= 2) {
     factors.push({
       protocol: "dkim",
-      label: `${found.length} selectors found (rotation ready)`,
+      label: `${foundCount} selectors found (rotation ready)`,
       effect: +1,
     });
   }
@@ -479,19 +492,27 @@ function generateRecommendations(
   }
 
   // DKIM improvements
-  const foundSelectors = Object.entries(dkim.selectors).filter(
-    ([, s]) => s.found,
-  );
-  const weakKeys = foundSelectors.filter(
-    ([, s]) => s.key_bits && s.key_bits < 2048,
-  );
-  if (weakKeys.length > 0) {
-    const names = weakKeys.map(([n]) => n).join(", ");
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().filter()
+  // Reduces GC pressure on hot paths by avoiding array allocations for entries
+  const weakKeyNames: string[] = [];
+  let foundSelectorCount = 0;
+  for (const name in dkim.selectors) {
+    const s = dkim.selectors[name];
+    if (s.found) {
+      foundSelectorCount++;
+      if (s.key_bits && s.key_bits < 2048) {
+        weakKeyNames.push(name);
+      }
+    }
+  }
+
+  if (weakKeyNames.length > 0) {
+    const names = weakKeyNames.join(", ");
     recs.push({
       priority: 2,
       protocol: "dkim",
-      title: `Upgrade DKIM key${weakKeys.length > 1 ? "s" : ""} to 2048 bits`,
-      description: `The ${names} selector${weakKeys.length > 1 ? "s use" : " uses"} a key under 2048 bits. Rotate to a 2048-bit or larger key.`,
+      title: `Upgrade DKIM key${weakKeyNames.length > 1 ? "s" : ""} to 2048 bits`,
+      description: `The ${names} selector${weakKeyNames.length > 1 ? "s use" : " uses"} a key under 2048 bits. Rotate to a 2048-bit or larger key.`,
       impact: "Removes a scoring penalty",
     });
   }
@@ -549,7 +570,7 @@ function generateRecommendations(
   }
 
   // DKIM rotation
-  if (hasDkim && foundSelectors.length < 2) {
+  if (hasDkim && foundSelectorCount < 2) {
     recs.push({
       priority: 3,
       protocol: "dkim",

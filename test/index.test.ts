@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import app, { normalizeDomain, parseSelectors } from "../src/index.js";
+import { app, normalizeDomain, parseSelectors } from "../src/index.js";
 import { _memoryStore } from "../src/rate-limit.js";
 
 vi.mock("../src/cache.js", () => ({
@@ -470,6 +470,19 @@ describe("favicon and icon routes", () => {
     expect(res.headers.get("Content-Type")).toBe("image/png");
   });
 
+  it("serves Open Graph PNG", async () => {
+    const res = await app.request("/og-image.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    const body = await res.arrayBuffer();
+    expect(body.byteLength).toBeGreaterThan(0);
+    const sig = new Uint8Array(body.slice(0, 8));
+    expect(Array.from(sig)).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+  });
+
   it("still serves existing logo SVG unchanged", async () => {
     const res = await app.request("/logo.svg");
     expect(res.status).toBe(200);
@@ -504,7 +517,7 @@ describe("HTML head tags", () => {
     expect(html).toContain('<link rel="canonical" href="https://dmarc.mx/">');
     expect(html).toContain('<meta name="theme-color" content="#f97316">');
     expect(html).toContain(
-      '<meta name="twitter:image" content="https://dmarc.mx/og-image.svg">',
+      '<meta name="twitter:image" content="https://dmarc.mx/og-image.png">',
     );
     expect(html).toContain(
       '<meta property="og:url" content="https://dmarc.mx/">',
@@ -538,6 +551,52 @@ describe("HTML head tags", () => {
     expect(html).toContain('<dt><a href="/learn/dkim">DKIM</a></dt>');
     expect(html).toContain('<dt><a href="/learn/bimi">BIMI</a></dt>');
     expect(html).toContain('<dt><a href="/learn/mta-sts">MTA-STS</a></dt>');
+  });
+
+  it("/scoring cross-links each protocol heading to its /learn page", async () => {
+    const res = await app.request("/scoring");
+    const html = await res.text();
+    expect(html).toContain('<h3><a href="/learn/dmarc">DMARC</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/spf">SPF</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/dkim">DKIM</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/bimi">BIMI</a></h3>');
+    expect(html).toContain('<h3><a href="/learn/mta-sts">MTA-STS</a></h3>');
+  });
+
+  it("report cards cross-link each protocol to its /learn page", async () => {
+    const {
+      renderDmarcCard,
+      renderSpfCard,
+      renderDkimCard,
+      renderBimiCard,
+      renderMtaStsCard,
+    } = await import("../src/views/html.js");
+    const empty = { status: "fail" as const, validations: [] };
+    expect(renderDmarcCard({ ...empty, record: null, tags: null })).toContain(
+      '<div class="card-learn-link"><a href="/learn/dmarc">Learn about DMARC &rarr;</a></div>',
+    );
+    expect(
+      renderSpfCard({
+        ...empty,
+        record: null,
+        lookups_used: 0,
+        lookup_limit: 10,
+        include_tree: null,
+      }),
+    ).toContain(
+      '<div class="card-learn-link"><a href="/learn/spf">Learn about SPF &rarr;</a></div>',
+    );
+    expect(renderDkimCard({ ...empty, selectors: {} })).toContain(
+      '<div class="card-learn-link"><a href="/learn/dkim">Learn about DKIM &rarr;</a></div>',
+    );
+    expect(renderBimiCard({ ...empty, record: null, tags: null })).toContain(
+      '<div class="card-learn-link"><a href="/learn/bimi">Learn about BIMI &rarr;</a></div>',
+    );
+    expect(
+      renderMtaStsCard({ ...empty, dns_record: null, policy: null }),
+    ).toContain(
+      '<div class="card-learn-link"><a href="/learn/mta-sts">Learn about MTA-STS &rarr;</a></div>',
+    );
   });
 
   it("landing page embeds WebSite + SoftwareApplication JSON-LD", async () => {
@@ -610,6 +669,63 @@ describe("SEO routes", () => {
   it("/sitemap.xml is NOT marked noindex (must stay crawlable)", async () => {
     const res = await app.request("/sitemap.xml");
     expect(res.headers.get("X-Robots-Tag")).toBeNull();
+  });
+
+  it("sitemap includes the curated /check?domain=… allowlist", async () => {
+    const res = await app.request("/sitemap.xml");
+    const body = await res.text();
+    // Spot-check a few representative entries from each category — full
+    // round-trip against listIndexableScanDomains() is in the unit tests.
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=gmail.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=outlook.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=github.com</loc>",
+    );
+    expect(body).toContain(
+      "<loc>https://dmarc.mx/check?domain=stripe.com</loc>",
+    );
+    expect(body).toContain("<loc>https://dmarc.mx/check?domain=dmarc.mx</loc>");
+  });
+
+  it("sitemap excludes domains not in the allowlist", async () => {
+    const res = await app.request("/sitemap.xml");
+    const body = await res.text();
+    expect(body).not.toContain("example.com");
+  });
+});
+
+describe("/check meta tags and noindex gating", () => {
+  it("emits the free + open-source description for an allowlisted domain", async () => {
+    const res = await app.request("/check?domain=github.com");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      'content="Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for github.com. See the current grade, records, and fixes. No signup, no email required."',
+    );
+  });
+
+  it("emits the new title format for the streaming loading page", async () => {
+    const res = await app.request("/check?domain=github.com");
+    const html = await res.text();
+    expect(html).toContain(
+      "<title>github.com DMARC report — Free check | dmarcheck</title>",
+    );
+  });
+
+  it("does NOT mark allowlisted scan pages noindex", async () => {
+    const res = await app.request("/check?domain=github.com");
+    const html = await res.text();
+    expect(html).not.toContain('name="robots" content="noindex,follow"');
+  });
+
+  it("marks non-allowlisted scan pages noindex,follow", async () => {
+    const res = await app.request("/check?domain=example.com");
+    const html = await res.text();
+    expect(html).toContain('<meta name="robots" content="noindex,follow">');
   });
 });
 

@@ -2,6 +2,8 @@ import * as Sentry from "@sentry/cloudflare";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { dispatchPendingAlerts } from "./alerts/dispatcher.js";
+import { validateUnsubscribeToken } from "./alerts/unsubscribe.js";
 import type {
   BimiResult,
   DkimResult,
@@ -11,11 +13,41 @@ import type {
   ScanResult,
   SpfResult,
 } from "./analyzers/types.js";
+import {
+  getAgentSkillsIndexJson,
+  SCAN_DOMAIN_SKILL_MD,
+} from "./api/agent-skills.js";
+import {
+  BULK_IN_BAND_CAP,
+  isCapExceeded,
+  processBulkScan,
+} from "./api/bulk-scan.js";
+import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
+import { clampHistoryLimit, fetchDomainHistory } from "./api/history.js";
+import { OPENAPI_JSON } from "./api/openapi.js";
+import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
+import { authRoutes } from "./auth/routes.js";
+import { stripeWebhookRoutes } from "./billing/routes.js";
 import { getCachedScan, setCachedScan } from "./cache.js";
+import { runDueRescans } from "./cron/rescan.js";
 import { generateCsv } from "./csv.js";
+import { dashboardRoutes } from "./dashboard/routes.js";
+import { getDomainByUserAndName } from "./db/domains.js";
+import { recordScan } from "./db/scans.js";
+import { getPlanForUser } from "./db/subscriptions.js";
+import { setEmailAlertsEnabled } from "./db/users.js";
+import type { Env } from "./env.js";
 import type { ProtocolId, ProtocolResult } from "./orchestrator.js";
 import { scan, scanStreaming } from "./orchestrator.js";
-import { checkRateLimit, rateLimitHeaders } from "./rate-limit.js";
+import {
+  checkRateLimit,
+  getRateLimitConfig,
+  type RateLimitResult,
+  rateLimitHeaders,
+} from "./rate-limit.js";
+import { normalizeDomain } from "./shared/domain.js";
+import { listIndexableScanDomains } from "./shared/indexable-domains.js";
+import { watchlistCapForPlan } from "./shared/limits.js";
 import { CSS_PATH, JS_PATH } from "./views/assets.js";
 import {
   APPLE_TOUCH_ICON_BASE64,
@@ -23,9 +55,11 @@ import {
   FAVICON_SVG,
   ICON_192_BASE64,
   ICON_512_BASE64,
+  OG_IMAGE_PNG_BASE64,
   webManifest,
 } from "./views/favicon.js";
 import {
+  renderApiDocs,
   renderBimiCard,
   renderDkimCard,
   renderDmarcCard,
@@ -49,10 +83,26 @@ import {
   renderLearnMtaSts,
   renderLearnSpf,
 } from "./views/learn.js";
+import { renderPrivacyPage } from "./views/legal.js";
+import {
+  renderApiDocsMarkdown,
+  renderErrorMarkdown,
+  renderLandingMarkdown,
+  renderLearnHubMarkdown,
+  renderPricingMarkdown,
+  renderPrivacyMarkdown,
+  renderReportMarkdown,
+  renderScoringRubricMarkdown,
+} from "./views/markdown.js";
+import { renderPricingPage } from "./views/pricing.js";
 import { JS } from "./views/scripts.js";
 import { CSS } from "./views/styles.js";
+import { fireBulkScanWebhooks } from "./webhooks/triggers.js";
 
-const app = new Hono();
+// The Hono app is exported for tests (which call `app.request(...)`).
+// Runtime Workers use the Sentry-wrapped default export below, which adds
+// cron (`scheduled`) alongside `fetch`.
+export const app = new Hono<{ Bindings: Env }>();
 
 // Set Sentry scope context for every request
 app.use("*", async (c, next) => {
@@ -88,15 +138,39 @@ app.use("*", async (c, next) => {
 const NOINDEX_CONTENT_TYPES = [
   "application/json",
   "application/manifest+json",
+  "application/linkset+json",
+  "application/openapi+json",
   "text/csv",
   "text/event-stream",
+  "text/markdown",
 ];
+
+// Link header (RFC 8288) pointing agents to discovery resources.
+// Attached to HTML responses only — JSON/CSV/SSE consumers are already
+// using the API directly.
+const AGENT_DISCOVERY_LINK_HEADER = [
+  '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"',
+  '</.well-known/agent-skills/index.json>; rel="https://agentskills.io/rel/index"; type="application/json"',
+  '</openapi.json>; rel="service-desc"; type="application/openapi+json"',
+  '</docs/api>; rel="service-doc"; type="text/html"',
+  '</health>; rel="status"',
+].join(", ");
 
 // Origins permitted to embed the HTML report in an iframe. Anything not listed
 // here (including subdomains) is blocked by the `frame-ancestors` directive
 // below. X-Frame-Options is intentionally NOT set — older browsers honor it
 // over `frame-ancestors`, which would defeat this allowlist.
 const EMBED_ALLOWED_ORIGINS = ["https://cortech.online"];
+
+// Paths that skip Cloudflare Web Analytics beacon injection. Dashboard and
+// auth pages can expose user-specific URL patterns (e.g. domain names in
+// the path); we deliberately keep those out of analytics even though the
+// beacon itself is cookieless.
+const ANALYTICS_SKIP_PATH_PREFIXES = ["/dashboard", "/auth", "/webhooks"];
+
+// Cloudflare Web Analytics tokens are 32-char lowercase hex. Guard against
+// a misconfigured env var injecting arbitrary strings into HTML.
+const CF_ANALYTICS_TOKEN_RE = /^[a-f0-9]{32}$/;
 
 app.use("*", async (c, next) => {
   await next();
@@ -115,6 +189,9 @@ app.use("*", async (c, next) => {
       "Content-Security-Policy",
       `default-src 'none'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors ${frameAncestors}`,
     );
+    if (!c.res.headers.has("Link")) {
+      c.res.headers.set("Link", AGENT_DISCOVERY_LINK_HEADER);
+    }
     // Short edge cache so Cloudflare can absorb landing/scoring/report traffic
     // without hitting the Worker on every request. Browsers still revalidate.
     if (!c.res.headers.has("Cache-Control")) {
@@ -122,6 +199,29 @@ app.use("*", async (c, next) => {
         "Cache-Control",
         "public, max-age=0, s-maxage=300, stale-while-revalidate=600",
       );
+    }
+
+    // Inject the Cloudflare Web Analytics beacon on public HTML pages.
+    // Skipped when the token isn't configured (self-host default) and on
+    // auth/dashboard/webhook paths whose URLs can carry user-specific detail.
+    // Our HTML responses are already buffered strings (never streamed), so a
+    // simple `</body>` replace is both correct and keeps tests in the Node
+    // pool runnable without HTMLRewriter.
+    const token = (c.env as Env | undefined)?.CF_ANALYTICS_TOKEN;
+    const path = c.req.path;
+    const isAnalyticsEligible =
+      token &&
+      CF_ANALYTICS_TOKEN_RE.test(token) &&
+      !ANALYTICS_SKIP_PATH_PREFIXES.some((p) => path.startsWith(p));
+    if (isAnalyticsEligible) {
+      const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${token}"}'></script>`;
+      const body = await c.res.text();
+      const injected = body.replace("</body>", `${beacon}</body>`);
+      c.res = new Response(injected, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: c.res.headers,
+      });
     }
   } else {
     // `frame-ancestors` does not inherit from `default-src`, so it must be
@@ -155,6 +255,39 @@ app.onError((err, c) => {
 
 app.use("/api/*", cors());
 
+// Auth routes (public) — login, WorkOS callback, logout
+app.route("/auth", authRoutes);
+
+// Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)
+app.route("/dashboard", dashboardRoutes);
+
+// Stripe webhook (public — signature-verified). Self-gates on
+// isBillingEnabled so self-host deploys without Stripe env still boot.
+app.route("/webhooks", stripeWebhookRoutes);
+
+function markdownResponse(c: Context, body: string, status = 200) {
+  return c.body(body, status as 200, {
+    "Content-Type": "text/markdown; charset=utf-8",
+  });
+}
+
+// Returns true when the client explicitly asked for markdown (via `?format=md`
+// or an `Accept` header that lists `text/markdown` before `text/html`). HTML
+// stays the default for browsers that send wildcards like `*/*`.
+function wantsMarkdown(c: Context): boolean {
+  const format = c.req.query("format");
+  if (format === "md" || format === "markdown") return true;
+  const accept = c.req.header("Accept");
+  if (!accept) return false;
+  const types = accept.toLowerCase().split(",");
+  const mdIndex = types.findIndex((t) => t.trim().startsWith("text/markdown"));
+  if (mdIndex === -1) return false;
+  const htmlIndex = types.findIndex((t) => t.trim().startsWith("text/html"));
+  // Agents that send `Accept: text/markdown` (and nothing else, or markdown
+  // first) get markdown. Browsers that prefer HTML keep getting HTML.
+  return htmlIndex === -1 || mdIndex < htmlIndex;
+}
+
 function getClientIp(c: Context): string {
   const cfIp = c.req.header("CF-Connecting-IP");
   if (cfIp) return cfIp;
@@ -162,23 +295,84 @@ function getClientIp(c: Context): string {
   return "unknown";
 }
 
-// Rate limit scan endpoints (not the landing page)
-app.use("/check", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
+// Resolves rate-limit identity + config for a request. Pro-authed bearers
+// lift to the per-user bucket (60/hour). Everyone else — anonymous callers,
+// bearers whose subscription isn't active, free-plan bearers — falls through
+// to the per-IP anon bucket (10/60s). Free-authed keeps on IP on purpose: a
+// free bearer hitting from two IPs gets two anon buckets, which matches what
+// anonymous scanners already see and avoids making a free account worse than
+// no account. Bearer identity is stashed on context so downstream handlers
+// (/api/check scan-history persistence) can read it without re-verifying.
+export async function resolveRateLimitScope(c: Context): Promise<{
+  identity: string;
+  config: ReturnType<typeof getRateLimitConfig>;
+}> {
+  const bearer = await resolveBearer(c);
+  if (bearer) {
+    c.set("bearer" as never, bearer);
+    const db = (c.env as { DB?: D1Database }).DB;
+    if (db) {
+      const plan = await getPlanForUser(db, bearer.userId);
+      if (plan === "pro") {
+        return {
+          identity: `user:${bearer.userId}`,
+          config: getRateLimitConfig("pro"),
+        };
+      }
+    }
   }
+  return {
+    identity: `ip:${getClientIp(c)}`,
+    config: getRateLimitConfig("free"),
+  };
+}
 
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
+type RateLimitBlockedResponder = (
+  c: Context,
+  result: RateLimitResult,
+  headers: Record<string, string>,
+) => Response | Promise<Response>;
+
+export function rateLimitMiddleware(onBlocked: RateLimitBlockedResponder) {
+  return async (c: Context, next: () => Promise<void>) => {
+    const { identity, config } = await resolveRateLimitScope(c);
+    const result = await checkRateLimit(identity, config);
+    if (result.pendingWrite) {
+      c.executionCtx.waitUntil(result.pendingWrite.catch(() => {}));
+    }
+
+    const headers = rateLimitHeaders(result);
+
+    if (!result.allowed) {
+      return onBlocked(c, result, headers);
+    }
+
+    await next();
+    // ⚡ Bolt Optimization: Use for...in instead of Object.entries() on hot paths.
+    // Avoids allocating an array of key-value tuples for headers on every request,
+    // reducing GC pressure for high-traffic middleware.
+    for (const key in headers) {
+      c.res.headers.set(key, headers[key]);
+    }
+  };
+}
+
+function blockedMessage(result: RateLimitResult): string {
+  const waitSec = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
+  return `Rate limit exceeded. Try again in ${waitSec} seconds.`;
+}
+
+// Rate limit scan endpoints (not the landing page)
+app.use(
+  "/check",
+  rateLimitMiddleware((c, result, headers) => {
     const format = c.req.query("format");
     const wantsJson =
       format === "json" || c.req.header("Accept")?.includes("application/json");
 
     if (wantsJson || format === "csv") {
       return c.json(
-        { error: "Rate limit exceeded. Try again in 60 seconds." },
+        { error: blockedMessage(result) },
         { status: 429, headers },
       );
     }
@@ -188,85 +382,61 @@ app.use("/check", async (c, next) => {
       ),
       { status: 429, headers },
     );
-  }
+  }),
+);
 
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
-  }
-});
-
-app.use("/check/score", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
-
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.html(
+app.use(
+  "/check/score",
+  rateLimitMiddleware((_c, _result, headers) =>
+    _c.html(
       renderError(
         "Rate limit exceeded. Please wait a minute before scanning again.",
       ),
       { status: 429, headers },
-    );
-  }
+    ),
+  ),
+);
 
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
-  }
-});
+app.use(
+  "/api/check",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
-app.use("/api/check", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
+// Bulk scan also runs N analyzers in-band per request — same rate-limit
+// posture as /api/check (Pro bearer → user bucket; everyone else → IP).
+// TODO(phase-4-pr3-followup): once per-plan limits expose a "weight" knob,
+// charge bulk requests proportionally to the in-band scan count instead of
+// counting as a single request.
+app.use(
+  "/api/bulk-scan",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.json(
-      { error: "Rate limit exceeded. Try again in 60 seconds." },
-      { status: 429, headers },
-    );
-  }
-
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
-  }
-});
+// Per-domain API endpoints (currently only /api/domain/:name/history). Path
+// prefix instead of exact-match so future per-domain endpoints inherit the
+// same limiter without re-wiring. Hono matches `/api/domain/*` after the
+// exact-match routes above, so /api/check and /api/bulk-scan aren't affected.
+// This middleware is what populates `c.get("bearer")` via resolveRateLimitScope.
+app.use(
+  "/api/domain/*",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
 // The SSE streaming endpoint fans out ~50 DNS lookups per request and is
 // bypassed by the `/api/check` middleware above (Hono matches exact paths).
 // Give it its own limiter so it cannot be used as a DNS amplification vector.
-app.use("/api/check/stream", async (c, next) => {
-  const ip = getClientIp(c);
-  const { allowed, remaining, pendingWrite } = await checkRateLimit(ip);
-  if (pendingWrite) {
-    c.executionCtx.waitUntil(pendingWrite.catch(() => {}));
-  }
-
-  if (!allowed) {
-    const headers = rateLimitHeaders(remaining);
-    return c.json(
-      { error: "Rate limit exceeded. Try again in 60 seconds." },
-      { status: 429, headers },
-    );
-  }
-
-  const headers = rateLimitHeaders(remaining);
-  await next();
-  for (const [key, value] of Object.entries(headers)) {
-    c.res.headers.set(key, value);
-  }
-});
+app.use(
+  "/api/check/stream",
+  rateLimitMiddleware((c, result, headers) =>
+    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  ),
+);
 
 const protocolRenderers: Record<
   ProtocolId,
@@ -297,6 +467,8 @@ app.get("/api/check/stream", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
 
   return streamSSE(c, async (stream) => {
     Sentry.addBreadcrumb({
@@ -335,7 +507,7 @@ app.get("/api/check/stream", async (c) => {
         data: JSON.stringify({
           grade: cached.grade,
           headerHtml: renderReportHeader(cached),
-          footerHtml: renderReportFooter(),
+          footerHtml: renderReportFooter(cached),
         }),
       });
       return;
@@ -359,12 +531,16 @@ app.get("/api/check/stream", async (c) => {
       c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
     }
 
+    if (bearer) {
+      persistBearerScanIfWatched(c, bearer.userId, domain, result);
+    }
+
     stream.writeSSE({
       event: "done",
       data: JSON.stringify({
         grade: result.grade,
         headerHtml: renderReportHeader(result),
-        footerHtml: renderReportFooter(),
+        footerHtml: renderReportFooter(result),
       }),
     });
   });
@@ -412,6 +588,16 @@ app.get("/og-image.svg", (c) => {
 </svg>`;
   return c.body(svg, 200, {
     "Content-Type": "image/svg+xml",
+    "Cache-Control": "public, max-age=86400",
+  });
+});
+
+app.get("/og-image.png", (c) => {
+  const buf = Uint8Array.from(atob(OG_IMAGE_PNG_BASE64), (ch) =>
+    ch.charCodeAt(0),
+  );
+  return c.body(buf, 200, {
+    "Content-Type": "image/png",
     "Cache-Control": "public, max-age=86400",
   });
 });
@@ -485,6 +671,44 @@ app.get("/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// RFC 9727 API catalog — agents discover this via the Link header on HTML
+// pages or by fetching a well-known URI directly.
+app.get("/.well-known/api-catalog", (c) => {
+  return c.body(API_CATALOG_JSON, 200, {
+    "Content-Type": "application/linkset+json",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+// Agent Skills discovery index — Cloudflare RFC v0.2.0.
+// https://github.com/cloudflare/agent-skills-discovery-rfc
+app.get("/.well-known/agent-skills/index.json", async (c) => {
+  const json = await getAgentSkillsIndexJson();
+  return c.body(json, 200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/.well-known/agent-skills/scan-domain/SKILL.md", (c) => {
+  return c.body(SCAN_DOMAIN_SKILL_MD, 200, {
+    "Content-Type": "text/markdown; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/openapi.json", (c) => {
+  return c.body(OPENAPI_JSON, 200, {
+    "Content-Type": "application/openapi+json; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
+app.get("/docs/api", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderApiDocsMarkdown());
+  return c.html(renderApiDocs());
+});
+
 // Crawl guidance for search engines. Block the API namespace (Google was
 // logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
 // noise) and point to the sitemap.
@@ -500,30 +724,39 @@ Sitemap: https://dmarc.mx/sitemap.xml
   });
 });
 
-// Static URLs worth reinforcing to search engines. The three example domains
-// are already in Google's index and one of them ranks position 9 for a
-// long-tail query — listing them as canonical crawl targets is a cheap
-// authority signal.
-const SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
+// Static URLs worth reinforcing to search engines. The /check entries are
+// generated from the curated allowlist in src/shared/indexable-domains.ts —
+// every domain listed there is also marked indexable on its scan page, so
+// the sitemap and the per-page robots meta stay in sync.
+const STATIC_SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/", priority: "1.0" },
+  { loc: "https://dmarc.mx/pricing", priority: "0.9" },
   { loc: "https://dmarc.mx/scoring", priority: "0.8" },
+  { loc: "https://dmarc.mx/legal/privacy", priority: "0.3" },
   { loc: "https://dmarc.mx/learn", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/dmarc", priority: "0.8" },
   { loc: "https://dmarc.mx/learn/spf", priority: "0.8" },
   { loc: "https://dmarc.mx/learn/dkim", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/bimi", priority: "0.6" },
   { loc: "https://dmarc.mx/learn/mta-sts", priority: "0.7" },
-  { loc: "https://dmarc.mx/check?domain=dmarc.mx", priority: "0.6" },
-  { loc: "https://dmarc.mx/check?domain=google.com", priority: "0.6" },
-  { loc: "https://dmarc.mx/check?domain=github.com", priority: "0.6" },
 ];
-const SITEMAP_LASTMOD = "2026-04-11";
+const SITEMAP_LASTMOD = "2026-04-26";
+
+function buildSitemapUrls(): Array<{ loc: string; priority: string }> {
+  const scanUrls = listIndexableScanDomains().map((domain) => ({
+    loc: `https://dmarc.mx/check?domain=${encodeURIComponent(domain)}`,
+    priority: "0.6",
+  }));
+  return [...STATIC_SITEMAP_URLS, ...scanUrls];
+}
 
 app.get("/sitemap.xml", (c) => {
-  const urls = SITEMAP_URLS.map(
-    ({ loc, priority }) =>
-      `  <url><loc>${loc}</loc><lastmod>${SITEMAP_LASTMOD}</lastmod><priority>${priority}</priority></url>`,
-  ).join("\n");
+  const urls = buildSitemapUrls()
+    .map(
+      ({ loc, priority }) =>
+        `  <url><loc>${loc}</loc><lastmod>${SITEMAP_LASTMOD}</lastmod><priority>${priority}</priority></url>`,
+    )
+    .join("\n");
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls}
@@ -536,19 +769,34 @@ ${urls}
 });
 
 app.get("/", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderLandingMarkdown());
   return c.html(renderLandingPage());
 });
 
 app.get("/scoring", (c) => {
+  if (wantsMarkdown(c))
+    return markdownResponse(c, renderScoringRubricMarkdown());
   return c.html(renderScoringRubric());
 });
 
-app.get("/learn", (c) => c.html(renderLearnHub()));
+app.get("/learn", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderLearnHubMarkdown());
+  return c.html(renderLearnHub());
+});
 app.get("/learn/dmarc", (c) => c.html(renderLearnDmarc()));
 app.get("/learn/spf", (c) => c.html(renderLearnSpf()));
 app.get("/learn/dkim", (c) => c.html(renderLearnDkim()));
 app.get("/learn/bimi", (c) => c.html(renderLearnBimi()));
 app.get("/learn/mta-sts", (c) => c.html(renderLearnMtaSts()));
+
+app.get("/pricing", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderPricingMarkdown());
+  return c.html(renderPricingPage());
+});
+app.get("/legal/privacy", (c) => {
+  if (wantsMarkdown(c)) return markdownResponse(c, renderPrivacyMarkdown());
+  return c.html(renderPrivacyPage());
+});
 
 app.get("/api/check", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
@@ -557,6 +805,8 @@ app.get("/api/check", async (c) => {
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
 
   try {
     Sentry.addBreadcrumb({
@@ -581,6 +831,13 @@ app.get("/api/check", async (c) => {
       }
     }
 
+    // Persist to scan_history only when the bearer's user already watches
+    // this domain — mirrors the dashboard "Scan Now" contract and avoids
+    // silently growing the watchlist on ad-hoc API requests.
+    if (bearer) {
+      persistBearerScanIfWatched(c, bearer.userId, domain, result);
+    }
+
     if (c.req.query("format") === "csv") {
       return c.body(generateCsv(result), 200, {
         "Content-Type": "text/csv; charset=utf-8",
@@ -598,6 +855,147 @@ app.get("/api/check", async (c) => {
     return c.json({ error: message }, 500);
   }
 });
+
+// Bulk scan — Pro-only, bearer-authenticated. Up to BULK_TOTAL_CAP submitted;
+// the first BULK_IN_BAND_CAP are scanned synchronously in batches and the
+// rest are queued by inserting `domains` rows for the next cron pickup. Per-
+// entry results let the caller distinguish scanned/queued/invalid/error.
+app.post("/api/bulk-scan", async (c) => {
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
+  if (!bearer) {
+    return c.json(
+      {
+        error:
+          "Bearer token required. Generate one at /dashboard/settings/api-keys.",
+      },
+      401,
+    );
+  }
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) {
+    return c.json({ error: "Database not configured" }, 500);
+  }
+  const plan = await getPlanForUser(db, bearer.userId);
+  if (plan !== "pro") {
+    return c.json(
+      {
+        error: "Bulk scan requires a Pro plan.",
+        upgrade: `${CANONICAL_ORIGIN}/dashboard/billing/subscribe`,
+      },
+      402,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const rawDomains = (body as { domains?: unknown })?.domains;
+  if (!Array.isArray(rawDomains)) {
+    return c.json({ error: "Body must be { domains: string[] }" }, 400);
+  }
+  if (!rawDomains.every((d): d is string => typeof d === "string")) {
+    return c.json({ error: "All domains must be strings" }, 400);
+  }
+
+  const outcome = await processBulkScan({
+    db,
+    userId: bearer.userId,
+    rawDomains,
+    watchlistCap: watchlistCapForPlan(plan),
+  });
+  if (isCapExceeded(outcome)) {
+    return c.json(
+      {
+        error: `Too many domains: ${outcome.submitted} > ${outcome.cap}`,
+        cap: outcome.cap,
+        in_band_cap: BULK_IN_BAND_CAP,
+      },
+      400,
+    );
+  }
+  c.executionCtx.waitUntil(
+    fireBulkScanWebhooks(db, bearer.userId, outcome.results, "bulk_api"),
+  );
+  return c.json(outcome);
+});
+
+// Scan history for a watched domain — Pro-only, bearer-authenticated. Thin
+// wrapper around the same `getScanHistoryWithProtocols` helper the dashboard
+// uses (src/dashboard/routes.ts `/dashboard/domain/:domain/history`), so the
+// HTML view and the JSON API return the same rows. Check order is deliberate:
+// auth → plan → domain validation → ownership. The ownership check must run
+// after the plan check, otherwise a free-tier bearer could probe which
+// domains belong to a pro user. It must also not echo anything about the
+// domain on 404 — existence is not revealed.
+app.get("/api/domain/:name/history", async (c) => {
+  const bearer =
+    (c.get("bearer" as never) as BearerIdentity | undefined) ?? null;
+  if (!bearer) {
+    return c.json(
+      {
+        error:
+          "Bearer token required. Generate one at /dashboard/settings/api-keys.",
+      },
+      401,
+    );
+  }
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) {
+    return c.json({ error: "Database not configured" }, 500);
+  }
+  const plan = await getPlanForUser(db, bearer.userId);
+  if (plan !== "pro") {
+    return c.json(
+      {
+        error: "Scan history requires a Pro plan.",
+        upgrade: `${CANONICAL_ORIGIN}/dashboard/billing/subscribe`,
+      },
+      402,
+    );
+  }
+  const domain = normalizeDomain(c.req.param("name"));
+  if (!domain) {
+    return c.json({ error: "Missing or invalid domain parameter" }, 400);
+  }
+  const limit = clampHistoryLimit(c.req.query("limit"));
+  const resp = await fetchDomainHistory(db, bearer.userId, domain, limit);
+  if (!resp) {
+    return c.json({ error: "Domain not found" }, 404);
+  }
+  return c.json(resp);
+});
+
+// Fire-and-forget: look up the (user, domain) pair and record a scan_history
+// row if the user watches this domain. The orchestrator result structure is
+// the same shape consumed by dashboard "Scan Now".
+function persistBearerScanIfWatched(
+  c: Context,
+  userId: string,
+  domain: string,
+  result: {
+    grade: string;
+    breakdown: { factors: unknown };
+    protocols: unknown;
+  },
+): void {
+  const db = (c.env as { DB?: D1Database }).DB;
+  if (!db) return;
+  const task = (async () => {
+    const owned = await getDomainByUserAndName(db, userId, domain);
+    if (!owned) return;
+    await recordScan(db, {
+      domainId: owned.id,
+      grade: result.grade,
+      scoreFactors: result.breakdown.factors,
+      protocolResults: result.protocols,
+    });
+  })();
+  c.executionCtx.waitUntil(task.catch(() => {}));
+}
 
 app.get("/check/score", async (c) => {
   const domain = normalizeDomain(c.req.query("domain"));
@@ -629,6 +1027,7 @@ app.get("/check", async (c) => {
   const wantsJson =
     format === "json" || c.req.header("Accept")?.includes("application/json");
   const wantsCsv = format === "csv";
+  const wantsMd = !wantsJson && !wantsCsv && wantsMarkdown(c);
 
   const domain = normalizeDomain(c.req.query("domain"));
   if (!domain) {
@@ -643,10 +1042,42 @@ app.get("/check", async (c) => {
         "Content-Type": "text/csv; charset=utf-8",
       });
     }
+    if (wantsMd) {
+      return markdownResponse(
+        c,
+        renderErrorMarkdown("Missing or invalid domain parameter"),
+        400,
+      );
+    }
     return c.redirect("/", 302);
   }
 
   const selectors = parseSelectors(c.req.query("selectors"));
+
+  if (wantsMd) {
+    try {
+      Sentry.addBreadcrumb({
+        category: "scan.start",
+        message: domain,
+        data: { domain, selectors },
+        level: "info",
+      });
+      const cached = await getCachedScan(domain, selectors);
+      const result = cached ?? (await scan(domain, selectors));
+      tagScanResult(result);
+      if (!cached) {
+        const pendingCacheWrite = setCachedScan(domain, selectors, result);
+        if (pendingCacheWrite) {
+          c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+        }
+      }
+      return markdownResponse(c, renderReportMarkdown(result));
+    } catch (err) {
+      Sentry.captureException(err);
+      const message = err instanceof Error ? err.message : "Internal error";
+      return markdownResponse(c, renderErrorMarkdown(message), 500);
+    }
+  }
 
   if (wantsJson) {
     try {
@@ -725,44 +1156,9 @@ app.get("/check", async (c) => {
   return c.html(renderStreamingLoading(domain, selectors.join(",")));
 });
 
-export function normalizeDomain(raw: string | undefined): string | null {
-  if (!raw) return null;
-  let domain = raw.trim().toLowerCase();
-  // Strip protocol if pasted as URL
-  domain = domain.replace(/^https?:\/\//, "");
-  // Use URL constructor to normalize (handles ports, userinfo, Punycode/IDN)
-  try {
-    domain = new URL(`http://${domain}`).hostname;
-  } catch {
-    // Fall back to manual parsing for inputs the URL constructor rejects
-    domain = domain.split("/")[0].split("?")[0];
-  }
-  // RFC 1035: domain names must not exceed 253 characters
-  if (domain.length > 253) return null;
-  // Strip trailing dot
-  domain = domain.replace(/\.$/, "");
-  // Restrict to ASCII hostname charset. IDNs are Punycode-encoded by `new URL`
-  // (e.g. münchen.de → xn--mnchen-3ya.de), so this set covers valid IDNs too.
-  // Rejects anything exotic (quotes, spaces, brackets) that could break out of
-  // an HTML attribute or JS literal downstream.
-  if (!/^[a-z0-9.-]+$/.test(domain)) return null;
-  // Must have at least one dot
-  if (!domain.includes(".")) return null;
-  // Reject IPv4 literals. DMARC/SPF/DKIM/BIMI/MTA-STS records are published
-  // in DNS at domain names, not IPs — there is no legitimate dmarcheck use
-  // case for scanning `1.2.3.4`. This also closes a defense-in-depth gap
-  // around the MTA-STS fetch in `src/analyzers/mta-sts.ts`, which interpolates
-  // the validated domain into a URL (flagged CWE-918 by static analysis);
-  // previously, metadata-service IPs like 169.254.169.254 were only shielded
-  // by the `mta-sts.` prefix happening to route them back through public DNS.
-  // WHATWG URL (used above) normalizes hex, integer, and short-form IPv4
-  // inputs into canonical dotted-decimal, so a single anchored check covers
-  // `0xc0a80101`, `3232235777`, `127.1`, and `1.2.3` as well as plain forms.
-  // `999.999.999.999` throws from `new URL` and is caught by the fallback
-  // branch above, then rejected here by regex shape.
-  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(domain)) return null;
-  return domain;
-}
+// Re-exported so long-standing callers (and tests) that import from
+// `src/index.js` keep working. Canonical location: src/shared/domain.ts.
+export { normalizeDomain };
 
 // DKIM selector charset per RFC 6376 §3.1: sub-domain syntax, which is
 // letters / digits / hyphens, with dot-separated labels. We also allow
@@ -778,8 +1174,64 @@ export function parseSelectors(raw: string | undefined): string[] {
     .filter((s) => s.length > 0 && VALID_SELECTOR.test(s));
 }
 
-export default Sentry.withSentry(
-  (env?: { SENTRY_DSN?: string }) => ({
+// Cron handler — runs nightly per the `[triggers] crons` entry in wrangler.toml.
+// Rescans domains whose cadence has come due (monthly or weekly), persists
+// results, and records grade_drop / protocol_regression alerts. Fails soft
+// when DB is unbound so self-host deploys without D1 don't fault.
+async function scheduled(
+  _controller: ScheduledController,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void> {
+  if (!env.DB) return;
+  const work = (async () => {
+    const rescanResult = await runDueRescans({
+      db: env.DB,
+      now: Math.floor(Date.now() / 1000),
+    });
+    const scope = Sentry.getCurrentScope();
+    scope.setTag("cron.scanned", String(rescanResult.scanned));
+    scope.setTag("cron.alerts", String(rescanResult.alerts));
+    scope.setTag("cron.errors", String(rescanResult.errors));
+
+    // Dispatch runs unconditionally — alerts from prior cron runs may still
+    // be pending if the EMAIL binding was absent or failed previously.
+    const dispatchResult = await dispatchPendingAlerts(env);
+    scope.setTag("cron.emails_sent", String(dispatchResult.sent));
+    scope.setTag("cron.emails_skipped", String(dispatchResult.skipped));
+    scope.setTag("cron.emails_errors", String(dispatchResult.errors));
+  })().catch((err) => {
+    Sentry.captureException(err);
+  });
+  ctx.waitUntil(work);
+}
+
+// Public unsubscribe endpoint reached from email links. The token is the
+// authentication — no session cookie required. Invalid / tampered tokens
+// return a 400. Successful unsubscribe flips users.email_alerts_enabled to 0
+// and renders a confirmation page.
+app.get("/alerts/unsubscribe", async (c) => {
+  const token = c.req.query("token");
+  if (!token) {
+    return c.html(renderError("Missing unsubscribe token."), 400);
+  }
+  const userId = await validateUnsubscribeToken(token, c.env.SESSION_SECRET);
+  if (!userId) {
+    return c.html(renderError("Invalid or expired unsubscribe link."), 400);
+  }
+  await setEmailAlertsEnabled(c.env.DB, userId, false);
+  return c.html(
+    `<!doctype html><html><head><meta charset="utf-8"><title>Unsubscribed</title></head><body style="font-family:system-ui;padding:32px;max-width:520px;margin:0 auto;line-height:1.5"><h1>Unsubscribed</h1><p>You will no longer receive grade-drop alerts from dmarc.mx.</p><p>You can re-enable alerts any time from <a href="/dashboard/settings">dashboard settings</a>.</p></body></html>`,
+  );
+});
+
+const handler: ExportedHandler<Env> = {
+  fetch: app.fetch.bind(app),
+  scheduled,
+};
+
+export default Sentry.withSentry<Env>(
+  (env) => ({
     dsn: env?.SENTRY_DSN ?? "",
     tracesSampler: (samplingContext: { parentSampled?: boolean }) => {
       if (samplingContext.parentSampled !== undefined)
@@ -787,5 +1239,5 @@ export default Sentry.withSentry(
       return 0.3;
     },
   }),
-  app,
+  handler,
 );
