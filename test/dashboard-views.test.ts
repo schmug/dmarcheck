@@ -426,6 +426,48 @@ describe("renderDashboardPage", () => {
       expect(html).toMatch(/Everything('|&#39;)s green/);
     });
 
+    it("does not panic or party when the only domain is ungraded", () => {
+      // A fresh user with one not-yet-scanned domain. Bug we're guarding:
+      // gradeToMood('—') used to fall through to 'panicked', so DMarcus
+      // screamed at a user who hadn't received their first scan back. The
+      // hero should be neutral and the voice line should acknowledge the
+      // scan-in-progress state.
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("—", "fresh.example")],
+      });
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-panicked/);
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+      expect(html).toContain("Scanning your");
+    });
+
+    it("picks the worst graded domain even when an ungraded one comes first", () => {
+      // worstDomain bug we're guarding: when seeded with an ungraded entry,
+      // the prior implementation could promote a healthy domain to "worst"
+      // and let DMarcus celebrate while another domain was failing.
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [
+          sample("—", "fresh.example"),
+          sample("F", "broken.example"),
+          sample("A", "good.example"),
+        ],
+      });
+      expect(html).toContain("broken.example");
+      expect(html).not.toMatch(/good\.example<\/code> is failing/);
+      // Failing portfolio must not party-hat regardless of insertion order.
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+    });
+
+    it("does not party-hat a 100% ungraded portfolio", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("—", "a.com"), sample("—", "b.com")],
+      });
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+      expect(html).toContain("Scanning your 2 domains");
+    });
+
     it("preserves the existing alerts section markup above the table", () => {
       const html = renderDashboardPage({
         email: "u@x.com",

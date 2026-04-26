@@ -1168,13 +1168,16 @@ function gradeRank(grade: string): number {
   return HERO_GRADE_RANK[grade] ?? -1;
 }
 
+// Picks the lowest-graded entry, ignoring ungraded ("—" / "ungraded") rows.
+// Returns null when no domain has been scored yet — callers fall back to a
+// neutral copy/mood instead of mis-labeling a fresh, never-scanned entry.
 function worstDomain(domains: DashboardDomain[]): DashboardDomain | null {
-  if (domains.length === 0) return null;
-  let worst = domains[0];
-  let worstScore = gradeRank(worst.grade);
-  for (const d of domains.slice(1)) {
+  let worst: DashboardDomain | null = null;
+  let worstScore = Number.POSITIVE_INFINITY;
+  for (const d of domains) {
     const score = gradeRank(d.grade);
-    if (score >= 0 && (worstScore < 0 || score < worstScore)) {
+    if (score < 0) continue; // skip ungraded
+    if (score < worstScore) {
       worst = d;
       worstScore = score;
     }
@@ -1241,6 +1244,17 @@ function heroVoiceLine(
       sub: "Drift usually means a record was edited but not promoted.",
     };
   }
+  // No failures, no drift — but if nothing has been graded yet we shouldn't
+  // claim everything's green. The first scan happens within seconds of
+  // signup; this copy bridges that gap.
+  if (stats.healthy === 0) {
+    const word = stats.ungraded === 1 ? "domain" : "domains";
+    const count = stats.ungraded === 1 ? "" : `${stats.ungraded} `;
+    return {
+      line: `Scanning your ${count}${word} now…`,
+      sub: "First grades land in a few seconds. I'll refresh when they do.",
+    };
+  }
   return {
     line: "Everything's green. Nice.",
     sub: "I'll re-check on schedule and email you the moment anything moves.",
@@ -1272,10 +1286,15 @@ function renderDashboardHero(
 ): string {
   const stats = portfolioStats(domains);
   const worst = worstDomain(domains);
-  const moodGrade = worst ? worst.grade : "B";
-  const mood = gradeToMood(moodGrade);
+  // Mood comes from the worst *graded* domain. With nothing scored yet there
+  // is no signal to react to, so DMarcus defaults to neutral rather than
+  // panicking at a freshly-added entry that just hasn't been scanned.
+  const mood = worst ? gradeToMood(worst.grade) : "content";
+  // Celebrate only when at least one domain has actually been graded as
+  // healthy. An entirely ungraded portfolio is "we don't know yet", not
+  // "we won".
   const partyHat =
-    stats.total > 0 && stats.failing === 0 && stats.drifting === 0;
+    stats.healthy > 0 && stats.failing === 0 && stats.drifting === 0;
   const { line, sub } = heroVoiceLine(stats, worst);
 
   // Score on a 0–100 scale derived from the latest portfolio average (0–12),
@@ -1396,6 +1415,181 @@ ${renderAlertsSection(alerts)}
 ${renderDomainPanel({ domains, controls, usage })}`,
     email,
   );
+}
+
+// === Local-only fixture preview ============================================
+// Backs the /_dev/dashboard?fixture=<name> route in src/index.ts. Lets a
+// developer eyeball every dashboard scenario without going through WorkOS
+// auth or having a populated D1. The fixture data is a TypeScript port of
+// docs/dmarcheck.zip handoff-bundle/proto-states.jsx — same shapes, same
+// scenario keys. Production code never reaches this; the dev route 404s
+// unless the request is from localhost.
+
+export type DashboardFixtureName =
+  | "current"
+  | "fire"
+  | "allGreen"
+  | "firstRun"
+  | "free"
+  | "zero";
+
+export const DASHBOARD_FIXTURE_NAMES: readonly DashboardFixtureName[] = [
+  "current",
+  "fire",
+  "allGreen",
+  "firstRun",
+  "free",
+  "zero",
+] as const;
+
+interface DashboardFixture {
+  email: string;
+  plan: "free" | "pro";
+  domains: DashboardDomain[];
+  portfolioTrend: number[];
+  alerts: DashboardAlert[];
+  isFirstRun: boolean;
+}
+
+const FIXTURE_NOW = 1714060800; // Fixed timestamp so alerts render deterministically.
+
+const dom = (
+  domain: string,
+  grade: string,
+  lastScanned: string,
+  alerts = 0,
+): DashboardDomain => ({
+  domain,
+  grade,
+  frequency: "daily",
+  lastScanned,
+  isFree: false,
+  unacknowledgedAlerts: alerts,
+});
+
+const DASHBOARD_FIXTURES: Record<DashboardFixtureName, DashboardFixture> = {
+  current: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: [
+      9, 9, 9, 8, 9, 9, 8, 9, 8, 7, 8, 9, 9, 8, 8, 9, 8, 7, 8, 8, 7, 7, 8, 7, 8,
+      7, 6, 7, 7, 7,
+    ],
+    domains: [
+      dom("acme.com", "A", "2h ago"),
+      dom("acme-mail.io", "F", "2h ago", 2),
+      dom("acme-pay.com", "B", "5h ago"),
+      dom("newsletter.acme.com", "C", "5h ago", 1),
+      dom("support.acme.com", "A", "5h ago"),
+    ],
+    alerts: [
+      {
+        id: 1,
+        domain: "acme-mail.io",
+        alertType: "grade_drop",
+        previousValue: "B",
+        newValue: "F",
+        createdAt: FIXTURE_NOW - 2 * 3600,
+      },
+    ],
+  },
+  fire: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: [10, 10, 10, 9, 9, 8, 7, 6, 5, 4, 3, 2, 2, 2],
+    domains: [
+      dom("acme-mail.io", "F", "2h ago", 2),
+      dom("billing.acme.com", "F", "1h ago", 3),
+      dom("api.acme.com", "F", "30m ago", 1),
+      dom("acme.com", "B", "5h ago"),
+    ],
+    alerts: [
+      {
+        id: 11,
+        domain: "acme-mail.io",
+        alertType: "grade_drop",
+        previousValue: "B",
+        newValue: "F",
+        createdAt: FIXTURE_NOW - 2 * 3600,
+      },
+      {
+        id: 12,
+        domain: "billing.acme.com",
+        alertType: "protocol_regression",
+        previousValue: "dmarc:pass",
+        newValue: "dmarc:fail",
+        createdAt: FIXTURE_NOW - 3600,
+      },
+    ],
+  },
+  allGreen: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: Array.from({ length: 30 }, () => 11),
+    domains: [
+      dom("acme.com", "A", "2h ago"),
+      dom("acme-pay.com", "A", "2h ago"),
+      dom("billing.acme.com", "S", "2h ago"),
+      dom("support.acme.com", "A", "2h ago"),
+    ],
+    alerts: [],
+  },
+  firstRun: {
+    email: "newuser@example.com",
+    plan: "free",
+    isFirstRun: true,
+    portfolioTrend: [],
+    domains: [dom("example.com", "—", "Never")],
+    alerts: [],
+  },
+  free: {
+    email: "you@example.com",
+    plan: "free",
+    isFirstRun: false,
+    portfolioTrend: [9, 9, 8, 9, 9, 8, 9],
+    domains: [dom("example.com", "B", "1d ago")],
+    alerts: [],
+  },
+  zero: {
+    email: "newuser@example.com",
+    plan: "free",
+    isFirstRun: false,
+    portfolioTrend: [],
+    domains: [],
+    alerts: [],
+  },
+};
+
+export function renderDashboardFixture(name: DashboardFixtureName): string {
+  const fx = DASHBOARD_FIXTURES[name];
+  return renderDashboardPage({
+    email: fx.email,
+    plan: fx.plan,
+    alerts: fx.alerts,
+    portfolioTrend: fx.portfolioTrend,
+    isFirstRun: fx.isFirstRun,
+    domains: fx.domains,
+    controls: null,
+    usage: {
+      plan: fx.plan,
+      current: fx.domains.length,
+      cap: fx.plan === "pro" ? 25 : 1,
+    },
+  });
+}
+
+export function renderDashboardFixtureIndex(): string {
+  const links = DASHBOARD_FIXTURE_NAMES.map(
+    (n) => `<li><a href="/_dev/dashboard?fixture=${esc(n)}">${esc(n)}</a></li>`,
+  ).join("");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dashboard fixtures</title>
+<style>body{font:14px system-ui;padding:2rem;}a{color:#f97316;}</style></head>
+<body><h1>Dashboard fixture preview</h1><p>Local development only. Pick a scenario:</p>
+<ul>${links}</ul></body></html>`;
 }
 
 export function renderDomainDetailPage({

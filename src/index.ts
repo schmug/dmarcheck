@@ -261,6 +261,32 @@ app.route("/auth", authRoutes);
 // Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)
 app.route("/dashboard", dashboardRoutes);
 
+// Local-only dashboard fixture preview. Lets a developer eyeball every
+// scenario (current / fire / allGreen / firstRun / free / zero) without
+// going through WorkOS. Self-gated on the absence of WORKOS_API_KEY:
+// production always has it set, `wrangler dev` (without a .dev.vars file)
+// does not. If a self-host operator does set up local secrets, they can
+// still hit the route via .dev.vars omission of this single key.
+app.get("/_dev/dashboard", async (c) => {
+  const apiKey = (c.env as { WORKOS_API_KEY?: string } | undefined)
+    ?.WORKOS_API_KEY;
+  if (apiKey && apiKey.length > 0) return c.text("Not Found", 404);
+  const {
+    renderDashboardFixture,
+    renderDashboardFixtureIndex,
+    DASHBOARD_FIXTURE_NAMES,
+  } = await import("./views/dashboard.js");
+  const fixture = c.req.query("fixture");
+  if (!fixture) return c.html(renderDashboardFixtureIndex());
+  if (!DASHBOARD_FIXTURE_NAMES.includes(fixture as never)) {
+    return c.text(
+      `Unknown fixture. Pick one of: ${DASHBOARD_FIXTURE_NAMES.join(", ")}`,
+      404,
+    );
+  }
+  return c.html(renderDashboardFixture(fixture as never));
+});
+
 // Stripe webhook (public — signature-verified). Self-gates on
 // isBillingEnabled so self-host deploys without Stripe env still boot.
 app.route("/webhooks", stripeWebhookRoutes);
