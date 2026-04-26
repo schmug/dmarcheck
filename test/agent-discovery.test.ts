@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { _resetAgentSkillsCache } from "../src/api/agent-skills.js";
 import { app } from "../src/index.js";
 import { _memoryStore } from "../src/rate-limit.js";
 
@@ -14,6 +15,7 @@ vi.mock("../src/dns/client.js", () => ({
 
 beforeEach(() => {
   _memoryStore.clear();
+  _resetAgentSkillsCache();
 });
 
 describe("Link response header", () => {
@@ -29,6 +31,7 @@ describe("Link response header", () => {
     expect(link).toContain("</openapi.json>");
     expect(link).toContain("</docs/api>");
     expect(link).toContain("</health>");
+    expect(link).toContain("</.well-known/agent-skills/index.json>");
   });
 
   it("sets Link on scoring, learn, and docs pages too", async () => {
@@ -60,10 +63,11 @@ describe("/.well-known/api-catalog", () => {
         status: Array<{ href: string }>;
       }>;
     };
-    expect(body.linkset).toHaveLength(2);
+    expect(body.linkset).toHaveLength(3);
     const anchors = body.linkset.map((e) => e.anchor);
     expect(anchors).toContain("https://dmarc.mx/api/check");
     expect(anchors).toContain("https://dmarc.mx/api/bulk-scan");
+    expect(anchors).toContain("https://dmarc.mx/api/domain/{name}/history");
     for (const entry of body.linkset) {
       expect(entry["service-desc"][0].href).toBe(
         "https://dmarc.mx/openapi.json",
@@ -91,6 +95,7 @@ describe("/openapi.json", () => {
     for (const path of [
       "/api/check",
       "/api/bulk-scan",
+      "/api/domain/{name}/history",
       "/api/check/stream",
       "/check",
       "/health",
@@ -101,6 +106,7 @@ describe("/openapi.json", () => {
     expect(doc.components.schemas.ScanResult).toBeDefined();
     expect(doc.components.schemas.DmarcResult).toBeDefined();
     expect(doc.components.schemas.BulkScanResponse).toBeDefined();
+    expect(doc.components.schemas.DomainHistoryResponse).toBeDefined();
   });
 });
 
@@ -172,6 +178,97 @@ describe("markdown content negotiation", () => {
       headers: { Accept: "text/markdown" },
     });
     expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+  });
+});
+
+describe("/.well-known/agent-skills/index.json", () => {
+  it("returns a v0.2.0 skills index with sha256 digests", async () => {
+    const res = await app.request("/.well-known/agent-skills/index.json");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    const body = (await res.json()) as {
+      $schema: string;
+      skills: Array<{
+        name: string;
+        type: string;
+        description: string;
+        url: string;
+        sha256: string;
+      }>;
+    };
+    expect(body.$schema).toContain("agent-skills-discovery-rfc");
+    expect(body.skills.length).toBeGreaterThanOrEqual(2);
+    const types = body.skills.map((s) => s.type);
+    expect(types).toContain("markdown");
+    expect(types).toContain("openapi");
+    for (const skill of body.skills) {
+      expect(skill.name).toBe("scan_domain");
+      expect(skill.url).toMatch(/^https:\/\/dmarc\.mx\//);
+      expect(skill.sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  it("digest matches the served SKILL.md byte-for-byte", async () => {
+    const indexRes = await app.request("/.well-known/agent-skills/index.json");
+    const index = (await indexRes.json()) as {
+      skills: Array<{ type: string; url: string; sha256: string }>;
+    };
+    const markdownEntry = index.skills.find((s) => s.type === "markdown");
+    expect(markdownEntry).toBeDefined();
+
+    const skillRes = await app.request(
+      "/.well-known/agent-skills/scan-domain/SKILL.md",
+    );
+    expect(skillRes.headers.get("Content-Type")).toBe(
+      "text/markdown; charset=utf-8",
+    );
+    const text = await skillRes.text();
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(text),
+    );
+    const hex = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    expect(hex).toBe(markdownEntry?.sha256);
+  });
+
+  it("openapi entry digest matches /openapi.json byte-for-byte", async () => {
+    const indexRes = await app.request("/.well-known/agent-skills/index.json");
+    const index = (await indexRes.json()) as {
+      skills: Array<{ type: string; url: string; sha256: string }>;
+    };
+    const openapiEntry = index.skills.find((s) => s.type === "openapi");
+    expect(openapiEntry).toBeDefined();
+
+    const openapiRes = await app.request("/openapi.json");
+    const text = await openapiRes.text();
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(text),
+    );
+    const hex = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    expect(hex).toBe(openapiEntry?.sha256);
+  });
+});
+
+describe("/.well-known/agent-skills/scan-domain/SKILL.md", () => {
+  it("renders the scan_domain skill in markdown", async () => {
+    const res = await app.request(
+      "/.well-known/agent-skills/scan-domain/SKILL.md",
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe(
+      "text/markdown; charset=utf-8",
+    );
+    const body = await res.text();
+    expect(body).toContain("# scan_domain");
+    expect(body).toContain("/api/check");
+    expect(body).toContain("/openapi.json");
   });
 });
 

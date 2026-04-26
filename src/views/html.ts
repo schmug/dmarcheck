@@ -7,6 +7,7 @@ import type {
   ScanResult,
   SpfResult,
 } from "../analyzers/types.js";
+import { isIndexableScanDomain } from "../shared/indexable-domains.js";
 import { CSS_PATH, JS_PATH } from "./assets.js";
 import {
   dkimSelectorGrid,
@@ -45,6 +46,9 @@ interface PageOptions {
   description?: string;
   /** Pre-stringified JSON for a `<script type="application/ld+json">` block. */
   jsonLd?: string;
+  /** When true, emits `<meta name="robots" content="noindex,follow">`. Used
+   * for placeholder pages whose copy isn't final. */
+  noindex?: boolean;
 }
 
 export function page(opts: PageOptions): string {
@@ -53,13 +57,16 @@ export function page(opts: PageOptions): string {
   const jsonLdBlock = opts.jsonLd
     ? `\n<script type="application/ld+json">${opts.jsonLd}</script>`
     : "";
+  const robotsBlock = opts.noindex
+    ? `\n<meta name="robots" content="noindex,follow">`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f97316">
-<meta name="description" content="${esc(description)}">
+<meta name="description" content="${esc(description)}">${robotsBlock}
 <link rel="canonical" href="${esc(canonical)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
@@ -167,6 +174,7 @@ export function renderLandingPage(): string {
         <span>curl</span> https://dmarc.mx/api/check?domain=dmarc.mx
       </div>
       <div class="learn-link"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
+      <div class="learn-link"><a href="/pricing">Pricing</a> &middot; <a href="/legal/privacy">Privacy</a></div>
       <div class="foss-callout">
         <a href="https://github.com/schmug/dmarcheck" class="foss-link">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -197,7 +205,7 @@ export function renderDmarcCard(dmarc: DmarcResult): string {
     ? rawRecord(dmarc.record)
     : rawRecordExpand(dmarc.record, "Show TXT records found");
   const body = tagGrid(dmarc.tags) + validationList(dmarc.validations) + raw;
-  return protocolCard("DMARC", dmarc.status, subtitle, body, true);
+  return protocolCard("DMARC", dmarc.status, subtitle, body, true, "dmarc");
 }
 
 export function renderSpfCard(spf: SpfResult): string {
@@ -211,7 +219,7 @@ export function renderSpfCard(spf: SpfResult): string {
   }
   body += validationList(spf.validations);
   body += rawRecord(spf.record);
-  return protocolCard("SPF", spf.status, subtitle, body, true);
+  return protocolCard("SPF", spf.status, subtitle, body, true, "spf");
 }
 
 export function renderDkimCard(dkim: DkimResult): string {
@@ -222,7 +230,7 @@ export function renderDkimCard(dkim: DkimResult): string {
       : "No selectors found";
   const body =
     dkimSelectorGrid(dkim.selectors) + validationList(dkim.validations);
-  return protocolCard("DKIM", dkim.status, subtitle, body);
+  return protocolCard("DKIM", dkim.status, subtitle, body, false, "dkim");
 }
 
 export function renderBimiCard(bimi: BimiResult): string {
@@ -237,7 +245,7 @@ export function renderBimiCard(bimi: BimiResult): string {
     : "";
   const body =
     logo + tagGrid(bimi.tags) + validationList(bimi.validations) + raw;
-  return protocolCard("BIMI", bimi.status, subtitle, body);
+  return protocolCard("BIMI", bimi.status, subtitle, body, false, "bimi");
 }
 
 export function renderMtaStsCard(mtaSts: MtaStsResult): string {
@@ -252,7 +260,14 @@ export function renderMtaStsCard(mtaSts: MtaStsResult): string {
   if (mtaSts.dns_record) {
     body += rawRecord(mtaSts.dns_record);
   }
-  return protocolCard("MTA-STS", mtaSts.status, subtitle, body);
+  return protocolCard(
+    "MTA-STS",
+    mtaSts.status,
+    subtitle,
+    body,
+    false,
+    "mta-sts",
+  );
 }
 
 export function renderMxCard(mx: MxResult): string {
@@ -306,9 +321,10 @@ function reportBody(result: ScanResult): string {
 
 export function renderReport(result: ScanResult): string {
   return page({
-    title: `${result.domain} — dmarcheck`,
+    title: `${result.domain} DMARC report — Free check | dmarcheck`,
     path: `/check?domain=${encodeURIComponent(result.domain)}`,
-    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${result.domain}. Grade: ${result.grade}.`,
+    description: `Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${result.domain}. See the current grade, records, and fixes. No signup, no email required.`,
+    noindex: !isIndexableScanDomain(result.domain),
     body: reportBody(result),
   });
 }
@@ -371,9 +387,10 @@ export function renderStreamingLoading(
     : `domain=${encodeURIComponent(domain)}`;
 
   return page({
-    title: `Scanning ${domain} — dmarcheck`,
+    title: `${domain} DMARC report — Free check | dmarcheck`,
     path: `/check?domain=${encodeURIComponent(domain)}`,
-    description: `Live DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${domain}.`,
+    description: `Free, open-source DMARC, SPF, DKIM, BIMI, and MTA-STS check for ${domain}. See the current grade, records, and fixes. No signup, no email required.`,
+    noindex: !isIndexableScanDomain(domain),
     body: `<main class="report" data-qs="${esc(qs)}">
   <div class="report-nav">
     <a href="/">${generateCreature("sm")} dmarcheck</a>
@@ -618,23 +635,23 @@ export function renderScoringRubric(): string {
     <div class="bd-card-title">The five protocols</div>
     <div class="bd-card-body">
       <div class="rubric-protocol">
-        <h3>DMARC</h3>
+        <h3><a href="/learn/dmarc">DMARC</a></h3>
         <p>Domain-based Message Authentication, Reporting &amp; Conformance. The policy layer that ties SPF and DKIM together and tells receivers what to do with unauthenticated mail. This is the most important factor in your grade.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>SPF</h3>
+        <h3><a href="/learn/spf">SPF</a></h3>
         <p>Sender Policy Framework. A DNS record listing which IP addresses are authorized to send mail for your domain. Receivers check the sending server's IP against this list.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>DKIM</h3>
+        <h3><a href="/learn/dkim">DKIM</a></h3>
         <p>DomainKeys Identified Mail. Adds a cryptographic signature to outgoing messages, proving they haven't been tampered with in transit. Key strength (2048+ bits) and multiple selectors improve your score.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>BIMI</h3>
+        <h3><a href="/learn/bimi">BIMI</a></h3>
         <p>Brand Indicators for Message Identification. Displays your brand logo next to authenticated messages in supporting email clients. Requires DMARC p=reject.</p>
       </div>
       <div class="rubric-protocol">
-        <h3>MTA-STS</h3>
+        <h3><a href="/learn/mta-sts">MTA-STS</a></h3>
         <p>Mail Transfer Agent Strict Transport Security. Forces TLS encryption for inbound mail delivery, preventing downgrade attacks. Modes: testing (report only) and enforce (reject unencrypted).</p>
       </div>
     </div>
@@ -643,6 +660,8 @@ export function renderScoringRubric(): string {
   <div style="text-align:center;margin-top:2rem;margin-bottom:1rem">
     <a href="/" class="rubric-cta">Scan a domain &rarr;</a>
   </div>
+
+  <div class="learn-link" style="text-align:center"><a href="/pricing">Pricing</a> &middot; <a href="/legal/privacy">Privacy</a></div>
 
   <div class="foss-callout">
     <a href="https://github.com/schmug/dmarcheck" class="foss-link">

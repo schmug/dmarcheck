@@ -656,4 +656,142 @@ if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigat
     });
   } catch (e) { /* ignore */ }
 }
+
+/* Pro dashboard live search/filter/sort. Looks for #domain-panel[data-pro="1"]
+   and progressively enhances the toolbar form: typing in the search box,
+   changing a filter, clicking a sort header, or paginating swaps the panel
+   via /dashboard/domains instead of doing a full page reload. The form still
+   submits as a normal GET if JS fails or is disabled, so the Apply button
+   stays in the markup — we just hide it once the script boots. */
+(function() {
+  var initial = document.getElementById('domain-panel');
+  if (!initial || initial.getAttribute('data-pro') !== '1') return;
+
+  function getPanel() { return document.getElementById('domain-panel'); }
+  function getForm() {
+    var p = getPanel();
+    return p ? p.querySelector('form.domain-toolbar') : null;
+  }
+  function hideApplyButton() {
+    var form = getForm();
+    if (!form) return;
+    var btn = form.querySelector('.toolbar-actions button[type="submit"]');
+    if (btn) btn.style.display = 'none';
+  }
+  hideApplyButton();
+
+  var inflight = null;
+  var searchTimer = null;
+
+  function paramsFromForm() {
+    var form = getForm();
+    var p = new URLSearchParams();
+    if (!form) return p;
+    var fd = new FormData(form);
+    fd.forEach(function(value, key) {
+      var s = String(value);
+      if (s !== '') p.set(key, s);
+    });
+    return p;
+  }
+
+  function paramsFromHref(href) {
+    try { return new URL(href, location.origin).searchParams; }
+    catch (e) { return new URLSearchParams(); }
+  }
+
+  function loadFragment(params) {
+    if (inflight) inflight.abort();
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    inflight = ctrl;
+    var qs = params.toString();
+    var panelEl = getPanel();
+    if (panelEl) panelEl.setAttribute('aria-busy', 'true');
+    var fragmentUrl = '/dashboard/domains' + (qs ? '?' + qs : '');
+    var opts = { credentials: 'same-origin', headers: { 'Accept': 'text/html' } };
+    if (ctrl) opts.signal = ctrl.signal;
+    fetch(fragmentUrl, opts)
+      .then(function(res) {
+        if (!res.ok) throw new Error('http ' + res.status);
+        return res.text();
+      })
+      .then(function(html) {
+        var current = getPanel();
+        if (!current) return;
+        /* DOMParser parses without executing scripts and without touching the
+           live document; safer than innerHTML on a detached node. The fragment
+           is same-origin authenticated HTML and domains go through esc() on
+           the server, but parse-don't-execute is the right default. */
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var fresh = doc.getElementById('domain-panel');
+        if (!fresh) return;
+        var imported = document.importNode(fresh, true);
+        /* Preserve cursor + focus on the search input across the swap so
+           rapid typing doesn't flicker or strand the caret. */
+        var prev = current.querySelector('input[name="q"]');
+        var refocus = document.activeElement === prev;
+        var selStart = prev ? prev.selectionStart : null;
+        var selEnd = prev ? prev.selectionEnd : null;
+        current.replaceWith(imported);
+        hideApplyButton();
+        if (refocus) {
+          var next = imported.querySelector('input[name="q"]');
+          if (next) {
+            next.focus();
+            try {
+              if (selStart !== null && selEnd !== null) {
+                next.setSelectionRange(selStart, selEnd);
+              }
+            } catch (e) { /* readonly inputs etc. */ }
+          }
+        }
+        var dashUrl = '/dashboard' + (qs ? '?' + qs : '');
+        history.replaceState(null, '', dashUrl);
+      })
+      .catch(function() { /* aborted or network error — leave panel as-is */ })
+      .finally(function() {
+        if (inflight === ctrl) inflight = null;
+        var p = getPanel();
+        if (p) p.removeAttribute('aria-busy');
+      });
+  }
+
+  document.addEventListener('input', function(e) {
+    if (!e.target || !e.target.matches) return;
+    if (!e.target.matches('form.domain-toolbar input[name="q"]')) return;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function() {
+      var p = paramsFromForm();
+      p.delete('page');
+      loadFragment(p);
+    }, 250);
+  });
+
+  document.addEventListener('change', function(e) {
+    if (!e.target || !e.target.matches) return;
+    if (!e.target.matches('form.domain-toolbar select')) return;
+    var p = paramsFromForm();
+    p.delete('page');
+    loadFragment(p);
+  });
+
+  document.addEventListener('submit', function(e) {
+    if (!e.target || !e.target.matches || !e.target.matches('form.domain-toolbar')) return;
+    e.preventDefault();
+    if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+    loadFragment(paramsFromForm());
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target || !e.target.closest) return;
+    /* Skip modified clicks so cmd/ctrl-click still opens new tabs. */
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    var link = e.target.closest('#domain-panel a.sort-link, #domain-panel .domain-pagination a');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (!href || href.charAt(0) !== '/') return;
+    e.preventDefault();
+    loadFragment(paramsFromHref(href));
+  });
+})();
 `;
