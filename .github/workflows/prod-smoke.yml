@@ -1,0 +1,162 @@
+name: Prod Smoke Test
+
+# Black-box prober against the public dmarc.mx surface. Catches regressions
+# that unit tests can't:
+#   - Cloudflare Workers runtime regressions (e.g. the MTA-STS
+#     `redirect: "error"` runtime crash that hit twice via #58 / #92)
+#   - wrangler config drift (nodejs_compat flag, secret bindings, route
+#     patterns)
+#   - D1 migration failures the migrate workflow logged as success but
+#     left half-applied
+#   - DNS-resolution edge cases that only surface against real recursive
+#     resolvers
+#
+# No secrets are ever passed to this workflow — it only probes the public
+# surface. If/when authenticated smoke (Pro endpoints, dashboard) is added,
+# split it into a separate workflow with a dedicated test bearer.
+#
+# Triggers:
+#   - workflow_run on CI completing on main: post-deploy smoke. Cloudflare
+#     uses the Git integration to deploy the Worker (no GitHub Actions
+#     deployment workflow exists to hook directly), so we wait briefly for
+#     the deploy to roll out before probing.
+#   - schedule every 6 hours: ongoing canary independent of deploys.
+#   - workflow_dispatch: manual runs (e.g. after a hotfix or to verify a
+#     suspected regression).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # Skip post-deploy runs when CI itself didn't pass — a failed CI means
+    # nothing new shipped, so there's nothing fresh to probe.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      issues: write
+    env:
+      BASE: https://dmarc.mx
+    steps:
+      # Wait for the Cloudflare Git-integration deploy to finish rolling
+      # out. Typical end-to-end is well under 90s; bump if we see flake on
+      # the post-deploy trigger but fresh canary runs are clean.
+      - name: Wait for deploy to roll out
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: sleep 90
+
+      - name: Probe /health
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/health.json -w "%{http_code}" "$BASE/health")
+          test "$status" = "200" || { echo "::error::/health returned $status"; cat /tmp/health.json; exit 1; }
+          jq -e '.status == "ok"' /tmp/health.json > /dev/null
+
+      # We control dmarc.mx, so this end-to-end check is the most sensitive
+      # signal that a regression touched the scan path. Assert generously
+      # on the grade (S/A-band) because BIMI / DKIM / MTA-STS findings can
+      # shift it within the top tier without the scan being broken.
+      - name: Probe /api/check?domain=dmarc.mx (own domain)
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/own.json -w "%{http_code}" "$BASE/api/check?domain=dmarc.mx")
+          test "$status" = "200" || { echo "::error::own-domain scan returned $status"; cat /tmp/own.json; exit 1; }
+          ct=$(curl -sI "$BASE/api/check?domain=dmarc.mx" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
+          echo "$ct" | grep -q 'application/json' || { echo "::error::expected application/json, got: $ct"; exit 1; }
+          jq -e '.grade | test("^(S|A\\+?|A-|B\\+?|B-)$")' /tmp/own.json > /dev/null \
+            || { echo "::error::grade out of expected band: $(jq -r .grade /tmp/own.json)"; exit 1; }
+
+      # Sanity-check that grading runs end-to-end against a known-good
+      # third party. cloudflare.com publishes p=reject and is unlikely to
+      # regress. Assert on summary.dmarc_policy specifically — a worker
+      # that returns 200 with empty summary would otherwise be silently
+      # broken.
+      - name: Probe /api/check?domain=cloudflare.com (third-party)
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/cf.json -w "%{http_code}" "$BASE/api/check?domain=cloudflare.com")
+          test "$status" = "200" || { echo "::error::cloudflare scan returned $status"; cat /tmp/cf.json; exit 1; }
+          jq -e '.summary.dmarc_policy == "reject"' /tmp/cf.json > /dev/null \
+            || { echo "::error::cloudflare.com summary.dmarc_policy != 'reject': $(jq -r .summary.dmarc_policy /tmp/cf.json)"; exit 1; }
+
+      - name: Probe /openapi.json
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/openapi.json -w "%{http_code}" "$BASE/openapi.json")
+          test "$status" = "200" || { echo "::error::/openapi.json returned $status"; exit 1; }
+          ct=$(curl -sI "$BASE/openapi.json" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
+          echo "$ct" | grep -q 'application/openapi+json' || { echo "::error::expected application/openapi+json, got: $ct"; exit 1; }
+          jq -e '.openapi | startswith("3.1")' /tmp/openapi.json > /dev/null
+
+      - name: Probe /.well-known/api-catalog
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/catalog.json -w "%{http_code}" "$BASE/.well-known/api-catalog")
+          test "$status" = "200" || { echo "::error::api-catalog returned $status"; exit 1; }
+          ct=$(curl -sI "$BASE/.well-known/api-catalog" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
+          echo "$ct" | grep -q 'application/linkset+json' || { echo "::error::expected application/linkset+json, got: $ct"; exit 1; }
+
+      # The Link header advertises the discovery surface. If even one rel
+      # falls off, agent clients break silently — assert all five.
+      - name: Probe Link header on landing page
+        run: |
+          set -euo pipefail
+          headers=$(curl -sI "$BASE/")
+          link=$(echo "$headers" | awk -F': ' 'tolower($1)=="link"{$1=""; sub(/^ /,""); print}' | tr -d '\r')
+          test -n "$link" || { echo "::error::no Link header on landing page"; echo "$headers"; exit 1; }
+          for rel in 'rel="api-catalog"' 'rel="https://agentskills.io/rel/index"' 'rel="service-desc"' 'rel="service-doc"' 'rel="status"'; do
+            echo "$link" | grep -q "$rel" || { echo "::error::Link header missing $rel"; echo "Link: $link"; exit 1; }
+          done
+
+      - name: Probe HSTS header
+        run: |
+          set -euo pipefail
+          hsts=$(curl -sI "$BASE/" | awk -F': ' 'tolower($1)=="strict-transport-security"{$1=""; sub(/^ /,""); print}' | tr -d '\r')
+          test -n "$hsts" || { echo "::error::no Strict-Transport-Security header"; exit 1; }
+          echo "$hsts" | grep -q 'max-age=' || { echo "::error::HSTS missing max-age: $hsts"; exit 1; }
+
+  # File a tracking issue when the smoke fails. Skipped on workflow_dispatch
+  # (manual runs are noisy and the operator already sees the failure live).
+  open-incident:
+    needs: smoke
+    if: ${{ failure() && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update incident issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRIGGER: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Idempotent label creation — avoids hard-coupling this workflow
+          # to a one-time manual setup step.
+          gh label create incident --color "b60205" --description "Live-site issue surfaced by automation" 2>/dev/null || true
+          # Reuse a single open "prod smoke failing" issue rather than
+          # spamming a new one every cron tick. Resolved by closing the
+          # issue once the next green run comes in (manual for now).
+          existing=$(gh issue list --state open --label incident --search "Prod smoke test failing" --json number --jq '.[0].number' || echo "")
+          body="The prod smoke workflow failed on $(date -u +%FT%TZ).
+          Run: $RUN_URL
+          Trigger: $TRIGGER"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create \
+              --title "Prod smoke test failing" \
+              --label incident \
+              --body "$body"
+          fi
