@@ -17,6 +17,7 @@ import {
   getAgentSkillsIndexJson,
   SCAN_DOMAIN_SKILL_MD,
 } from "./api/agent-skills.js";
+import { isValidGrade, renderBadgeSvg } from "./api/badge.js";
 import {
   BULK_IN_BAND_CAP,
   isCapExceeded,
@@ -471,6 +472,22 @@ app.use(
   ),
 );
 
+// Badge endpoint runs a full scan on cache miss, so it gets the same
+// per-IP limiter as /api/check. Cloudflare edge caches the SVG response
+// (1h max-age), so README-embedded badges collapse to a small number of
+// origin hits regardless of view volume.
+app.use(
+  "/badge",
+  rateLimitMiddleware((c, _result, headers) =>
+    // Even rate-limit responses must be SVG so embeds don't render a JSON
+    // blob in place of the badge. "rate limited" is a fallback grade.
+    c.body(renderBadgeSvg({ grade: "rate limited", color: "#737373" }), {
+      status: 429,
+      headers: { ...headers, "Content-Type": "image/svg+xml; charset=utf-8" },
+    }),
+  ),
+);
+
 const protocolRenderers: Record<
   ProtocolId,
   (result: ProtocolResult) => string
@@ -623,6 +640,55 @@ app.get("/og-image.svg", (c) => {
     "Content-Type": "image/svg+xml",
     "Cache-Control": "public, max-age=86400",
   });
+});
+
+// Embeddable email-security badge for READMEs and dashboards. Always
+// returns a 200 SVG (even for invalid input or scan errors) so a badge
+// embed never renders as a broken image — error states are encoded into
+// the badge text instead.
+app.get("/badge", async (c) => {
+  const domain = normalizeDomain(c.req.query("domain"));
+  const svgHeaders = (): Record<string, string> => ({
+    "Content-Type": "image/svg+xml; charset=utf-8",
+    // 1h browser, 1h edge, generous SWR. Badges live on README pages —
+    // they need to render fast and stay fresh-ish without re-scanning per
+    // viewer. The scan itself is also cached for 5 minutes inside getCachedScan,
+    // but that's a different layer; this header controls what GitHub
+    // (and downstream image proxies like camo) see.
+    "Cache-Control":
+      "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+    // GitHub's image proxy (camo) won't show user-supplied SVGs unless
+    // the response is a clean SVG with no embedded scripts. Our generator
+    // emits no <script>, but reinforce with CSP.
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+  });
+
+  if (!domain) {
+    return c.body(renderBadgeSvg({ grade: "invalid", color: "#737373" }), 400, {
+      ...svgHeaders(),
+    });
+  }
+
+  try {
+    const cached = await getCachedScan(domain, []);
+    const result = cached ?? (await scan(domain, []));
+    if (!cached) {
+      const pendingCacheWrite = setCachedScan(domain, [], result);
+      if (pendingCacheWrite) {
+        c.executionCtx.waitUntil(pendingCacheWrite.catch(() => {}));
+      }
+    }
+    const grade = isValidGrade(result.grade) ? result.grade : "unknown";
+    return c.body(renderBadgeSvg({ grade }), 200, svgHeaders());
+  } catch (err) {
+    Sentry.captureException(err);
+    return c.body(renderBadgeSvg({ grade: "error", color: "#737373" }), 200, {
+      ...svgHeaders(),
+      // Shorter cache on errors so a transient DNS failure doesn't lock
+      // a domain into the error badge for an hour.
+      "Cache-Control": "public, max-age=60",
+    });
+  }
 });
 
 app.get("/og-image.png", (c) => {
