@@ -830,6 +830,204 @@ describe("dashboard/routes", () => {
       expect(body.history).toHaveLength(1);
       expect(body.history[0].grade).toBe("B");
     });
+
+    it("surfaces enriched protocol summaries from the latest scan blob", async () => {
+      const protocolBlob = JSON.stringify({
+        mx: { status: "info", records: [], providers: [], validations: [] },
+        dmarc: {
+          status: "pass",
+          record: "v=DMARC1; p=reject; rua=mailto:rua@example.com",
+          tags: { v: "DMARC1", p: "reject", rua: "mailto:rua@example.com" },
+          validations: [],
+        },
+        spf: {
+          status: "pass",
+          record: "v=spf1 include:_spf.google.com ~all",
+          lookups_used: 4,
+          lookup_limit: 10,
+          include_tree: null,
+          validations: [],
+        },
+        dkim: {
+          status: "pass",
+          selectors: {
+            google: { found: true, key_type: "rsa", key_bits: 2048 },
+            other: { found: false },
+          },
+          validations: [],
+        },
+        bimi: { status: "fail", record: null, tags: null, validations: [] },
+        mta_sts: {
+          status: "fail",
+          dns_record: null,
+          policy: null,
+          validations: [],
+        },
+      });
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: 1700000000,
+            last_grade: "A",
+            created_at: 1700000000,
+          },
+        ],
+        scanHistory: [
+          {
+            grade: "A",
+            scanned_at: 1700000000,
+            protocol_results: protocolBlob,
+            score_factors: "[]",
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com.json", {
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        protocols: {
+          dmarc: { status: string; record: string | null; summary: string };
+          spf: { status: string; record: string | null; summary: string };
+          dkim: { status: string; record: string | null; summary: string };
+          bimi: { status: string; record: string | null; summary: string };
+          mta_sts: { status: string; record: string | null; summary: string };
+        };
+        recommendations: { priority: number; title: string }[];
+        diff: unknown | null;
+      };
+      expect(body.protocols.dmarc.status).toBe("pass");
+      expect(body.protocols.dmarc.record).toContain("v=DMARC1");
+      expect(body.protocols.dmarc.summary).toBe("policy: p=reject");
+      expect(body.protocols.spf.summary).toBe("4/10 DNS lookups");
+      expect(body.protocols.dkim.summary).toContain("1 selector");
+      expect(body.protocols.dkim.summary).toContain("2048-bit");
+      expect(body.protocols.bimi.summary).toBe("not configured");
+      expect(body.protocols.mta_sts.summary).toBe("not configured");
+      // recommendations is whatever computeGradeBreakdown returns; we just
+      // assert the field is present and is an array — content varies with
+      // scoring tweaks.
+      expect(Array.isArray(body.recommendations)).toBe(true);
+      // No diff with a single history row.
+      expect(body.diff).toBeNull();
+    });
+
+    it("emits a diff when DMARC drifted within 26h of the previous scan", async () => {
+      const previous = JSON.stringify({
+        dmarc: {
+          status: "pass",
+          record: "v=DMARC1; p=quarantine; pct=100",
+          tags: { p: "quarantine" },
+        },
+        spf: { status: "pass", lookups_used: 3 },
+        dkim: { status: "pass", selectors: {} },
+        bimi: { status: "fail" },
+        mta_sts: { status: "fail" },
+      });
+      const current = JSON.stringify({
+        dmarc: {
+          status: "warn",
+          record: "v=DMARC1; p=none",
+          tags: { p: "none" },
+        },
+        spf: { status: "pass", lookups_used: 3 },
+        dkim: { status: "pass", selectors: {} },
+        bimi: { status: "fail" },
+        mta_sts: { status: "fail" },
+      });
+      const now = 1700000000;
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "daily",
+            last_scanned_at: now,
+            last_grade: "F",
+            created_at: now - 86400 * 30,
+          },
+        ],
+        scanHistory: [
+          { grade: "F", scanned_at: now, protocol_results: current },
+          {
+            grade: "B",
+            scanned_at: now - 12 * 3600,
+            protocol_results: previous,
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com.json", {
+        headers: { Cookie: cookie },
+      });
+      const body = (await res.json()) as {
+        diff: {
+          change: string;
+          previous: string;
+          current: string;
+        } | null;
+      };
+      expect(body.diff).not.toBeNull();
+      expect(body.diff?.previous).toContain("p=quarantine");
+      expect(body.diff?.current).toContain("p=none");
+      expect(body.diff?.change).toContain("p=none");
+    });
+
+    it("does not emit a diff when the previous scan is older than 26h", async () => {
+      const blob = (policy: string) =>
+        JSON.stringify({
+          dmarc: {
+            status: "pass",
+            record: `v=DMARC1; p=${policy}`,
+            tags: { p: policy },
+          },
+          spf: { status: "pass", lookups_used: 3 },
+          dkim: { status: "pass", selectors: {} },
+          bimi: { status: "fail" },
+          mta_sts: { status: "fail" },
+        });
+      const now = 1700000000;
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: now,
+            last_grade: "B",
+            created_at: now - 86400 * 30,
+          },
+        ],
+        scanHistory: [
+          { grade: "B", scanned_at: now, protocol_results: blob("none") },
+          // 5 days ago — outside the 26h diff window.
+          {
+            grade: "A",
+            scanned_at: now - 5 * 86400,
+            protocol_results: blob("reject"),
+          },
+        ],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com.json", {
+        headers: { Cookie: cookie },
+      });
+      const body = (await res.json()) as { diff: unknown };
+      expect(body.diff).toBeNull();
+    });
   });
 
   describe("GET /dashboard/domain/:domain/history", () => {
