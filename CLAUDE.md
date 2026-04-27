@@ -26,7 +26,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 
 - `src/index.ts` — Hono routes, content negotiation, rate limiting middleware
 - `src/dns/client.ts` — DNS abstraction over node:dns (NXDOMAIN returns null)
-- `src/analyzers/` — One module per protocol (dmarc, spf, dkim, bimi, mta-sts)
+- `src/analyzers/` — One module per protocol (dmarc, spf, dkim, bimi, mta-sts, mx, security-txt)
 - `src/orchestrator.ts` — Runs all analyzers in parallel via Promise.allSettled
 - `src/shared/scoring.ts` — Grade computation (F if no DMARC or p=none)
 - `src/cache.ts` — SSE result caching
@@ -85,6 +85,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 - **Secret scanning:** Secret scanning, push protection, non-provider patterns, and validity checks are all enabled in repo settings. Never commit `.env`, tokens, or wrangler secrets.
 - **Input validation:** User-supplied domains are restricted to `[a-z0-9.-]` in `normalizeDomain` (`src/index.ts`). DKIM selectors are restricted to `[A-Za-z0-9._-]` in `parseSelectors`. HTML output never interpolates raw user input into inline `<script>` blocks — use `data-*` attributes via `esc()` instead.
 - **MTA-STS fetch redirect mode:** `src/analyzers/mta-sts.ts` uses `redirect: "manual"` for the policy fetch. Do NOT change it to `"error"` — that throws in the Cloudflare Workers fetch runtime and breaks every scan (regressed twice via PRs #58 and #92). `"manual"` is RFC 8461 §3.3-compliant: redirects yield an opaque-redirect `Response` rejected by the existing `resp.type === "opaqueredirect"` / `!resp.ok` guards.
+- **security.txt fetch redirect mode:** `src/analyzers/security-txt.ts` deliberately uses `redirect: "follow"` (not `"manual"`) — RFC 9116 §3 does not forbid following redirects, and real-world deployments commonly redirect (e.g. gov.uk → www.gov.uk → vdp.cabinetoffice.gov.uk). MTA-STS's `manual` posture is a security requirement of RFC 8461 §3.3 specifically; security.txt has no equivalent rule, so the user-friendly choice is to follow.
 - **Reporting:** See `SECURITY.md` for the private disclosure process.
 
 ## Database migrations

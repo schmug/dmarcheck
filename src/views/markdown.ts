@@ -1,4 +1,8 @@
-import type { ScanResult, Validation } from "../analyzers/types.js";
+import type {
+  ScanResult,
+  SecurityTxtResult,
+  Validation,
+} from "../analyzers/types.js";
 
 // Markdown renderings for agent consumers that send `Accept: text/markdown`.
 // Output is plain markdown with no HTML fragments — agents are expected to
@@ -13,6 +17,33 @@ function bullet(items: string[]): string {
 function validationLines(validations: Validation[]): string {
   if (validations.length === 0) return "- _(no findings)_";
   return validations.map((v) => `- **${v.status}** — ${v.message}`).join("\n");
+}
+
+function renderSecurityTxtMarkdown(s: SecurityTxtResult): string {
+  if (!s.fields) {
+    return `## security.txt — ${s.status}
+
+_No security.txt published._
+
+${validationLines(s.validations)}`;
+  }
+  const f = s.fields;
+  const fieldLines: string[] = [];
+  if (f.contact.length > 0)
+    fieldLines.push(`- Contact: ${f.contact.join(", ")}`);
+  if (f.expires) fieldLines.push(`- Expires: ${f.expires}`);
+  if (f.policy.length > 0) fieldLines.push(`- Policy: ${f.policy.join(", ")}`);
+  if (f.encryption.length > 0)
+    fieldLines.push(`- Encryption: ${f.encryption.join(", ")}`);
+  if (f.preferred_languages)
+    fieldLines.push(`- Preferred-Languages: ${f.preferred_languages}`);
+  return `## security.txt — ${s.status}
+
+Source: <${s.source_url}>${s.signed ? " (PGP-signed)" : ""}
+
+${fieldLines.join("\n")}
+
+${validationLines(s.validations)}`;
 }
 
 export function renderLandingMarkdown(): string {
@@ -127,6 +158,8 @@ ${bullet(protocols.mx.records.map((r) => `${r.priority} ${r.exchange}${r.provide
 
 ${validationLines(protocols.mx.validations)}
 
+${protocols.security_txt ? renderSecurityTxtMarkdown(protocols.security_txt) : ""}
+
 ---
 
 JSON: <${MD_SITE}/api/check?domain=${encodeURIComponent(domain)}>
@@ -213,7 +246,8 @@ See \`ScanResult\` in <${MD_SITE}/openapi.json>. Summary:
     "spf":     { "status", "record", "lookups_used", "include_tree", ... },
     "dkim":    { "status", "selectors", "validations" },
     "bimi":    { "status", "record", "tags", "validations" },
-    "mta_sts": { "status", "dns_record", "policy", "validations" }
+    "mta_sts": { "status", "dns_record", "policy", "validations" },
+    "security_txt": { "status", "source_url", "signed", "fields", "validations" }
   }
 }
 \`\`\`

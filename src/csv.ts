@@ -67,6 +67,11 @@ export function generateCsv(result: ScanResult): string {
   // BOM + header
   rows.push(`\uFEFF${HEADERS.map(escapeCsvField).join(",")}`);
 
+  // security_txt is intentionally omitted — it's an informational analyzer
+  // (status always "info", does not contribute scoring factors or
+  // recommendations), so CSV consumers focused on the email-security grade
+  // get a tighter export. The full security.txt findings are still
+  // available on the JSON response and the HTML report.
   const protocols = ["mx", "dmarc", "spf", "dkim", "bimi", "mta_sts"] as const;
 
   for (const key of protocols) {

@@ -5,6 +5,7 @@ import type {
   MtaStsResult,
   MxResult,
   ScanResult,
+  SecurityTxtResult,
   SpfResult,
 } from "../analyzers/types.js";
 import { isIndexableScanDomain } from "../shared/indexable-domains.js";
@@ -270,6 +271,63 @@ export function renderMtaStsCard(mtaSts: MtaStsResult): string {
   );
 }
 
+export function renderSecurityTxtCard(s: SecurityTxtResult): string {
+  const subtitle = s.fields
+    ? `Found${s.signed ? " (signed)" : ""}`
+    : "Not published";
+
+  let body = "";
+  if (s.fields) {
+    const rows: string[] = [];
+    if (s.fields.contact.length > 0) {
+      rows.push(
+        `<div><strong>Contact</strong></div><div>${s.fields.contact
+          .map((v) => `<code>${esc(v)}</code>`)
+          .join("<br>")}</div>`,
+      );
+    }
+    if (s.fields.expires) {
+      rows.push(
+        `<div><strong>Expires</strong></div><div><code>${esc(s.fields.expires)}</code></div>`,
+      );
+    }
+    if (s.fields.policy.length > 0) {
+      rows.push(
+        `<div><strong>Policy</strong></div><div>${s.fields.policy
+          .map((v) => `<code>${esc(v)}</code>`)
+          .join("<br>")}</div>`,
+      );
+    }
+    if (s.fields.encryption.length > 0) {
+      rows.push(
+        `<div><strong>Encryption</strong></div><div>${s.fields.encryption
+          .map((v) => `<code>${esc(v)}</code>`)
+          .join("<br>")}</div>`,
+      );
+    }
+    if (s.fields.preferred_languages) {
+      rows.push(
+        `<div><strong>Preferred-Languages</strong></div><div><code>${esc(s.fields.preferred_languages)}</code></div>`,
+      );
+    }
+    if (rows.length > 0) {
+      body += `<div class="tag-grid">${rows.join("")}</div>`;
+    }
+  }
+  body += validationList(s.validations);
+  if (s.source_url) {
+    body += `<div class="raw-record"><a href="${esc(s.source_url)}" rel="nofollow noopener" target="_blank">${esc(s.source_url)} &nearr;</a></div>`;
+  }
+  return protocolCard(
+    "security.txt",
+    s.status,
+    subtitle,
+    body,
+    false,
+    "security-txt",
+  );
+}
+
 export function renderMxCard(mx: MxResult): string {
   const subtitle =
     mx.records.length > 0
@@ -280,7 +338,8 @@ export function renderMxCard(mx: MxResult): string {
 }
 
 function reportBody(result: ScanResult): string {
-  const { mx, dmarc, spf, dkim, bimi, mta_sts } = result.protocols;
+  const { mx, dmarc, spf, dkim, bimi, mta_sts, security_txt } =
+    result.protocols;
 
   return `<main class="report">
   <div class="report-nav">
@@ -307,6 +366,7 @@ function reportBody(result: ScanResult): string {
   ${renderDkimCard(dkim)}
   ${renderBimiCard(bimi)}
   ${renderMtaStsCard(mta_sts)}
+  ${security_txt ? renderSecurityTxtCard(security_txt) : ""}
   ${monitorSnapshotCard(result)}
   <div class="learn-link" style="margin-top:2.5rem">Analyze message headers: <a href="https://toolbox.googleapps.com/apps/messageheader/" target="_blank" rel="noopener">Google &#8599;</a> &middot; <a href="https://mha.azurewebsites.net/" target="_blank" rel="noopener">Microsoft &#8599;</a></div>
   <div class="learn-link" style="margin-top:0.4rem;margin-bottom:1rem"><a href="/scoring">How is my score calculated?</a> &middot; <a href="https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/" target="_blank" rel="noopener">What is email security? &#8599;</a></div>
@@ -755,7 +815,7 @@ export function renderApiDocs(): string {
   <div class="bd-card">
     <div class="bd-card-title">Response shape</div>
     <div class="bd-card-body">
-      <p>See <code>ScanResult</code> in <a href="/openapi.json">openapi.json</a>. Top-level keys: <code>domain</code>, <code>timestamp</code>, <code>grade</code>, <code>breakdown</code>, <code>summary</code>, <code>protocols</code> (<code>mx</code>, <code>dmarc</code>, <code>spf</code>, <code>dkim</code>, <code>bimi</code>, <code>mta_sts</code>).</p>
+      <p>See <code>ScanResult</code> in <a href="/openapi.json">openapi.json</a>. Top-level keys: <code>domain</code>, <code>timestamp</code>, <code>grade</code>, <code>breakdown</code>, <code>summary</code>, <code>protocols</code> (<code>mx</code>, <code>dmarc</code>, <code>spf</code>, <code>dkim</code>, <code>bimi</code>, <code>mta_sts</code>, <code>security_txt</code>).</p>
     </div>
   </div>
 

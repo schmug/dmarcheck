@@ -81,6 +81,27 @@ export interface MxResult {
   validations: Validation[];
 }
 
+export interface SecurityTxtFields {
+  contact: string[];
+  expires: string | null;
+  encryption: string[];
+  policy: string[];
+  acknowledgments: string[];
+  preferred_languages: string | null;
+  canonical: string[];
+  hiring: string[];
+}
+
+export interface SecurityTxtResult {
+  status: Status;
+  /** URL the file was actually fetched from (well-known or root fallback). */
+  source_url: string | null;
+  /** Whether the body carried PGP cleartext-signature armor. */
+  signed: boolean;
+  fields: SecurityTxtFields | null;
+  validations: Validation[];
+}
+
 export interface ScanSummary {
   mx_records: number;
   mx_providers: string[];
@@ -105,5 +126,6 @@ export interface ScanResult {
     dkim: DkimResult;
     bimi: BimiResult;
     mta_sts: MtaStsResult;
+    security_txt: SecurityTxtResult;
   };
 }

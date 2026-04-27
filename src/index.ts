@@ -11,6 +11,7 @@ import type {
   MtaStsResult,
   MxResult,
   ScanResult,
+  SecurityTxtResult,
   SpfResult,
 } from "./analyzers/types.js";
 import {
@@ -73,6 +74,7 @@ import {
   renderReportHeader,
   renderScoreBreakdown,
   renderScoringRubric,
+  renderSecurityTxtCard,
   renderSpfCard,
   renderStreamingLoading,
 } from "./views/html.js";
@@ -481,6 +483,7 @@ const protocolRenderers: Record<
   dkim: (r) => renderDkimCard(r as DkimResult),
   bimi: (r) => renderBimiCard(r as BimiResult),
   mta_sts: (r) => renderMtaStsCard(r as MtaStsResult),
+  security_txt: (r) => renderSecurityTxtCard(r as SecurityTxtResult),
 };
 
 function tagScanResult(result: ScanResult): void {
@@ -491,6 +494,11 @@ function tagScanResult(result: ScanResult): void {
   scope.setTag("dkim.status", result.protocols.dkim.status);
   scope.setTag("bimi.status", result.protocols.bimi.status);
   scope.setTag("mta_sts.status", result.protocols.mta_sts.status);
+  // Optional access — older cached scans (pre-#40) may not include
+  // security_txt. Drop the tag rather than crash the SSE replay.
+  if (result.protocols.security_txt) {
+    scope.setTag("security_txt.status", result.protocols.security_txt.status);
+  }
 }
 
 app.get("/api/check/stream", async (c) => {
@@ -527,9 +535,14 @@ app.get("/api/check/stream", async (c) => {
         "dkim",
         "bimi",
         "mta_sts",
+        "security_txt",
       ];
       for (const id of protocolIds) {
-        const html = protocolRenderers[id](cached.protocols[id]);
+        const protocolResult = cached.protocols[id];
+        // Older cached scans (pre-#40) may lack security_txt; skip rather
+        // than crashing the replay. Fresh scans always populate it.
+        if (!protocolResult) continue;
+        const html = protocolRenderers[id](protocolResult);
         await stream.writeSSE({
           event: "protocol",
           data: JSON.stringify({ id, html }),
