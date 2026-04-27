@@ -482,6 +482,7 @@ const PROTO_LABELS: Record<string, string> = {
   dkim: "DKIM",
   bimi: "BIMI",
   mta_sts: "MTA-STS",
+  security_txt: "security.txt",
 };
 
 export function scoreSnippet(result: ScanResult): string {

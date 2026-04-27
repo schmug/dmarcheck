@@ -502,6 +502,9 @@ export const OPENAPI_DOCUMENT = {
           grade: { type: "string" },
           protocols: {
             type: "object",
+            // Per-row history persists pre-#40 rows that don't carry a
+            // security_txt status. Leave it out of `required` so older
+            // history payloads still validate; new scans include it.
             required: ["dmarc", "spf", "dkim", "bimi", "mta_sts"],
             additionalProperties: false,
             properties: {
@@ -530,6 +533,12 @@ export const OPENAPI_DOCUMENT = {
                 ],
               },
               mta_sts: {
+                oneOf: [
+                  { $ref: "#/components/schemas/Status" },
+                  { type: "null" },
+                ],
+              },
+              security_txt: {
                 oneOf: [
                   { $ref: "#/components/schemas/Status" },
                   { type: "null" },
@@ -657,6 +666,45 @@ export const OPENAPI_DOCUMENT = {
           policy: {
             oneOf: [
               { $ref: "#/components/schemas/MtaStsPolicy" },
+              { type: "null" },
+            ],
+          },
+          validations,
+        },
+      },
+      SecurityTxtFields: {
+        type: "object",
+        required: [
+          "contact",
+          "expires",
+          "encryption",
+          "policy",
+          "acknowledgments",
+          "preferred_languages",
+          "canonical",
+          "hiring",
+        ],
+        properties: {
+          contact: { type: "array", items: { type: "string" } },
+          expires: { type: ["string", "null"] },
+          encryption: { type: "array", items: { type: "string" } },
+          policy: { type: "array", items: { type: "string" } },
+          acknowledgments: { type: "array", items: { type: "string" } },
+          preferred_languages: { type: ["string", "null"] },
+          canonical: { type: "array", items: { type: "string" } },
+          hiring: { type: "array", items: { type: "string" } },
+        },
+      },
+      SecurityTxtResult: {
+        type: "object",
+        required: ["status", "source_url", "signed", "fields", "validations"],
+        properties: {
+          status: { $ref: "#/components/schemas/Status" },
+          source_url: { type: ["string", "null"] },
+          signed: { type: "boolean" },
+          fields: {
+            oneOf: [
+              { $ref: "#/components/schemas/SecurityTxtFields" },
               { type: "null" },
             ],
           },
@@ -805,7 +853,15 @@ export const OPENAPI_DOCUMENT = {
           summary: { $ref: "#/components/schemas/ScanSummary" },
           protocols: {
             type: "object",
-            required: ["mx", "dmarc", "spf", "dkim", "bimi", "mta_sts"],
+            required: [
+              "mx",
+              "dmarc",
+              "spf",
+              "dkim",
+              "bimi",
+              "mta_sts",
+              "security_txt",
+            ],
             properties: {
               mx: { $ref: "#/components/schemas/MxResult" },
               dmarc: { $ref: "#/components/schemas/DmarcResult" },
@@ -813,6 +869,7 @@ export const OPENAPI_DOCUMENT = {
               dkim: { $ref: "#/components/schemas/DkimResult" },
               bimi: { $ref: "#/components/schemas/BimiResult" },
               mta_sts: { $ref: "#/components/schemas/MtaStsResult" },
+              security_txt: { $ref: "#/components/schemas/SecurityTxtResult" },
             },
           },
         },

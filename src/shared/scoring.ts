@@ -3,6 +3,7 @@ import type {
   DkimResult,
   DmarcResult,
   MtaStsResult,
+  SecurityTxtResult,
   SpfResult,
   Status,
 } from "../analyzers/types.js";
@@ -13,6 +14,11 @@ interface Protocols {
   dkim: DkimResult;
   bimi: BimiResult;
   mta_sts: MtaStsResult;
+  // Optional in this internal interface so older test fixtures (which
+  // don't know about security_txt) keep typechecking against this shape.
+  // The orchestrator always populates it; informational only — does not
+  // affect grade resolution.
+  security_txt?: SecurityTxtResult;
   [key: string]: unknown;
 }
 
@@ -347,11 +353,11 @@ function dkimFactors(dkim: DkimResult): ScoringFactor[] {
 function buildProtocolSummaries(
   protocols: Protocols,
 ): GradeBreakdown["protocolSummaries"] {
-  const { dmarc, spf, dkim, bimi, mta_sts } = protocols;
+  const { dmarc, spf, dkim, bimi, mta_sts, security_txt } = protocols;
   const dmarcPolicy = dmarc.tags?.p ?? null;
   const dkimFound = Object.values(dkim.selectors).filter((s) => s.found);
 
-  return {
+  const summaries: GradeBreakdown["protocolSummaries"] = {
     dmarc: {
       status: dmarc.status,
       summary: dmarcPolicy ? `p=${dmarcPolicy}` : "Not configured",
@@ -386,6 +392,15 @@ function buildProtocolSummaries(
           : "Not configured",
     },
   };
+  if (security_txt) {
+    summaries.security_txt = {
+      status: security_txt.status,
+      summary: security_txt.fields
+        ? `${security_txt.fields.contact.length} contact${security_txt.fields.contact.length === 1 ? "" : "s"}${security_txt.signed ? " (signed)" : ""}`
+        : "Not published",
+    };
+  }
+  return summaries;
 }
 
 // ── Recommendations ───────────────────────────────────────────
