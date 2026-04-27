@@ -912,73 +912,309 @@ if (typeof navigator !== 'undefined' && navigator.modelContext && typeof navigat
     });
   }
 
-  function renderDrawerBody(data) {
-    var bodyEl = drawer.querySelector('[data-drawer-body]');
-    if (!bodyEl) return;
+  /* CopyButton — clipboard copy with a transient "Copied!" state. Uses
+     navigator.clipboard.writeText; bails out silently on browsers without it
+     (no-op rather than throwing — older browsers shouldn't break the drawer). */
+  function copyButton(text, opts) {
+    opts = opts || {};
+    var btn = el('button', {
+      type: 'button',
+      class: 'drawer-copy-btn' + (opts.suggested ? ' drawer-copy-btn-suggested' : ''),
+      'aria-label': opts.suggested ? 'Copy suggested fix to clipboard' : 'Copy record to clipboard'
+    });
+    /* Inline SVG clipboard icon — prebuilt as DOM nodes via createElementNS so
+       textContent / replaceChildren stay safe. */
+    function makeIcon(checked) {
+      var ns = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('width', '12');
+      svg.setAttribute('height', '12');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', checked ? '2' : '1.5');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      svg.setAttribute('aria-hidden', 'true');
+      if (checked) {
+        var p = document.createElementNS(ns, 'path');
+        p.setAttribute('d', 'M3 8l3.5 3.5L13 5');
+        svg.appendChild(p);
+      } else {
+        var rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', '4'); rect.setAttribute('y', '3');
+        rect.setAttribute('width', '8'); rect.setAttribute('height', '11');
+        rect.setAttribute('rx', '1.5');
+        svg.appendChild(rect);
+        var lid = document.createElementNS(ns, 'path');
+        lid.setAttribute('d', 'M6 3V2a1 1 0 011-1h2a1 1 0 011 1v1');
+        svg.appendChild(lid);
+      }
+      return svg;
+    }
+    function paint(label, checked) {
+      btn.replaceChildren(makeIcon(checked), document.createTextNode(' ' + label));
+    }
+    paint(opts.label || 'Copy', false);
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+      navigator.clipboard.writeText(text).then(function() {
+        btn.classList.add('drawer-copy-btn-copied');
+        paint('Copied', true);
+        setTimeout(function() {
+          btn.classList.remove('drawer-copy-btn-copied');
+          paint(opts.label || 'Copy', false);
+        }, 1600);
+      }, function() {});
+    });
+    return btn;
+  }
+
+  function gradePillEl(grade) {
+    var letter = String(grade || '—').charAt(0).toUpperCase();
+    var cls = 'grade-pill grade-pill-';
+    if (letter === 'S') cls += 's';
+    else if (letter === 'A' || letter === 'B') cls += 'a';
+    else if (letter === 'C' || letter === 'D') cls += 'c';
+    else cls += 'f';
+    return el('span', { class: cls, text: String(grade || '—') });
+  }
+
+  function statusDotEl(status) {
+    var s = (status === 'pass' || status === 'warn' || status === 'fail' || status === 'info')
+      ? status : 'unknown';
+    return el('span', {
+      class: 'drawer-status-dot drawer-status-' + s,
+      'aria-label': 'Status: ' + s,
+      role: 'img'
+    });
+  }
+
+  function sectionTitle(text) {
+    return el('div', { class: 'drawer-section-title', text: text });
+  }
+
+  function diffCardEl(domain, diff, onMarkFixed) {
+    var label = el('div', { class: 'drawer-diff-label', text: 'WHAT CHANGED TODAY' });
+    var msg = el('div', { class: 'drawer-diff-msg', text: diff.change });
+    /* + line: current/broken record */
+    var plusText = el('span', { class: 'drawer-diff-line-text' }, [
+      el('span', { class: 'drawer-diff-marker', text: '+ ' }),
+      document.createTextNode(diff.current)
+    ]);
+    var plusRow = el('div', { class: 'drawer-diff-row drawer-diff-current' }, [
+      plusText,
+      copyButton(diff.current, { label: 'Current' })
+    ]);
+    /* − line: previous/working record (the suggested fix) */
+    var minusText = el('span', { class: 'drawer-diff-line-text' }, [
+      el('span', { class: 'drawer-diff-marker', text: '− ' }),
+      document.createTextNode(diff.previous)
+    ]);
+    var minusRow = el('div', { class: 'drawer-diff-row drawer-diff-previous' }, [
+      minusText,
+      copyButton(diff.previous, { label: 'Copy fix', suggested: true })
+    ]);
+    var diffBlock = el('div', { class: 'drawer-diff-block' }, [plusRow, minusRow]);
+    var fixedBtn = el('button', {
+      type: 'button',
+      class: 'drawer-cta-secondary drawer-cta-fixed'
+    }, [document.createTextNode('✓ I fixed it (re-scan)')]);
+    fixedBtn.addEventListener('click', function() {
+      if (typeof onMarkFixed === 'function') onMarkFixed();
+    });
+    var hint = el('span', {
+      class: 'drawer-diff-hint',
+      text: 'Paste the green line into your DNS as a TXT record on _dmarc.' + domain
+    });
+    var actions = el('div', { class: 'drawer-diff-actions' }, [fixedBtn, hint]);
+    return el('section', { class: 'drawer-diff-card', 'aria-label': 'What changed today' }, [
+      label, msg, diffBlock, actions
+    ]);
+  }
+
+  function protocolRowEl(name, info) {
+    var hasRecord = !!(info && info.record);
+    var statusValue = (info && info.status) || null;
+    var summary = (info && info.summary) || 'no data yet';
+    var dot = statusDotEl(statusValue);
+    var nameEl = el('span', { class: 'drawer-protocol-name', text: name });
+    var summaryEl = el('span', { class: 'drawer-protocol-summary', text: summary });
+    var children = [dot, nameEl, summaryEl];
+    var chevron = null;
+    if (hasRecord) {
+      chevron = el('span', { class: 'drawer-protocol-chevron', 'aria-hidden': 'true', text: '▸' });
+      children.push(chevron);
+    }
+    var headBtnAttrs = {
+      type: 'button',
+      class: 'drawer-protocol-head',
+      'aria-expanded': 'false'
+    };
+    if (!hasRecord) headBtnAttrs.disabled = '';
+    var head = el('button', headBtnAttrs, children);
+    var detail = null;
+    if (hasRecord) {
+      var rec = el('div', { class: 'drawer-protocol-record', text: info.record });
+      detail = el('div', { class: 'drawer-protocol-detail' }, [
+        rec,
+        copyButton(info.record, { label: 'Copy' })
+      ]);
+      detail.hidden = true;
+      head.addEventListener('click', function() {
+        var open = !detail.hidden;
+        if (open) {
+          detail.hidden = true;
+          head.setAttribute('aria-expanded', 'false');
+          if (chevron) chevron.classList.remove('is-open');
+        } else {
+          detail.hidden = false;
+          head.setAttribute('aria-expanded', 'true');
+          if (chevron) chevron.classList.add('is-open');
+        }
+      });
+    }
+    var card = el('div', { class: 'drawer-protocol-card' }, detail ? [head, detail] : [head]);
+    return card;
+  }
+
+  function recommendationRowEl(rec) {
+    var pri = rec.priority === 1 ? 'p1' : rec.priority === 2 ? 'p2' : 'p3';
+    var badge = el('div', {
+      class: 'drawer-rec-priority drawer-rec-' + pri,
+      text: 'P' + rec.priority
+    });
+    var title = el('div', { class: 'drawer-rec-title', text: rec.title });
+    var impact = el('div', { class: 'drawer-rec-impact', text: rec.impact || rec.description || '' });
+    var body = el('div', { class: 'drawer-rec-body' }, [title, impact]);
+    return el('div', { class: 'drawer-rec-row' }, [badge, body]);
+  }
+
+  function historyRowEl(entry) {
+    var when = entry.scannedAt
+      ? new Date(entry.scannedAt * 1000).toLocaleString()
+      : '—';
+    /* Severity dot mirrors the grade letter, not "worst protocol". A B-grade
+       scan with one failing optional protocol (e.g. BIMI not configured)
+       still reads as healthy at a glance. */
+    var letter = String(entry.grade || '').charAt(0).toUpperCase();
+    var sev = 'pass';
+    if (letter === 'F') sev = 'fail';
+    else if (letter === 'C' || letter === 'D') sev = 'warn';
+    var dot = statusDotEl(sev);
+    var grade = el('span', { class: 'drawer-history-grade', text: String(entry.grade || '—') });
+    var time = el('span', { class: 'drawer-history-time', text: when });
+    return el('div', { class: 'drawer-history-row' }, [dot, grade, time]);
+  }
+
+  function setHeader(data) {
+    var titleEl = drawer.querySelector('.domain-drawer-title');
+    if (!titleEl) return;
+    var pill = gradePillEl(data.grade);
+    var name = el('span', { class: 'drawer-header-name', text: data.domain });
     var lastScan = data.lastScannedAt
       ? new Date(data.lastScannedAt * 1000).toLocaleString()
       : 'Never';
+    var sub = el('span', {
+      class: 'drawer-header-sub',
+      text: 'Last scan ' + lastScan + ' · ' + (data.scanFrequency || '—') + ' cadence'
+    });
+    var stack = el('div', { class: 'drawer-header-stack' }, [name, sub]);
+    titleEl.replaceChildren(pill, stack);
+  }
 
-    function metaSpan(label, value) {
-      var strong = el('strong', { text: label + ':' });
-      var span = el('span');
-      span.appendChild(strong);
-      span.appendChild(document.createTextNode(' ' + (value || '\\u2014')));
-      return span;
+  function renderDrawerBody(data) {
+    var bodyEl = drawer.querySelector('[data-drawer-body]');
+    if (!bodyEl) return;
+    setHeader(data);
+    var children = [];
+
+    /* DiffCard — only when the JSON endpoint surfaced a DMARC drift. The
+       "fixed it" button posts to the existing /scan handler. */
+    if (data.diff) {
+      children.push(diffCardEl(data.domain, data.diff, function() {
+        triggerRescan(data.domain);
+      }));
     }
-    var meta = el('div', { class: 'domain-drawer-meta' }, [
-      metaSpan('Grade', data.grade),
-      metaSpan('Last scan', lastScan),
-      metaSpan('Frequency', data.scanFrequency)
-    ]);
 
-    var historyEl;
-    var rows = data.history || [];
-    if (rows.length === 0) {
-      historyEl = el('p', {
-        style: 'color:var(--clr-text-muted);font-size:0.85rem;',
-        text: 'No scan history yet.'
-      });
+    /* Protocols */
+    var protocols = data.protocols || {};
+    children.push(sectionTitle('Protocols'));
+    var protoList = el('div', { class: 'drawer-protocol-list' }, [
+      protocolRowEl('DMARC', protocols.dmarc),
+      protocolRowEl('SPF', protocols.spf),
+      protocolRowEl('DKIM', protocols.dkim),
+      protocolRowEl('BIMI', protocols.bimi),
+      protocolRowEl('MTA-STS', protocols.mta_sts)
+    ]);
+    children.push(protoList);
+
+    /* Recommendations */
+    var recs = data.recommendations || [];
+    if (recs.length > 0) {
+      children.push(sectionTitle('How to improve'));
+      var recList = el('div', { class: 'drawer-rec-list' });
+      recs.forEach(function(r) { recList.appendChild(recommendationRowEl(r)); });
+      children.push(recList);
+    }
+
+    /* History */
+    children.push(sectionTitle('Recent scans'));
+    var hist = data.history || [];
+    if (hist.length === 0) {
+      children.push(el('p', { class: 'drawer-history-empty', text: 'No scan history yet.' }));
     } else {
-      var tbody = el('tbody');
-      rows.slice(0, 8).forEach(function(h) {
-        var when = new Date(h.scannedAt * 1000).toLocaleDateString();
-        tbody.appendChild(el('tr', null, [
-          el('td', {
-            style: 'padding:4px 0;color:var(--clr-text-muted);font-size:0.8rem;',
-            text: when
-          }),
-          el('td', {
-            style: 'padding:4px 0;font-weight:600;',
-            text: String(h.grade)
-          })
-        ]));
-      });
-      historyEl = el('table', {
-        style: 'width:100%;border-collapse:collapse;margin-top:0.5rem;'
-      }, [tbody]);
+      var histList = el('div', { class: 'drawer-history-list' });
+      hist.slice(0, 8).forEach(function(h) { histList.appendChild(historyRowEl(h)); });
+      children.push(histList);
     }
 
-    var actions = el('div', { class: 'domain-drawer-actions' }, [
-      el('a', {
-        href: '/dashboard/domain/' + encodeURIComponent(data.domain),
-        class: 'dashboard-add-btn',
-        style: 'background:transparent;color:var(--clr-text);border-color:var(--clr-border);',
-        text: 'Open full page'
-      }),
-      (function() {
-        var form = el('form', {
-          method: 'post',
-          action: '/dashboard/domain/' + encodeURIComponent(data.domain) + '/scan',
-          style: 'margin:0;'
-        }, [
-          el('button', { type: 'submit', class: 'dashboard-add-btn', text: 'Re-scan now' })
-        ]);
-        return form;
-      })()
-    ]);
+    bodyEl.replaceChildren.apply(bodyEl, children);
 
-    bodyEl.replaceChildren(meta, historyEl, actions);
+    /* Sticky footer — set/replace so a re-render doesn't stack actions. */
+    var existingFooter = drawer.querySelector('.drawer-footer');
+    if (existingFooter) existingFooter.remove();
+    var openLink = el('a', {
+      href: '/dashboard/domain/' + encodeURIComponent(data.domain),
+      class: 'drawer-cta-secondary',
+      text: 'Open full report →'
+    });
+    var rescanForm = el('form', {
+      method: 'post',
+      action: '/dashboard/domain/' + encodeURIComponent(data.domain) + '/scan',
+      class: 'drawer-footer-form'
+    }, [el('button', { type: 'submit', class: 'drawer-cta-primary', text: 'Re-scan now' })]);
+    var footer = el('footer', { class: 'drawer-footer' }, [openLink, rescanForm]);
+    drawer.appendChild(footer);
+  }
+
+  /* "✓ I fixed it" → POST /dashboard/domain/:domain/scan, show a toast-ish
+     loading state, re-fetch the JSON. The rescan endpoint returns 303 redirect
+     to /dashboard, so we deliberately use fetch with redirect:'manual' to
+     avoid navigating the page out from under the drawer. */
+  function triggerRescan(domain) {
+    var bodyEl = drawer.querySelector('[data-drawer-body]');
+    if (bodyEl) {
+      bodyEl.replaceChildren(el('div', { class: 'domain-drawer-loading', text: 'Re-scanning…' }));
+    }
+    fetch('/dashboard/domain/' + encodeURIComponent(domain) + '/scan', {
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'manual'
+    }).then(function() {
+      return fetch('/dashboard/domain/' + encodeURIComponent(domain) + '.json', {
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      });
+    }).then(function(res) {
+      if (!res.ok) throw new Error('reload failed');
+      return res.json();
+    }).then(function(data) {
+      renderDrawerBody(data);
+    }).catch(function() {
+      setDrawerStatus('Re-scan finished. Refresh to see updated grades.', 'error');
+    });
   }
 
   function closeDrawer() {

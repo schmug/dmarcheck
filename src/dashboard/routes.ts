@@ -31,6 +31,7 @@ import {
 } from "../db/domains.js";
 import {
   getPortfolioTrendForUser,
+  getScanHistory,
   getScanHistoryWithProtocols,
   recordScan,
 } from "../db/scans.js";
@@ -44,6 +45,7 @@ import { getRecentDeliveriesForUser } from "../db/webhook-deliveries.js";
 import { scan } from "../orchestrator.js";
 import { normalizeDomain } from "../shared/domain.js";
 import { PRO_WATCHLIST_CAP, watchlistCapForPlan } from "../shared/limits.js";
+import { computeGradeBreakdown } from "../shared/scoring.js";
 import {
   renderAddDomainPage,
   renderApiKeysPage,
@@ -97,6 +99,213 @@ const VALID_SORT_COLUMNS = new Set<DomainSortColumn>([
   "last_scanned",
   "created",
 ]);
+
+// Powers the dashboard drawer's enriched payload: per-protocol summary lines
+// + raw records, scoring recommendations, and a "what changed today" diff
+// when the latest DMARC record drifted from the previous scan within 24h.
+// All derivation is pure JSON parsing + a re-run of computeGradeBreakdown
+// against the persisted protocol_results blob — no extra DB calls.
+interface DrawerProtocolSummary {
+  status: "pass" | "warn" | "fail" | "info" | null;
+  summary: string;
+  record: string | null;
+}
+
+interface DrawerDetail {
+  protocols: {
+    dmarc: DrawerProtocolSummary;
+    spf: DrawerProtocolSummary;
+    dkim: DrawerProtocolSummary;
+    bimi: DrawerProtocolSummary;
+    mta_sts: DrawerProtocolSummary;
+  };
+  recommendations: import("../shared/scoring.js").Recommendation[];
+  diff: {
+    change: string;
+    previous: string;
+    current: string;
+  } | null;
+}
+
+const EMPTY_PROTOCOL: DrawerProtocolSummary = {
+  status: null,
+  summary: "no data yet",
+  record: null,
+};
+
+function asProtocolStatus(
+  v: unknown,
+): "pass" | "warn" | "fail" | "info" | null {
+  return v === "pass" || v === "warn" || v === "fail" || v === "info"
+    ? v
+    : null;
+}
+
+function buildDrawerDetail(
+  rawScanRows: import("../db/scans.js").ScanHistoryRow[],
+): DrawerDetail {
+  const empty: DrawerDetail = {
+    protocols: {
+      dmarc: EMPTY_PROTOCOL,
+      spf: EMPTY_PROTOCOL,
+      dkim: EMPTY_PROTOCOL,
+      bimi: EMPTY_PROTOCOL,
+      mta_sts: EMPTY_PROTOCOL,
+    },
+    recommendations: [],
+    diff: null,
+  };
+  if (rawScanRows.length === 0) return empty;
+
+  const latest = rawScanRows[0];
+  const parsed = safeParseProtocols(latest.protocol_results);
+  if (!parsed) return empty;
+
+  // Stringly-typed reach into the parsed JSON: D1 stored what the orchestrator
+  // wrote, but TypeScript can't follow it through the JSON round-trip.
+  const dmarc = parsed.dmarc as
+    | { status?: unknown; record?: unknown; tags?: Record<string, unknown> }
+    | undefined;
+  const spf = parsed.spf as
+    | {
+        status?: unknown;
+        record?: unknown;
+        lookups_used?: unknown;
+        lookup_limit?: unknown;
+      }
+    | undefined;
+  const dkim = parsed.dkim as
+    | {
+        status?: unknown;
+        selectors?: Record<
+          string,
+          { found?: unknown; key_bits?: unknown; key_type?: unknown }
+        >;
+      }
+    | undefined;
+  const bimi = parsed.bimi as
+    | { status?: unknown; record?: unknown; tags?: Record<string, unknown> }
+    | undefined;
+  const mta = parsed.mta_sts as
+    | {
+        status?: unknown;
+        dns_record?: unknown;
+        policy?: { mode?: unknown } | null;
+      }
+    | undefined;
+
+  const dmarcPolicy = typeof dmarc?.tags?.p === "string" ? dmarc.tags.p : null;
+  const spfLookupsUsed =
+    typeof spf?.lookups_used === "number" ? spf.lookups_used : null;
+  const spfLookupLimit =
+    typeof spf?.lookup_limit === "number" ? spf.lookup_limit : 10;
+  const dkimSelectors = dkim?.selectors ?? {};
+  const dkimFound = Object.values(dkimSelectors).filter(
+    (s) => s?.found === true,
+  );
+  const dkimKeyBits = dkimFound
+    .map((s) => (typeof s.key_bits === "number" ? s.key_bits : 0))
+    .filter((n) => n > 0);
+  const bimiConfigured = !!(bimi?.tags && Object.keys(bimi.tags).length > 0);
+  const mtaMode =
+    typeof mta?.policy?.mode === "string" ? mta.policy.mode : null;
+  const mtaConfigured = !!(mta?.dns_record || mta?.policy);
+
+  const protocols: DrawerDetail["protocols"] = {
+    dmarc: {
+      status: asProtocolStatus(dmarc?.status),
+      summary: dmarcPolicy ? `policy: p=${dmarcPolicy}` : "no policy",
+      record: typeof dmarc?.record === "string" ? dmarc.record : null,
+    },
+    spf: {
+      status: asProtocolStatus(spf?.status),
+      summary:
+        spfLookupsUsed !== null
+          ? `${spfLookupsUsed}/${spfLookupLimit} DNS lookups`
+          : "not set",
+      record: typeof spf?.record === "string" ? spf.record : null,
+    },
+    dkim: {
+      status: asProtocolStatus(dkim?.status),
+      summary:
+        dkimFound.length > 0
+          ? `${dkimFound.length} selector${dkimFound.length === 1 ? "" : "s"}` +
+            (dkimKeyBits.length ? ` · ${Math.min(...dkimKeyBits)}-bit` : "")
+          : "no selectors found",
+      record: null,
+    },
+    bimi: {
+      status: asProtocolStatus(bimi?.status),
+      summary: bimiConfigured ? "configured" : "not configured",
+      record: typeof bimi?.record === "string" ? bimi.record : null,
+    },
+    mta_sts: {
+      status: asProtocolStatus(mta?.status),
+      summary: mtaConfigured
+        ? `configured${mtaMode ? ` · mode=${mtaMode}` : ""}`
+        : "not configured",
+      record: typeof mta?.dns_record === "string" ? mta.dns_record : null,
+    },
+  };
+
+  // Recommendations are derived on the fly so we don't have to migrate the
+  // scan_history schema. computeGradeBreakdown is pure — given the persisted
+  // protocol blobs it produces the same recommendation list the orchestrator
+  // would have at scan time.
+  let recommendations: import("../shared/scoring.js").Recommendation[] = [];
+  try {
+    const breakdown = computeGradeBreakdown(
+      parsed as Parameters<typeof computeGradeBreakdown>[0],
+    );
+    recommendations = breakdown.recommendations;
+  } catch {
+    recommendations = [];
+  }
+
+  // Diff: surface only when DMARC drifted within ~26h (slack on 24h cron) and
+  // the previous record was non-empty. SPF/DKIM diffs add noise — DMARC is
+  // the field most worth a "you broke this, paste this back" prompt.
+  let diff: DrawerDetail["diff"] = null;
+  if (rawScanRows.length >= 2 && protocols.dmarc.record) {
+    const prev = rawScanRows[1];
+    const prevParsed = safeParseProtocols(prev.protocol_results);
+    const prevDmarcRecord =
+      typeof (prevParsed?.dmarc as { record?: unknown } | undefined)?.record ===
+      "string"
+        ? ((prevParsed?.dmarc as { record: string }).record ?? null)
+        : null;
+    const ageSec = latest.scanned_at - prev.scanned_at;
+    if (
+      prevDmarcRecord &&
+      prevDmarcRecord !== protocols.dmarc.record &&
+      ageSec < 26 * 3600
+    ) {
+      diff = {
+        change: dmarcPolicy
+          ? `DMARC record changed (now p=${dmarcPolicy})`
+          : "DMARC record changed",
+        previous: prevDmarcRecord,
+        current: protocols.dmarc.record,
+      };
+    }
+  }
+
+  return { protocols, recommendations, diff };
+}
+
+function safeParseProtocols(
+  json: string | null,
+): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 interface DomainListQuery {
   search: string;
@@ -516,7 +725,11 @@ dashboardRoutes.get("/domain/:domain{.+\\.json}", async (c) => {
   if (!domain) return c.json({ error: "Domain not found" }, 404);
   const plan = await getPlanForUser(db, session.sub);
   const limit = plan === "pro" ? HISTORY_LIMIT_PRO : HISTORY_LIMIT_FREE;
-  const rows = await getScanHistoryWithProtocols(db, domain.id, limit);
+  const [withStatus, rawRows] = await Promise.all([
+    getScanHistoryWithProtocols(db, domain.id, limit),
+    getScanHistory(db, domain.id, 2),
+  ]);
+  const detail = buildDrawerDetail(rawRows);
   return c.json({
     domain: domain.domain,
     grade: domain.last_grade ?? "—",
@@ -524,7 +737,10 @@ dashboardRoutes.get("/domain/:domain{.+\\.json}", async (c) => {
     scanFrequency: domain.scan_frequency,
     isFree: domain.is_free === 1,
     plan,
-    history: rows.map((row) => ({
+    protocols: detail.protocols,
+    recommendations: detail.recommendations,
+    diff: detail.diff,
+    history: withStatus.map((row) => ({
       scannedAt: row.scannedAt,
       grade: row.grade,
       protocols: row.protocols,
