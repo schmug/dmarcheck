@@ -136,7 +136,12 @@ app.use("*", async (c, next) => {
 // posture when ACCESS_AUD / ACCESS_TEAM_DOMAIN are missing.
 app.use("*", accessJwtMiddleware());
 
-// Security headers middleware (HSTS is handled at Cloudflare edge)
+// HSTS: 2 years + includeSubDomains. The 2-year max-age satisfies the
+// hstspreload.org submission requirement, but `preload` is intentionally
+// omitted — adding it is a one-way commitment that locks every current and
+// future subdomain (including any short-lived `*.workers.dev` previews
+// proxied behind a custom domain) into HTTPS forever. Submit to the preload
+// list as a separate, deliberate change once we're confident.
 
 // Content types that should be hidden from search engines. HTML is the opposite:
 // it's the whole point of the site and must stay crawlable. Images/CSS/JS are
@@ -186,6 +191,10 @@ app.use("*", async (c, next) => {
   c.res.headers.set(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()",
+  );
+  c.res.headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains",
   );
 
   const contentType = c.res.headers.get("content-type") ?? "";
