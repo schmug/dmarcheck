@@ -353,6 +353,55 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/badge": {
+      get: {
+        summary: "Embeddable email-security grade badge (SVG)",
+        description:
+          "Returns a shields.io-style SVG badge with the domain's current grade. Cached aggressively (1h max-age + 24h stale-while-revalidate) so a badge embedded in a README does not trigger a scan per viewer. Always returns SVG — invalid input renders an `invalid` badge with a 400 status; scan errors render an `error` badge with a 200 status so README embeds never break.",
+        operationId: "gradeBadge",
+        parameters: [
+          {
+            name: "domain",
+            in: "query",
+            required: true,
+            description: "Domain to scan, lowercase, `[a-z0-9.-]` only.",
+            schema: {
+              type: "string",
+              pattern: "^[a-z0-9.-]+$",
+              maxLength: 253,
+            },
+            example: "dmarc.mx",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "SVG badge",
+            content: {
+              "image/svg+xml": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "400": {
+            description: "Invalid input (rendered as an SVG `invalid` badge)",
+            content: {
+              "image/svg+xml": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "429": {
+            description:
+              "Rate limit exceeded (rendered as an SVG `rate limited` badge)",
+            content: {
+              "image/svg+xml": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+        },
+      },
+    },
     "/health": {
       get: {
         summary: "Liveness probe",
