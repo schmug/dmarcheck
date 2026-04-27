@@ -287,6 +287,230 @@ describe("renderDashboardPage", () => {
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  describe("hero + banners + stat strip", () => {
+    const sample = (
+      grade: string,
+      domain = "example.com",
+    ): {
+      domain: string;
+      grade: string;
+      frequency: string;
+      lastScanned: string | null;
+      isFree: boolean;
+    } => ({
+      domain,
+      grade,
+      frequency: "daily",
+      lastScanned: "2026-04-25",
+      isFree: false,
+    });
+
+    // Bare class names appear inside the inlined CSS too, so assertions
+    // target the rendered element/attribute pattern instead. `class="…"`
+    // matches per-element, not per-stylesheet rule.
+    const hasSection = (html: string, className: string): boolean =>
+      html.includes(`class="${className}`) ||
+      html.includes(`class="dashboard-banner ${className}`) ||
+      html.includes(`class="stat-card ${className}`);
+
+    it("renders an empty-portfolio hero with a prompt to add a domain", () => {
+      const html = renderDashboardPage({
+        email: "user@example.com",
+        domains: [],
+      });
+      expect(html).toContain('class="dashboard-hero"');
+      expect(html).toContain("Add a domain");
+      // No stat strip when zero domains.
+      expect(html).not.toContain('class="stat-strip"');
+    });
+
+    it("renders the stat strip with derived counts", () => {
+      const html = renderDashboardPage({
+        email: "user@example.com",
+        domains: [
+          sample("A", "a.com"),
+          sample("B", "b.com"),
+          sample("C", "c.com"),
+          sample("D", "d.com"),
+          sample("F", "f.com"),
+        ],
+      });
+      expect(html).toContain('class="stat-strip"');
+      expect(hasSection(html, "stat-card-pass")).toBe(true); // 2 healthy
+      expect(hasSection(html, "stat-card-warn")).toBe(true); // 2 drifting
+      expect(hasSection(html, "stat-card-fail")).toBe(true); // 1 failing
+    });
+
+    it("renders the free-tier banner only when plan=free", () => {
+      const free = renderDashboardPage({
+        email: "u@x.com",
+        plan: "free",
+        domains: [sample("A")],
+      });
+      expect(hasSection(free, "dashboard-banner-free")).toBe(true);
+      expect(free).toContain("$19/mo");
+      expect(free).toContain("/pricing");
+      const pro = renderDashboardPage({
+        email: "u@x.com",
+        plan: "pro",
+        domains: [sample("A")],
+      });
+      expect(hasSection(pro, "dashboard-banner-free")).toBe(false);
+    });
+
+    it("renders the first-run banner only when isFirstRun and exactly one domain", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A", "auto-provisioned.example")],
+        isFirstRun: true,
+      });
+      expect(hasSection(html, "dashboard-banner-firstrun")).toBe(true);
+      expect(html).toContain("auto-provisioned.example");
+      const noBanner = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A", "a.com"), sample("B", "b.com")],
+        isFirstRun: true,
+      });
+      expect(hasSection(noBanner, "dashboard-banner-firstrun")).toBe(false);
+    });
+
+    it("renders the on-fire banner when 3+ domains are failing", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [
+          sample("F", "x.com"),
+          sample("F", "y.com"),
+          sample("F", "z.com"),
+        ],
+      });
+      expect(hasSection(html, "dashboard-banner-fire")).toBe(true);
+      expect(html).toContain("3 domains failing");
+      const tame = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("F", "x.com"), sample("F", "y.com")],
+      });
+      expect(hasSection(tame, "dashboard-banner-fire")).toBe(false);
+    });
+
+    it("renders the portfolio sparkline only when 2+ trend points", () => {
+      const withTrend = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A")],
+        portfolioTrend: [8, 9, 10, 11, 12],
+      });
+      expect(withTrend).toContain('<svg class="dash-spark"');
+      const noTrend = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A")],
+        portfolioTrend: [10],
+      });
+      expect(noTrend).not.toContain('<svg class="dash-spark"');
+    });
+
+    it("escapes domain names in the hero voice line", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("F", "<script>x</script>.com")],
+      });
+      expect(html).not.toContain("<script>x</script>");
+      expect(html).toContain("&lt;script&gt;");
+    });
+
+    it("celebrates with party hat when no failures and no drift", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A", "a.com"), sample("S", "b.com")],
+      });
+      expect(html).toContain("creature-partying");
+      expect(html).toMatch(/Everything('|&#39;)s green/);
+    });
+
+    it("does not panic or party when the only domain is ungraded", () => {
+      // A fresh user with one not-yet-scanned domain. Bug we're guarding:
+      // gradeToMood('—') used to fall through to 'panicked', so DMarcus
+      // screamed at a user who hadn't received their first scan back. The
+      // hero should be neutral and the voice line should acknowledge the
+      // scan-in-progress state.
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("—", "fresh.example")],
+      });
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-panicked/);
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+      expect(html).toContain("Scanning your");
+    });
+
+    it("picks the worst graded domain even when an ungraded one comes first", () => {
+      // worstDomain bug we're guarding: when seeded with an ungraded entry,
+      // the prior implementation could promote a healthy domain to "worst"
+      // and let DMarcus celebrate while another domain was failing.
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [
+          sample("—", "fresh.example"),
+          sample("F", "broken.example"),
+          sample("A", "good.example"),
+        ],
+      });
+      expect(html).toContain("broken.example");
+      expect(html).not.toMatch(/good\.example<\/code> is failing/);
+      // Failing portfolio must not party-hat regardless of insertion order.
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+    });
+
+    it("does not party-hat a 100% ungraded portfolio", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("—", "a.com"), sample("—", "b.com")],
+      });
+      expect(html).not.toMatch(/<div class="creature[^"]*creature-partying/);
+      expect(html).toContain("Scanning your 2 domains");
+    });
+
+    it("renders the drawer + wizard shells with data hooks but hidden", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("A")],
+      });
+      // Drawer shell present and hidden by default
+      expect(html).toContain('id="domain-drawer"');
+      expect(html).toContain('role="dialog"');
+      expect(html).toContain('aria-modal="true"');
+      expect(html).toMatch(/<aside[^>]+id="domain-drawer"[^>]+hidden/);
+      expect(html).toContain("data-drawer-close");
+      // Wizard shell present and hidden by default
+      expect(html).toContain('id="add-wizard"');
+      expect(html).toMatch(/<div[^>]+id="add-wizard"[^>]+hidden/);
+      expect(html).toContain("data-wizard-form");
+      expect(html).toContain('action="/dashboard/domain/add"');
+      expect(html).toContain("Step 1 of 3");
+      // Add-domain trigger button rendered next to the table heading
+      expect(html).toContain("data-wizard-open");
+      // Each table row carries data-domain so the drawer JS knows what to load
+      expect(html).toContain('data-domain="example.com"');
+      expect(html).toContain("data-drawer-link");
+    });
+
+    it("preserves the existing alerts section markup above the table", () => {
+      const html = renderDashboardPage({
+        email: "u@x.com",
+        domains: [sample("F", "broken.com")],
+        alerts: [
+          {
+            id: 1,
+            domain: "broken.com",
+            alertType: "grade_drop",
+            previousValue: "B",
+            newValue: "F",
+            createdAt: Math.floor(Date.now() / 1000) - 60,
+          },
+        ],
+      });
+      expect(html).toContain("alerts-needs-attention");
+      expect(html).toContain("Grade dropped from B to F");
+    });
+  });
 });
 
 describe("renderDomainDetailPage", () => {

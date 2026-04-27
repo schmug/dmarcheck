@@ -34,6 +34,8 @@ export const CSS = `
   --clr-info-glow: rgba(37,99,235,0.25);
   --clr-shadow: rgba(0,0,0,0.12);
   --clr-accent-glow: rgba(234,88,12,0.2);
+  --clr-accent-muted: rgba(194,65,12,0.08);
+  --clr-surface-muted: #f4f4f5;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -69,6 +71,8 @@ export const CSS = `
     --clr-info-glow: rgba(59,130,246,0.25);
     --clr-shadow: rgba(0,0,0,0.3);
     --clr-accent-glow: rgba(249,115,22,0.3);
+    --clr-accent-muted: rgba(249,115,22,0.08);
+    --clr-surface-muted: #1f1f23;
   }
 }
 [data-theme="dark"] {
@@ -104,6 +108,8 @@ export const CSS = `
   --clr-info-glow: rgba(59,130,246,0.25);
   --clr-shadow: rgba(0,0,0,0.3);
   --clr-accent-glow: rgba(249,115,22,0.3);
+  --clr-accent-muted: rgba(249,115,22,0.08);
+  --clr-surface-muted: #1f1f23;
 }
 [data-theme="light"] { color-scheme: light; }
 body {
@@ -892,16 +898,19 @@ h1.domain-name, .domain-name { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .creature-sm .creature-hat::after { top: 8px; left: -6px; width: 12px; height: 3px; }
 .creature-sm .creature-hat::before { top: -3px; left: -1px; width: 3px; height: 3px; }
 
-/* Loading creature — walking animation */
-.creature-loading .creature-leg:nth-child(odd) {
+/* Loading / walking creature — leg animation */
+.creature-loading .creature-leg:nth-child(odd),
+.creature-walking .creature-leg:nth-child(odd) {
   animation: creature-walk 0.3s ease-in-out infinite alternate;
 }
-.creature-loading .creature-leg:nth-child(even) {
+.creature-loading .creature-leg:nth-child(even),
+.creature-walking .creature-leg:nth-child(even) {
   animation: creature-walk 0.3s ease-in-out infinite alternate-reverse;
 }
 @media (prefers-reduced-motion: reduce) {
   .at-creature { display: none !important; }
-  .creature-loading .creature-leg { animation: none !important; }
+  .creature-loading .creature-leg,
+  .creature-walking .creature-leg { animation: none !important; }
   .grade-s { animation: none; }
   .creature-partying { animation: none; }
   .creature-partying .creature-leg { animation: none; }

@@ -88,6 +88,72 @@ function asStatus(value: unknown): ProtocolStatus {
 // map so history views don't have to reach into the orchestrator shape. Any
 // protocol missing or unparseable is returned as null — the view renders that
 // as "—" rather than failing the whole row.
+// Maps a letter grade to a 0–12 score for the dashboard sparkline.
+// 12 = S, 11 = A+, 10 = A … 0 = F. Mirrors the GRADE_RANK_FOR_SPARKLINE
+// table inside dashboard.ts but is exported here so the data layer can
+// score historical rows without depending on a view module.
+const GRADE_SCORE: Record<string, number> = {
+  S: 12,
+  "A+": 11,
+  A: 10,
+  "A-": 9,
+  "B+": 8,
+  B: 7,
+  "B-": 6,
+  "C+": 5,
+  C: 4,
+  "C-": 3,
+  "D+": 2,
+  D: 1,
+  "D-": 1,
+  F: 0,
+};
+
+function gradeToScore(grade: string): number {
+  return GRADE_SCORE[grade] ?? 0;
+}
+
+// Returns one average-portfolio-score per day for the last `days` days, oldest
+// first. Days with no scans are omitted (the consumer pads / renders a stub).
+// Cheap because the user's full watchlist is bounded by PRO_WATCHLIST_CAP, so
+// at most cap × days rows ever come back; for `days=30, cap=25` that's 750.
+export async function getPortfolioTrendForUser(
+  db: D1Database,
+  userId: string,
+  days = 30,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<number[]> {
+  const since = now - days * 86400;
+  const result = await db
+    .prepare(
+      `SELECT sh.grade AS grade, sh.scanned_at AS scanned_at
+       FROM scan_history sh
+       JOIN domains d ON d.id = sh.domain_id
+       WHERE d.user_id = ? AND sh.scanned_at >= ?
+       ORDER BY sh.scanned_at ASC`,
+    )
+    .bind(userId, since)
+    .all<{ grade: string; scanned_at: number }>();
+
+  // Bucket by integer day (UTC). Each bucket gets the *latest* scan per domain,
+  // then we average across domains. We approximate "latest per domain per day"
+  // by collapsing all scans in the bucket to a single mean — close enough for
+  // a 0–100 trend line and avoids a second pass.
+  const buckets = new Map<number, number[]>();
+  for (const row of result.results) {
+    const day = Math.floor(row.scanned_at / 86400);
+    const list = buckets.get(day) ?? [];
+    list.push(gradeToScore(row.grade));
+    buckets.set(day, list);
+  }
+  const sortedDays = [...buckets.keys()].sort((a, b) => a - b);
+  return sortedDays.map((day) => {
+    const scores = buckets.get(day) ?? [];
+    const sum = scores.reduce((acc, n) => acc + n, 0);
+    return scores.length ? sum / scores.length : 0;
+  });
+}
+
 export async function getScanHistoryWithProtocols(
   db: D1Database,
   domainId: number,

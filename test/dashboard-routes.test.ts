@@ -772,6 +772,66 @@ describe("dashboard/routes", () => {
     });
   });
 
+  describe("GET /dashboard/domain/:domain.json (drawer endpoint)", () => {
+    it("redirects to /auth/login without a session cookie", async () => {
+      const db = createMockDB({});
+      const app = createTestApp(db);
+      const res = await app.request("/dashboard/domain/example.com.json");
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/auth/login");
+    });
+
+    it("returns 404 JSON when the domain doesn't belong to the user", async () => {
+      const db = createMockDB({ domains: [] });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/notmine.com.json", {
+        headers: { Cookie: cookie, Accept: "application/json" },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toBe("Domain not found");
+    });
+
+    it("returns the drawer payload for an owned domain", async () => {
+      const db = createMockDB({
+        domains: [
+          {
+            id: 1,
+            user_id: "user_1",
+            domain: "example.com",
+            is_free: 0,
+            scan_frequency: "weekly",
+            last_scanned_at: 1700000000,
+            last_grade: "B",
+            created_at: 1700000000,
+          },
+        ],
+        scanHistory: [{ grade: "B", scanned_at: 1700000000 }],
+      });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+      const res = await app.request("/dashboard/domain/example.com.json", {
+        headers: { Cookie: cookie, Accept: "application/json" },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      const body = (await res.json()) as {
+        domain: string;
+        grade: string;
+        lastScannedAt: number | null;
+        scanFrequency: string;
+        history: { scannedAt: number; grade: string }[];
+      };
+      expect(body.domain).toBe("example.com");
+      expect(body.grade).toBe("B");
+      expect(body.scanFrequency).toBe("weekly");
+      expect(body.lastScannedAt).toBe(1700000000);
+      expect(body.history).toHaveLength(1);
+      expect(body.history[0].grade).toBe("B");
+    });
+  });
+
   describe("GET /dashboard/domain/:domain/history", () => {
     const domainFixture = {
       id: 1,

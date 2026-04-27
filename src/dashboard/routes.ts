@@ -29,7 +29,11 @@ import {
   getDomainsByUser,
   listDomainsForUserPaged,
 } from "../db/domains.js";
-import { getScanHistoryWithProtocols, recordScan } from "../db/scans.js";
+import {
+  getPortfolioTrendForUser,
+  getScanHistoryWithProtocols,
+  recordScan,
+} from "../db/scans.js";
 import { getPlanForUser } from "../db/subscriptions.js";
 import {
   acknowledgeApiKeyRetirement,
@@ -150,10 +154,21 @@ dashboardRoutes.get("/", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const plan = await getPlanForUser(db, session.sub);
 
-  const [alerts, unackCounts] = await Promise.all([
+  const [alerts, unackCounts, portfolioTrend, user] = await Promise.all([
     listUnacknowledgedForUser(db, session.sub, 20),
     countUnacknowledgedByDomain(db, session.sub),
+    getPortfolioTrendForUser(db, session.sub, 30),
+    getUserById(db, session.sub),
   ]);
+
+  // First-run = the user signed up within the last 24 hours and has exactly
+  // one domain (the one auto-provisioned from their email suffix). The hero's
+  // welcome banner only fires while both are true; after either window passes
+  // it disappears for good without needing a separate "dismissed" flag.
+  const ageSeconds = user
+    ? Math.floor(Date.now() / 1000) - user.created_at
+    : Number.POSITIVE_INFINITY;
+  const isFirstRun = ageSeconds < 24 * 3600;
 
   const alertsView = alerts.map((a) => ({
     id: a.id,
@@ -173,6 +188,8 @@ dashboardRoutes.get("/", async (c) => {
         email: session.email,
         plan,
         alerts: alertsView,
+        portfolioTrend,
+        isFirstRun,
         domains: domains.map((d) => ({
           domain: d.domain,
           grade: d.last_grade ?? "—",
@@ -222,6 +239,8 @@ dashboardRoutes.get("/", async (c) => {
       email: session.email,
       plan,
       alerts: alertsView,
+      portfolioTrend,
+      isFirstRun,
       domains: page.rows.map((d) => ({
         domain: d.domain,
         grade: d.last_grade ?? "—",
@@ -480,6 +499,37 @@ dashboardRoutes.post("/bulk", async (c) => {
       inBandCap: BULK_IN_BAND_CAP,
     }),
   );
+});
+
+// JSON sibling of /domain/:domain. Powers the dashboard drawer so a row
+// click loads detail in-place without a full navigation. Same auth + same
+// IDOR protection as the HTML route — getDomainByUserAndName only returns
+// rows owned by session.sub. Registered BEFORE /domain/:domain so the
+// `.json` suffix isn't swallowed by the greedy :domain match.
+dashboardRoutes.get("/domain/:domain{.+\\.json}", async (c) => {
+  const session = c.get("user" as never) as SessionPayload;
+  const db = (c.env as { DB: D1Database }).DB;
+  const raw = c.req.param("domain");
+  const domainName = raw?.endsWith(".json") ? raw.slice(0, -5) : raw;
+  if (!domainName) return c.json({ error: "Domain not found" }, 404);
+  const domain = await getDomainByUserAndName(db, session.sub, domainName);
+  if (!domain) return c.json({ error: "Domain not found" }, 404);
+  const plan = await getPlanForUser(db, session.sub);
+  const limit = plan === "pro" ? HISTORY_LIMIT_PRO : HISTORY_LIMIT_FREE;
+  const rows = await getScanHistoryWithProtocols(db, domain.id, limit);
+  return c.json({
+    domain: domain.domain,
+    grade: domain.last_grade ?? "—",
+    lastScannedAt: domain.last_scanned_at,
+    scanFrequency: domain.scan_frequency,
+    isFree: domain.is_free === 1,
+    plan,
+    history: rows.map((row) => ({
+      scannedAt: row.scannedAt,
+      grade: row.grade,
+      protocols: row.protocols,
+    })),
+  });
 });
 
 // Domain detail

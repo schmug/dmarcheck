@@ -3,6 +3,9 @@ import {
   esc,
   generateCreature,
   gradeClass,
+  gradeToMood,
+  sparkline,
+  statCard,
   themeToggle,
 } from "./components.js";
 import { JS } from "./scripts.js";
@@ -612,6 +615,385 @@ const DASHBOARD_CSS = `
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ============================================================
+   Dashboard refresh — banners, hero, stat strip
+   Scoped under .dashboard-body so report/landing styles stay clean.
+   ============================================================ */
+.dashboard-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+.dashboard-banner-text { flex: 1; min-width: 220px; line-height: 1.45; }
+.dashboard-banner-text strong { font-weight: 600; }
+.dashboard-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.95rem;
+  background: var(--clr-accent);
+  color: var(--clr-on-accent);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.dashboard-banner-cta:hover { background: var(--clr-accent-hover); text-decoration: none; }
+.dashboard-banner-free {
+  background: var(--clr-accent-muted);
+  border: 1px solid var(--clr-accent);
+  color: var(--clr-text);
+}
+.dashboard-banner-firstrun {
+  background: var(--clr-pass-bg);
+  border: 1px solid var(--clr-pass-border);
+  color: var(--clr-text);
+}
+.dashboard-banner-fire {
+  background: var(--clr-fail-bg);
+  border: 1px solid var(--clr-fail-border);
+  color: var(--clr-text);
+}
+
+.dashboard-hero {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1.25rem 1.4rem;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+}
+.dashboard-hero-mascot { display: flex; align-items: center; justify-content: center; }
+.dashboard-hero-voice {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  min-width: 0;
+}
+.dashboard-hero-voice-line {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--clr-text);
+  line-height: 1.4;
+}
+.dashboard-hero-voice-line code {
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 0.95rem;
+  background: var(--clr-surface-muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--clr-accent);
+}
+.dashboard-hero-voice-sub {
+  font-size: 0.82rem;
+  color: var(--clr-text-muted);
+  line-height: 1.45;
+}
+.dashboard-hero-score {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 0.35rem;
+  min-width: 120px;
+}
+.dashboard-hero-score-value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--clr-text);
+  line-height: 1;
+}
+.dashboard-hero-score-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-faint);
+  font-weight: 600;
+}
+.dashboard-hero-score .dash-spark { margin-top: 0.15rem; }
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+}
+.stat-card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-left: 3px solid var(--clr-border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.stat-card-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-faint);
+  font-weight: 600;
+}
+.stat-card-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--clr-text);
+  line-height: 1;
+}
+.stat-card-sub {
+  font-size: 0.75rem;
+  color: var(--clr-text-muted);
+}
+.stat-card-pass { border-left-color: var(--clr-pass); }
+.stat-card-pass .stat-card-value { color: var(--clr-pass); }
+.stat-card-warn { border-left-color: var(--clr-warn); }
+.stat-card-warn .stat-card-value { color: var(--clr-warn); }
+.stat-card-fail { border-left-color: var(--clr-fail); }
+.stat-card-fail .stat-card-value { color: var(--clr-fail); }
+
+@media (max-width: 720px) {
+  .stat-strip { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-hero { grid-template-columns: 1fr; text-align: left; }
+  .dashboard-hero-mascot { justify-content: flex-start; }
+  .dashboard-hero-score { align-items: flex-start; }
+}
+
+/* ============================================================
+   Drawer + add-domain wizard (PR 3)
+   Hidden until JS toggles [data-open]. Server still renders the
+   per-domain HTML page at /dashboard/domain/:domain so deep links
+   keep working when JS is off.
+   ============================================================ */
+.dashboard-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease-out;
+}
+.dashboard-overlay[data-open="1"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.domain-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--clr-surface);
+  border-left: 1px solid var(--clr-border);
+  box-shadow: -8px 0 32px var(--clr-shadow);
+  z-index: 101;
+  transform: translateX(100%);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.domain-drawer[data-open="1"] { transform: translateX(0); }
+.domain-drawer-header {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--clr-border);
+  flex-shrink: 0;
+}
+.domain-drawer-title {
+  flex: 1; min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--clr-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.domain-drawer-close {
+  background: var(--clr-surface-muted);
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--clr-text);
+  cursor: pointer;
+}
+.domain-drawer-close:hover { border-color: var(--clr-border-hover); }
+.domain-drawer-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.domain-drawer-meta {
+  display: flex; flex-wrap: wrap; gap: 1.25rem;
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 1rem;
+}
+.domain-drawer-meta strong { color: var(--clr-text); font-weight: 600; }
+.domain-drawer-actions {
+  display: flex; gap: 0.5rem; flex-wrap: wrap;
+  padding-top: 1rem;
+  border-top: 1px solid var(--clr-border);
+  margin-top: 1rem;
+}
+.domain-drawer-actions form { margin: 0; }
+.domain-drawer-loading,
+.domain-drawer-error {
+  text-align: center;
+  color: var(--clr-text-muted);
+  font-size: 0.9rem;
+  padding: 2rem 0;
+}
+.domain-drawer-error { color: var(--clr-fail); }
+
+/* Wizard modal */
+.add-wizard {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  width: min(480px, 92vw);
+  max-height: 90vh;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px var(--clr-shadow);
+  z-index: 101;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s ease-out;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.add-wizard[data-open="1"] {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.add-wizard-header {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--clr-border);
+}
+.add-wizard-title {
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--clr-text);
+}
+.add-wizard-step-pill {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clr-text-faint);
+  font-weight: 600;
+}
+.add-wizard-body { padding: 1.25rem; }
+.add-wizard-step { display: none; }
+.add-wizard-step[data-active="1"] { display: block; }
+.add-wizard-step label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.add-wizard-step input[type="text"],
+.add-wizard-step select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: var(--clr-bg);
+  border: 1px solid var(--clr-border);
+  border-radius: 6px;
+  color: var(--clr-text);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.add-wizard-step input[type="text"]:focus,
+.add-wizard-step select:focus {
+  outline: 2px solid var(--clr-accent);
+  outline-offset: 2px;
+}
+.add-wizard-step p {
+  margin: 0;
+  color: var(--clr-text);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.add-wizard-step p strong { color: var(--clr-accent); }
+.add-wizard-error {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--clr-fail);
+}
+.add-wizard-footer {
+  display: flex; justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--clr-border);
+}
+.add-wizard-footer button {
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.add-wizard-footer .wizard-secondary {
+  background: transparent;
+  border: 1px solid var(--clr-border);
+  color: var(--clr-text);
+}
+.add-wizard-footer .wizard-secondary:hover { border-color: var(--clr-border-hover); }
+.add-wizard-footer .wizard-primary {
+  background: var(--clr-accent);
+  border: 1px solid var(--clr-accent);
+  color: var(--clr-on-accent);
+}
+.add-wizard-footer .wizard-primary:hover { background: var(--clr-accent-hover); }
+.add-wizard-footer .wizard-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Re-scanning row pulse — drives the post-add row state. */
+@keyframes domain-row-pulse {
+  0%, 100% { background-color: var(--clr-accent-muted); }
+  50%      { background-color: rgba(249, 115, 22, 0.18); }
+}
+.domain-table tr.is-rescanning td {
+  animation: domain-row-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .domain-table tr.is-rescanning td {
+    animation: none;
+    background: var(--clr-accent-muted);
+  }
+}
+
+/* Add-domain trigger button on the dashboard */
+.dashboard-add-btn {
+  display: inline-flex; align-items: center;
+  padding: 0.5rem 0.95rem;
+  background: var(--clr-accent);
+  color: var(--clr-on-accent);
+  border: 1px solid var(--clr-accent);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dashboard-add-btn:hover { background: var(--clr-accent-hover); text-decoration: none; }
+
+@media (max-width: 720px) {
+  .domain-drawer { width: 100vw; }
+}
 `;
 
 function dashboardPage(title: string, body: string, email: string): string {
@@ -942,9 +1324,9 @@ export function renderDomainPanel({
           alertCount > 0
             ? `<span class="badge-alert">${alertCount} alert${alertCount === 1 ? "" : "s"}</span>`
             : "";
-        return `<tr>
+        return `<tr data-domain="${esc(d.domain)}">
   <td>
-    <a href="/dashboard/domain/${encodeURIComponent(d.domain)}">${esc(d.domain)}</a>
+    <a href="/dashboard/domain/${encodeURIComponent(d.domain)}" data-drawer-link>${esc(d.domain)}</a>
     ${d.isFree ? '<span class="badge-free">Free</span>' : ""}
     ${alertBadge}
   </td>
@@ -993,12 +1375,292 @@ ${pagination}
 </div>`;
 }
 
+// Numeric weight for ranking grades from worst (F=0) to best (S=12). Mirrors
+// the table in db/scans.ts; kept private here so the view layer doesn't need
+// to import a db module just to compute hero copy.
+const HERO_GRADE_RANK: Record<string, number> = {
+  S: 12,
+  "A+": 11,
+  A: 10,
+  "A-": 9,
+  "B+": 8,
+  B: 7,
+  "B-": 6,
+  "C+": 5,
+  C: 4,
+  "C-": 3,
+  "D+": 2,
+  D: 1,
+  "D-": 1,
+  F: 0,
+};
+
+function gradeRank(grade: string): number {
+  return HERO_GRADE_RANK[grade] ?? -1;
+}
+
+// Picks the lowest-graded entry, ignoring ungraded ("—" / "ungraded") rows.
+// Returns null when no domain has been scored yet — callers fall back to a
+// neutral copy/mood instead of mis-labeling a fresh, never-scanned entry.
+function worstDomain(domains: DashboardDomain[]): DashboardDomain | null {
+  let worst: DashboardDomain | null = null;
+  let worstScore = Number.POSITIVE_INFINITY;
+  for (const d of domains) {
+    const score = gradeRank(d.grade);
+    if (score < 0) continue; // skip ungraded
+    if (score < worstScore) {
+      worst = d;
+      worstScore = score;
+    }
+  }
+  return worst;
+}
+
+interface PortfolioStats {
+  total: number;
+  healthy: number;
+  drifting: number;
+  failing: number;
+  ungraded: number;
+}
+
+function portfolioStats(domains: DashboardDomain[]): PortfolioStats {
+  let healthy = 0;
+  let drifting = 0;
+  let failing = 0;
+  let ungraded = 0;
+  for (const d of domains) {
+    const letter = d.grade.charAt(0).toUpperCase();
+    if (letter === "S" || letter === "A" || letter === "B") healthy += 1;
+    else if (letter === "C" || letter === "D") drifting += 1;
+    else if (letter === "F") failing += 1;
+    else ungraded += 1;
+  }
+  return { total: domains.length, healthy, drifting, failing, ungraded };
+}
+
+// Composes the DMarcus voice line for the hero in the "terse" register the
+// CLAUDE.md mascot guide and the Dashboard handoff both call out as the
+// shipping voice. Returns plain HTML; ` … ` segments around domain names get
+// rendered as <code> via the markdown-ish hero-line lookup in render.
+function heroVoiceLine(
+  stats: PortfolioStats,
+  worst: DashboardDomain | null,
+): {
+  line: string;
+  sub: string;
+} {
+  if (stats.total === 0) {
+    return {
+      line: "Add a domain and I'll keep watch.",
+      sub: "Free plan starts with one domain. Upgrade for more.",
+    };
+  }
+  if (stats.failing >= 3) {
+    return {
+      line: `${stats.failing} domains are failing. Triage <code>${esc(worst?.domain ?? "")}</code> first.`,
+      sub: "DMARC, SPF, or DKIM regressions usually trace to a recent DNS edit.",
+    };
+  }
+  if (stats.failing > 0 && worst) {
+    return {
+      line: `<code>${esc(worst.domain)}</code> is failing. The rest of the watchlist is steady.`,
+      sub: "Open it to see the diff and grab the fix.",
+    };
+  }
+  if (stats.drifting > 0) {
+    const word = stats.drifting === 1 ? "domain" : "domains";
+    return {
+      line: `${stats.drifting} ${word} drifted. ${worst ? `Click <code>${esc(worst.domain)}</code> first.` : ""}`,
+      sub: "Drift usually means a record was edited but not promoted.",
+    };
+  }
+  // No failures, no drift — but if nothing has been graded yet we shouldn't
+  // claim everything's green. The first scan happens within seconds of
+  // signup; this copy bridges that gap.
+  if (stats.healthy === 0) {
+    const word = stats.ungraded === 1 ? "domain" : "domains";
+    const count = stats.ungraded === 1 ? "" : `${stats.ungraded} `;
+    return {
+      line: `Scanning your ${count}${word} now…`,
+      sub: "First grades land in a few seconds. I'll refresh when they do.",
+    };
+  }
+  return {
+    line: "Everything's green. Nice.",
+    sub: "I'll re-check on schedule and email you the moment anything moves.",
+  };
+}
+
+function renderFreeTierBanner(): string {
+  return `<div class="dashboard-banner dashboard-banner-free" role="region" aria-label="Plan upgrade">
+  <span class="dashboard-banner-text">You're on the <strong>free plan</strong> — daily scans, alerts, and per-domain detail are Pro features.</span>
+  <a href="/pricing" class="dashboard-banner-cta">Upgrade to Pro — $19/mo</a>
+</div>`;
+}
+
+function renderFirstRunBanner(domain: string): string {
+  return `<div class="dashboard-banner dashboard-banner-firstrun" role="region" aria-label="Welcome">
+  <span class="dashboard-banner-text">Welcome — we auto-added <strong>${esc(domain)}</strong> from your email. <a href="/dashboard/domain/add">Add more</a> any time.</span>
+</div>`;
+}
+
+function renderOnFireBanner(failing: number): string {
+  return `<div class="dashboard-banner dashboard-banner-fire" role="region" aria-label="Multiple failures">
+  <span class="dashboard-banner-text"><strong>${failing} domains failing.</strong> Walk down the list — most regressions share a single root cause.</span>
+</div>`;
+}
+
+function renderDashboardHero(
+  domains: DashboardDomain[],
+  portfolioTrend: number[],
+): string {
+  const stats = portfolioStats(domains);
+  const worst = worstDomain(domains);
+  // Mood comes from the worst *graded* domain. With nothing scored yet there
+  // is no signal to react to, so DMarcus defaults to neutral rather than
+  // panicking at a freshly-added entry that just hasn't been scanned.
+  const mood = worst ? gradeToMood(worst.grade) : "content";
+  // Celebrate only when at least one domain has actually been graded as
+  // healthy. An entirely ungraded portfolio is "we don't know yet", not
+  // "we won".
+  const partyHat =
+    stats.healthy > 0 && stats.failing === 0 && stats.drifting === 0;
+  const { line, sub } = heroVoiceLine(stats, worst);
+
+  // Score on a 0–100 scale derived from the latest portfolio average (0–12),
+  // for legibility in the hero's right column. Falls back to a sensible
+  // default for empty portfolios so the markup never has an undefined slot.
+  const latest = portfolioTrend.length
+    ? portfolioTrend[portfolioTrend.length - 1]
+    : null;
+  const scoreText =
+    latest === null ? "—" : Math.round((latest / 12) * 100).toString();
+
+  const trendMarkup =
+    portfolioTrend.length >= 2
+      ? sparkline(portfolioTrend, "var(--clr-accent)", {
+          width: 120,
+          height: 28,
+          fill: true,
+          ariaLabel: `Portfolio score trend, ${portfolioTrend.length} data points`,
+        })
+      : "";
+
+  return `<section class="dashboard-hero" aria-label="Portfolio summary">
+  <div class="dashboard-hero-mascot">${generateCreature("lg", mood, partyHat)}</div>
+  <div class="dashboard-hero-voice">
+    <div class="dashboard-hero-voice-line">${line}</div>
+    <div class="dashboard-hero-voice-sub">${esc(sub)}</div>
+  </div>
+  <div class="dashboard-hero-score">
+    <span class="dashboard-hero-score-value">${esc(scoreText)}</span>
+    <span class="dashboard-hero-score-label">Portfolio score</span>
+    ${trendMarkup}
+  </div>
+</section>`;
+}
+
+function renderDomainDrawerShell(): string {
+  // Markup is hidden until the dashboard-drawer.js controller toggles
+  // [data-open]. The HTML route /dashboard/domain/:domain stays the source
+  // of truth for shareable deep links — the drawer hydrates from the JSON
+  // sibling, but a user with JS off (or who shares a link) lands on the
+  // same data via the legacy route.
+  return `<div class="dashboard-overlay" data-overlay-for="domain-drawer" hidden></div>
+<aside id="domain-drawer" class="domain-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1" hidden>
+  <div class="domain-drawer-header">
+    <span id="drawer-title" class="domain-drawer-title">Loading…</span>
+    <button type="button" class="domain-drawer-close" data-drawer-close aria-label="Close domain detail">Close</button>
+  </div>
+  <div class="domain-drawer-body" data-drawer-body>
+    <div class="domain-drawer-loading">Loading…</div>
+  </div>
+</aside>`;
+}
+
+function renderAddDomainWizardShell(): string {
+  return `<div class="dashboard-overlay" data-overlay-for="add-wizard" hidden></div>
+<div id="add-wizard" class="add-wizard" role="dialog" aria-modal="true" aria-labelledby="wizard-title" tabindex="-1" hidden>
+  <form data-wizard-form action="/dashboard/domain/add" method="post" novalidate>
+    <div class="add-wizard-header">
+      <span id="wizard-title" class="add-wizard-title">Add a domain</span>
+      <span class="add-wizard-step-pill" data-wizard-pill>Step 1 of 3</span>
+      <button type="button" class="domain-drawer-close" data-wizard-close aria-label="Close add-domain wizard">Close</button>
+    </div>
+    <div class="add-wizard-body">
+      <div class="add-wizard-step" data-active="1" data-step="1">
+        <label for="wizard-domain">Domain</label>
+        <input type="text" id="wizard-domain" name="domain" placeholder="example.com" autocomplete="off" required>
+        <div class="add-wizard-error" data-wizard-error hidden></div>
+      </div>
+      <div class="add-wizard-step" data-step="2">
+        <label for="wizard-frequency">Scan frequency</label>
+        <select id="wizard-frequency" name="frequency">
+          <option value="daily">Daily (Pro)</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div class="add-wizard-step" data-step="3">
+        <p>About to add <strong data-wizard-confirm-domain>—</strong> on a <strong data-wizard-confirm-frequency>—</strong> cadence.</p>
+        <p style="margin-top:0.75rem;color:var(--clr-text-muted);font-size:0.85rem;">First scan kicks off immediately. You'll see a grade in a few seconds.</p>
+      </div>
+    </div>
+    <div class="add-wizard-footer">
+      <button type="button" class="wizard-secondary" data-wizard-back hidden>Back</button>
+      <span style="flex:1"></span>
+      <button type="button" class="wizard-primary" data-wizard-next>Next</button>
+      <button type="submit" class="wizard-primary" data-wizard-submit hidden>Add domain</button>
+    </div>
+  </form>
+</div>`;
+}
+
+function renderDashboardStatStrip(domains: DashboardDomain[]): string {
+  const stats = portfolioStats(domains);
+  const totalCard = statCard(
+    "Domains",
+    stats.total,
+    stats.ungraded > 0
+      ? `${stats.ungraded} not yet scanned`
+      : "in your watchlist",
+  );
+  const healthyCard = statCard(
+    "Healthy",
+    stats.healthy,
+    "graded A or B",
+    stats.healthy > 0 ? "pass" : undefined,
+  );
+  const driftingCard = statCard(
+    "Drifting",
+    stats.drifting,
+    "graded C or D",
+    stats.drifting > 0 ? "warn" : undefined,
+  );
+  const failingCard = statCard(
+    "Failing",
+    stats.failing,
+    "graded F",
+    stats.failing > 0 ? "fail" : undefined,
+  );
+  return `<section class="stat-strip" aria-label="Portfolio status">
+  ${totalCard}
+  ${healthyCard}
+  ${driftingCard}
+  ${failingCard}
+</section>`;
+}
+
 export function renderDashboardPage({
   email,
   alerts = [],
   domains,
   controls = null,
   usage,
+  plan = "pro",
+  portfolioTrend = [],
+  isFirstRun = false,
 }: {
   email: string;
   alerts?: DashboardAlert[];
@@ -1009,14 +1671,217 @@ export function renderDashboardPage({
   // Cap usage shown in the panel header. Optional so older callers (and
   // the fragment route under live search) can omit it.
   usage?: WatchlistUsage;
+  // 30-day rolling portfolio score (0–12 per day, oldest first). Empty array
+  // for users with no scan history yet — hero suppresses the sparkline.
+  portfolioTrend?: number[];
+  // True when the user just signed up and the only domain is the auto-
+  // provisioned one from their email suffix. Drives the welcome banner.
+  isFirstRun?: boolean;
 }): string {
+  const stats = portfolioStats(domains);
+  const banners: string[] = [];
+  if (plan === "free") banners.push(renderFreeTierBanner());
+  if (isFirstRun && domains.length === 1) {
+    banners.push(renderFirstRunBanner(domains[0].domain));
+  }
+  if (stats.failing >= 3) banners.push(renderOnFireBanner(stats.failing));
+
+  const hero =
+    domains.length > 0
+      ? renderDashboardHero(domains, portfolioTrend)
+      : renderDashboardHero([], []);
+  const statStrip = domains.length > 0 ? renderDashboardStatStrip(domains) : "";
+
   return dashboardPage(
     "Domains — dmarc.mx",
-    `<h1 class="dashboard-title">Your Domains</h1>
+    `${banners.join("\n")}
+${hero}
+${statStrip}
 ${renderAlertsSection(alerts)}
-${renderDomainPanel({ domains, controls, usage })}`,
+<div class="dashboard-domains-header" style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;">
+  <h2 class="dashboard-title" style="margin:0;flex:1;">Your Domains</h2>
+  <button type="button" class="dashboard-add-btn" data-wizard-open>Add domain</button>
+</div>
+${renderDomainPanel({ domains, controls, usage })}
+${renderDomainDrawerShell()}
+${renderAddDomainWizardShell()}`,
     email,
   );
+}
+
+// === Local-only fixture preview ============================================
+// Backs the /_dev/dashboard?fixture=<name> route in src/index.ts. Lets a
+// developer eyeball every dashboard scenario without going through WorkOS
+// auth or having a populated D1. The fixture data is a TypeScript port of
+// docs/dmarcheck.zip handoff-bundle/proto-states.jsx — same shapes, same
+// scenario keys. Production code never reaches this; the dev route 404s
+// unless the request is from localhost.
+
+export type DashboardFixtureName =
+  | "current"
+  | "fire"
+  | "allGreen"
+  | "firstRun"
+  | "free"
+  | "zero";
+
+export const DASHBOARD_FIXTURE_NAMES: readonly DashboardFixtureName[] = [
+  "current",
+  "fire",
+  "allGreen",
+  "firstRun",
+  "free",
+  "zero",
+] as const;
+
+interface DashboardFixture {
+  email: string;
+  plan: "free" | "pro";
+  domains: DashboardDomain[];
+  portfolioTrend: number[];
+  alerts: DashboardAlert[];
+  isFirstRun: boolean;
+}
+
+const FIXTURE_NOW = 1714060800; // Fixed timestamp so alerts render deterministically.
+
+const dom = (
+  domain: string,
+  grade: string,
+  lastScanned: string,
+  alerts = 0,
+): DashboardDomain => ({
+  domain,
+  grade,
+  frequency: "daily",
+  lastScanned,
+  isFree: false,
+  unacknowledgedAlerts: alerts,
+});
+
+const DASHBOARD_FIXTURES: Record<DashboardFixtureName, DashboardFixture> = {
+  current: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: [
+      9, 9, 9, 8, 9, 9, 8, 9, 8, 7, 8, 9, 9, 8, 8, 9, 8, 7, 8, 8, 7, 7, 8, 7, 8,
+      7, 6, 7, 7, 7,
+    ],
+    domains: [
+      dom("acme.com", "A", "2h ago"),
+      dom("acme-mail.io", "F", "2h ago", 2),
+      dom("acme-pay.com", "B", "5h ago"),
+      dom("newsletter.acme.com", "C", "5h ago", 1),
+      dom("support.acme.com", "A", "5h ago"),
+    ],
+    alerts: [
+      {
+        id: 1,
+        domain: "acme-mail.io",
+        alertType: "grade_drop",
+        previousValue: "B",
+        newValue: "F",
+        createdAt: FIXTURE_NOW - 2 * 3600,
+      },
+    ],
+  },
+  fire: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: [10, 10, 10, 9, 9, 8, 7, 6, 5, 4, 3, 2, 2, 2],
+    domains: [
+      dom("acme-mail.io", "F", "2h ago", 2),
+      dom("billing.acme.com", "F", "1h ago", 3),
+      dom("api.acme.com", "F", "30m ago", 1),
+      dom("acme.com", "B", "5h ago"),
+    ],
+    alerts: [
+      {
+        id: 11,
+        domain: "acme-mail.io",
+        alertType: "grade_drop",
+        previousValue: "B",
+        newValue: "F",
+        createdAt: FIXTURE_NOW - 2 * 3600,
+      },
+      {
+        id: 12,
+        domain: "billing.acme.com",
+        alertType: "protocol_regression",
+        previousValue: "dmarc:pass",
+        newValue: "dmarc:fail",
+        createdAt: FIXTURE_NOW - 3600,
+      },
+    ],
+  },
+  allGreen: {
+    email: "you@example.com",
+    plan: "pro",
+    isFirstRun: false,
+    portfolioTrend: Array.from({ length: 30 }, () => 11),
+    domains: [
+      dom("acme.com", "A", "2h ago"),
+      dom("acme-pay.com", "A", "2h ago"),
+      dom("billing.acme.com", "S", "2h ago"),
+      dom("support.acme.com", "A", "2h ago"),
+    ],
+    alerts: [],
+  },
+  firstRun: {
+    email: "newuser@example.com",
+    plan: "free",
+    isFirstRun: true,
+    portfolioTrend: [],
+    domains: [dom("example.com", "—", "Never")],
+    alerts: [],
+  },
+  free: {
+    email: "you@example.com",
+    plan: "free",
+    isFirstRun: false,
+    portfolioTrend: [9, 9, 8, 9, 9, 8, 9],
+    domains: [dom("example.com", "B", "1d ago")],
+    alerts: [],
+  },
+  zero: {
+    email: "newuser@example.com",
+    plan: "free",
+    isFirstRun: false,
+    portfolioTrend: [],
+    domains: [],
+    alerts: [],
+  },
+};
+
+export function renderDashboardFixture(name: DashboardFixtureName): string {
+  const fx = DASHBOARD_FIXTURES[name];
+  return renderDashboardPage({
+    email: fx.email,
+    plan: fx.plan,
+    alerts: fx.alerts,
+    portfolioTrend: fx.portfolioTrend,
+    isFirstRun: fx.isFirstRun,
+    domains: fx.domains,
+    controls: null,
+    usage: {
+      plan: fx.plan,
+      current: fx.domains.length,
+      cap: fx.plan === "pro" ? 25 : 1,
+    },
+  });
+}
+
+export function renderDashboardFixtureIndex(): string {
+  const links = DASHBOARD_FIXTURE_NAMES.map(
+    (n) => `<li><a href="/_dev/dashboard?fixture=${esc(n)}">${esc(n)}</a></li>`,
+  ).join("");
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Dashboard fixtures</title>
+<style>body{font:14px system-ui;padding:2rem;}a{color:#f97316;}</style></head>
+<body><h1>Dashboard fixture preview</h1><p>Local development only. Pick a scenario:</p>
+<ul>${links}</ul></body></html>`;
 }
 
 export function renderDomainDetailPage({
