@@ -25,6 +25,7 @@ import {
 import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
 import { clampHistoryLimit, fetchDomainHistory } from "./api/history.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
+import { accessJwtMiddleware } from "./auth/access-jwt.js";
 import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
 import { authRoutes } from "./auth/routes.js";
 import { stripeWebhookRoutes } from "./billing/routes.js";
@@ -128,6 +129,12 @@ app.use("*", async (c, next) => {
 
   await next();
 });
+
+// Cloudflare Access JWT enforcement for `*.workers.dev` preview-branch
+// deploys. No-ops on the production custom domain (dmarc.mx). See
+// src/auth/access-jwt.ts for the protected-host predicate and fail-CLOSED
+// posture when ACCESS_AUD / ACCESS_TEAM_DOMAIN are missing.
+app.use("*", accessJwtMiddleware());
 
 // Security headers middleware (HSTS is handled at Cloudflare edge)
 
