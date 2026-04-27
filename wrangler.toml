@@ -11,6 +11,16 @@ routes = [
 [dev]
 port = 8790
 
+# Cloudflare Access enforcement for preview-branch deploys served on
+# `*-dmarcheck.cory7593.workers.dev`. Inert on the production custom domain
+# (`dmarc.mx`) — the middleware short-circuits on hostname before reading
+# these. NOTE: top-level [vars] only — never add [env.<name>] blocks here
+# (see feedback_workers_builds_env_pinning: doing so detached dmarc.mx on
+# 2026-04-26 / PRs #203 → #206).
+[vars]
+ACCESS_AUD = "7b283d5d9b56f6fffa342280310a4ae68f13cbb05dc27f3c1d2faec2deae507a"
+ACCESS_TEAM_DOMAIN = "coryrankin.cloudflareaccess.com"
+
 # TEMPORARY test cron — primary fire at 23:33 UTC with a 23:50 UTC safety
 # net to validate the end-to-end alert email pipeline against a seeded
 # alerts row. Revert to ["17 6 * * *"] after verification.

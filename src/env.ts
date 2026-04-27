@@ -21,4 +21,10 @@ export interface Env {
   // but lives here so self-host forks don't accidentally ship data to the
   // hosted tier's dashboard.
   CF_ANALYTICS_TOKEN?: string;
+  // Cloudflare Access enforcement on `*.workers.dev` preview-branch deploys.
+  // Both must be set together — the middleware fail-CLOSEDs (503) on a
+  // workers.dev hostname when either is missing. The production custom
+  // domain (`dmarc.mx`) is not affected by these vars.
+  ACCESS_AUD?: string;
+  ACCESS_TEAM_DOMAIN?: string;
 }
