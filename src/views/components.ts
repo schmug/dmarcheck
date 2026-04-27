@@ -231,17 +231,21 @@ export function protocolCard(
   expanded = false,
   learnSlug?: string,
 ): string {
+  const safeId = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const headerId = `card-header-${safeId}`;
+  const bodyId = `card-body-${safeId}`;
+
   const learnLink = learnSlug
     ? `<div class="card-learn-link"><a href="/learn/${esc(learnSlug)}">Learn about ${esc(name)} &rarr;</a></div>`
     : "";
   return `<div class="card${expanded ? " expanded" : ""}">
-  <div class="card-header" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}">
+  <div class="card-header" id="${headerId}" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}" aria-controls="${bodyId}">
     ${statusDot(status)}
     <div class="card-title">${esc(name)}</div>
     <div class="card-subtitle">${esc(subtitle)}</div>
     <div class="card-chevron" aria-hidden="true">&#9654;</div>
   </div>
-  <div class="card-body">${body}${learnLink}</div>
+  <div class="card-body" id="${bodyId}" role="region" aria-labelledby="${headerId}">${body}${learnLink}</div>
 </div>`;
 }
 
@@ -258,13 +262,28 @@ export function spfTree(node: SpfIncludeNode): string {
     .join("");
 
   const includes = node.includes
-    .map((child) => {
+    .map((child, i) => {
       const inner = spfTreeInner(child);
       const isExpandable = inner !== "";
+      const safeId = child.domain.replace(/[^a-z0-9]+/g, "-");
+      const listId = `spf-list-${safeId}-${i}`;
       const attrs = isExpandable
-        ? ` role="button" tabindex="0" aria-expanded="true"`
+        ? ' role="button" tabindex="0" aria-expanded="true" aria-controls="' +
+          listId +
+          '"'
         : "";
-      return `<li><span class="spf-node include"${attrs}>${esc(`include:${child.domain}`)}</span>${inner}</li>`;
+      const innerWithId = isExpandable
+        ? inner.replace("<ul>", `<ul id="${listId}">`)
+        : inner;
+      return (
+        '<li><span class="spf-node include"' +
+        attrs +
+        ">" +
+        esc(`include:${child.domain}`) +
+        "</span>" +
+        innerWithId +
+        "</li>"
+      );
     })
     .join("");
 
@@ -284,13 +303,28 @@ function spfTreeInner(node: SpfIncludeNode): string {
     .join("");
 
   const includes = node.includes
-    .map((child) => {
+    .map((child, i) => {
       const inner = spfTreeInner(child);
       const isExpandable = inner !== "";
+      const safeId = child.domain.replace(/[^a-z0-9]+/g, "-");
+      const listId = `spf-list-${safeId}-${i}`;
       const attrs = isExpandable
-        ? ` role="button" tabindex="0" aria-expanded="true"`
+        ? ' role="button" tabindex="0" aria-expanded="true" aria-controls="' +
+          listId +
+          '"'
         : "";
-      return `<li><span class="spf-node include"${attrs}>${esc(`include:${child.domain}`)}</span>${inner}</li>`;
+      const innerWithId = isExpandable
+        ? inner.replace("<ul>", `<ul id="${listId}">`)
+        : inner;
+      return (
+        '<li><span class="spf-node include"' +
+        attrs +
+        ">" +
+        esc(`include:${child.domain}`) +
+        "</span>" +
+        innerWithId +
+        "</li>"
+      );
     })
     .join("");
 
