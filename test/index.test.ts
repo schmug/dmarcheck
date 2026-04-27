@@ -405,9 +405,27 @@ describe("security headers", () => {
     expect(csp).toBe("default-src 'none'; frame-ancestors 'none'");
   });
 
-  it("does not include HSTS header (handled by Cloudflare)", async () => {
+  it("sets HSTS with 2-year max-age and includeSubDomains on HTML responses", async () => {
     const res = await app.request("/");
-    expect(res.headers.get("Strict-Transport-Security")).toBeNull();
+    expect(res.headers.get("Strict-Transport-Security")).toBe(
+      "max-age=63072000; includeSubDomains",
+    );
+  });
+
+  it("sets HSTS on non-HTML responses too", async () => {
+    const res = await app.request("/api/check?domain=");
+    expect(res.headers.get("Strict-Transport-Security")).toBe(
+      "max-age=63072000; includeSubDomains",
+    );
+  });
+
+  // `preload` is intentionally omitted — submission to hstspreload.org is a
+  // separate, deliberate decision that locks every subdomain (including
+  // future ones) into HTTPS forever.
+  it("does not include the `preload` directive", async () => {
+    const res = await app.request("/");
+    const hsts = res.headers.get("Strict-Transport-Security") ?? "";
+    expect(hsts).not.toContain("preload");
   });
 
   it("allows same-origin images in CSP", async () => {
