@@ -24,6 +24,7 @@ import {
 } from "./api/bulk-scan.js";
 import { API_CATALOG_JSON, CANONICAL_ORIGIN } from "./api/catalog.js";
 import { clampHistoryLimit, fetchDomainHistory } from "./api/history.js";
+import { LLMS_TXT } from "./api/llms-txt.js";
 import { OPENAPI_JSON } from "./api/openapi.js";
 import { accessJwtMiddleware } from "./auth/access-jwt.js";
 import { type BearerIdentity, resolveBearer } from "./auth/api-key.js";
@@ -742,6 +743,15 @@ app.get("/docs/api", (c) => {
   return c.html(renderApiDocs());
 });
 
+// llmstxt.org — vendor-neutral pointer to the canonical markdown URLs LLM
+// clients should pull instead of scraping rendered HTML. See src/api/llms-txt.ts.
+app.get("/llms.txt", (c) => {
+  return c.body(LLMS_TXT, 200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
 // Crawl guidance for search engines. Block the API namespace (Google was
 // logging `/api/check?domain=dmarc.mx` as "Crawled - currently not indexed"
 // noise) and point to the sitemap.
@@ -772,6 +782,7 @@ const STATIC_SITEMAP_URLS: Array<{ loc: string; priority: string }> = [
   { loc: "https://dmarc.mx/learn/dkim", priority: "0.7" },
   { loc: "https://dmarc.mx/learn/bimi", priority: "0.6" },
   { loc: "https://dmarc.mx/learn/mta-sts", priority: "0.7" },
+  { loc: "https://dmarc.mx/llms.txt", priority: "0.2" },
 ];
 const SITEMAP_LASTMOD = "2026-04-26";
 
