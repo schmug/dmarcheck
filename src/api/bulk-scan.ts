@@ -1,6 +1,7 @@
 import {
   countDomainsByUser,
   createDomain,
+  createDomains,
   findExistingDomainsForUser,
   getDomainByUserAndName,
 } from "../db/domains.js";
@@ -175,16 +176,50 @@ export async function processBulkScan(
   }
 
   const queuedResults: BulkResultEntry[] = [];
-  for (const domain of queued) {
+
+  // Deduplicate queued domains to prevent constraint violations
+  // in the bulk insert if the same domain was specified multiple times.
+  // Note: 'queued' is already deduped during the normalization phase
+  // (via seenValid set), but we use a Set here for clarity.
+  const uniqueQueued = Array.from(new Set(queued));
+
+  if (uniqueQueued.length > 0) {
+    // Determine which queued domains actually need to be inserted.
+    // existingSet already contains all valid domains the user previously owned.
+    const queuedToInsert = uniqueQueued.filter(
+      (domain) => !existingSet.has(domain),
+    );
+
     try {
-      await ensureDomainRow(input.db, input.userId, domain);
-      queuedResults.push({ domain, status: "queued" });
+      if (queuedToInsert.length > 0) {
+        await createDomains(
+          input.db,
+          queuedToInsert.map((domain) => ({
+            userId: input.userId,
+            domain,
+            isFree: false,
+          })),
+        );
+      }
+
+      for (const domain of uniqueQueued) {
+        queuedResults.push({ domain, status: "queued" });
+      }
     } catch {
-      queuedResults.push({
-        domain,
-        status: "error",
-        error: "Could not queue domain",
-      });
+      // Fallback: If the bulk insert fails (e.g. D1 error), try inserting them one by one.
+      for (const domain of uniqueQueued) {
+        try {
+          // ensureDomainRow is idempotent and handles conflicts
+          await ensureDomainRow(input.db, input.userId, domain);
+          queuedResults.push({ domain, status: "queued" });
+        } catch {
+          queuedResults.push({
+            domain,
+            status: "error",
+            error: "Could not queue domain",
+          });
+        }
+      }
     }
   }
 
