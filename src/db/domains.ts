@@ -22,6 +22,25 @@ export async function createDomain(
     .run();
 }
 
+export async function createDomains(
+  db: D1Database,
+  inputs: { userId: string; domain: string; isFree: boolean }[],
+): Promise<void> {
+  if (inputs.length === 0) return;
+  const values = inputs.map(() => "(?, ?, ?, ?)").join(", ");
+  const binds: unknown[] = [];
+  for (const input of inputs) {
+    const frequency = input.isFree ? "monthly" : "weekly";
+    binds.push(input.userId, input.domain, input.isFree ? 1 : 0, frequency);
+  }
+  await db
+    .prepare(
+      `INSERT INTO domains (user_id, domain, is_free, scan_frequency) VALUES ${values} ON CONFLICT DO NOTHING`,
+    )
+    .bind(...binds)
+    .run();
+}
+
 export async function getDomainsByUser(
   db: D1Database,
   userId: string,
