@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/cloudflare";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
 import { streamSSE } from "hono/streaming";
 import { dispatchPendingAlerts } from "./alerts/dispatcher.js";
 import { validateUnsubscribeToken } from "./alerts/unsubscribe.js";
@@ -279,6 +280,7 @@ app.use("/api/*", cors());
 app.route("/auth", authRoutes);
 
 // Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)
+app.use("/dashboard/*", csrf());
 app.route("/dashboard", dashboardRoutes);
 
 // Local-only dashboard fixture preview. Lets a developer eyeball every
