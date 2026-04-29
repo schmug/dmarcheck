@@ -2,16 +2,8 @@
 // fonts, inline styles only so render consistency doesn't depend on the
 // recipient's client. DMarcus (worried mood) keeps the brand visible.
 
+import { esc } from "../shared/escape.js";
 import type { AlertType } from "./detector.js";
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export interface GradeDropEmailInput {
   domain: string;
