@@ -7,6 +7,8 @@
 // is a single grade token (S, A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F),
 // so the column widths are predictable.
 
+import { esc } from "../shared/escape.js";
+
 const LABEL_TEXT = "dmarcheck";
 
 // Width of each label/value column in SVG user units. Tuned by eye against
@@ -54,18 +56,6 @@ const VALID_GRADES = new Set([
 
 export function isValidGrade(grade: string): boolean {
   return VALID_GRADES.has(grade);
-}
-
-// XML escape — the only externally-influenced field on the value column is
-// the grade, which we validate against `VALID_GRADES` before rendering.
-// Defensive escaping anyway, in case future variants accept user labels.
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 }
 
 interface BadgeOptions {
