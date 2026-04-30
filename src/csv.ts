@@ -20,19 +20,19 @@ const PROTOCOL_NAMES: Record<string, string> = {
   mta_sts: "MTA-STS",
 };
 
+const CSV_DANGEROUS_START_RE = /^[=+\-@\t\r\n]/;
+const CSV_NEEDS_QUOTING_RE = /[,"\r\n]/;
+
 export function escapeCsvField(value: string): string {
+  // ⚡ Bolt Optimization: Use pre-compiled regex for fast path.
+  // Avoids evaluating multiple `.includes()` for strings that don't need escaping.
   // Prevent CSV Formula Injection
   let safeValue = value;
-  if (/^[=+\-@\t\r\n]/.test(safeValue)) {
+  if (CSV_DANGEROUS_START_RE.test(safeValue)) {
     safeValue = `'${safeValue}`;
   }
 
-  if (
-    safeValue.includes(",") ||
-    safeValue.includes('"') ||
-    safeValue.includes("\n") ||
-    safeValue.includes("\r")
-  ) {
+  if (CSV_NEEDS_QUOTING_RE.test(safeValue)) {
     return `"${safeValue.replace(/"/g, '""')}"`;
   }
   return safeValue;
@@ -51,14 +51,17 @@ function dkimRawSummary(
     { found: boolean; key_type?: string; key_bits?: number }
   >,
 ): string {
-  const found = Object.entries(selectors).filter(([, s]) => s.found);
-  if (found.length === 0) return "";
-  return found
-    .map(
-      ([name, s]) =>
-        `${name}: ${s.key_type ?? "unknown"}/${s.key_bits ?? "?"}bit`,
-    )
-    .join("; ");
+  // ⚡ Bolt Optimization: Use for...in instead of Object.entries().filter().map()
+  // Avoids multiple intermediate array allocations.
+  let result = "";
+  for (const name in selectors) {
+    const s = selectors[name];
+    if (s.found) {
+      if (result.length > 0) result += "; ";
+      result += `${name}: ${s.key_type ?? "unknown"}/${s.key_bits ?? "?"}bit`;
+    }
+  }
+  return result;
 }
 
 export function generateCsv(result: ScanResult): string {
