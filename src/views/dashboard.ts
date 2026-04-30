@@ -2292,7 +2292,7 @@ export function renderDomainDetailPage({
   </form>
   <a href="/check?domain=${encodeURIComponent(domain)}" class="btn btn-secondary">View Full Report</a>
   <form method="POST" action="/dashboard/domain/${encodeURIComponent(domain)}/delete" style="display:inline" onsubmit="return confirm('Stop monitoring ${esc(domain)}?');">
-    <button type="submit" class="btn btn-secondary" aria-label="Delete domain ${esc(domain)}">Delete</button>
+    <button type="submit" class="btn btn-danger" aria-label="Delete domain ${esc(domain)}">Delete</button>
   </form>
 </div>
 <div class="section-card">
