@@ -119,6 +119,17 @@ npm run dev       # starts local dev server on http://localhost:8790
 npm test          # runs unit tests
 ```
 
+To point the DNS resolver at custom servers during local development (useful
+for testing against `1.1.1.1`, `8.8.8.8`, or an internal resolver), set
+`DNS_SERVERS` to a comma-separated list:
+
+```bash
+DNS_SERVERS=8.8.8.8,1.1.1.1 npm run dev
+```
+
+When unset, the system default resolver (or the Cloudflare Workers DNS
+polyfill in production) is used.
+
 ### Deploy to Your Own Cloudflare Account
 
 1. Authenticate with Cloudflare:
