@@ -2,8 +2,32 @@ import dns from "node:dns";
 import * as Sentry from "@sentry/cloudflare";
 import type { MxRecord, TxtRecord } from "./types.js";
 
+export function parseDnsServers(raw: string | undefined): string[] | null {
+  if (!raw) return null;
+  const servers = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return servers.length > 0 ? servers : null;
+}
+
 const resolver = new dns.promises.Resolver();
 const DNS_TIMEOUT_MS = 3000;
+
+// Local-dev override: `DNS_SERVERS=8.8.8.8,1.1.1.1 npm run dev` points the
+// resolver at custom servers. In Cloudflare Workers prod the var is absent and
+// the built-in polyfill is used as-is; setServers() may be a no-op there.
+const customDnsServers =
+  typeof process !== "undefined"
+    ? parseDnsServers(process.env?.DNS_SERVERS)
+    : null;
+if (customDnsServers) {
+  try {
+    resolver.setServers(customDnsServers);
+  } catch (err) {
+    console.warn("Failed to apply DNS_SERVERS override:", err);
+  }
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
