@@ -79,13 +79,30 @@ export async function deleteAccount(
   let workosFailed = false;
   let workosSkipped = false;
   if (env.WORKOS_API_KEY) {
-    try {
-      await deleteWorkosUser(env.WORKOS_API_KEY, user.id);
-      workosDeleted = true;
-    } catch (err) {
-      workosFailed = true;
-      Sentry.captureException(err);
-      await enqueueWorkosRetry(env.DB, user.id);
+    // OAuth signup can complete on a concurrent request between the local
+    // delete above and this outbound call, re-creating a live D1 row for the
+    // same WorkOS id. Deleting the identity then would permanently lock out the
+    // new account — mirror the sweep's pre-delete guard (#615).
+    const reregistered = await getUserById(env.DB, user.id);
+    if (reregistered) {
+      // Identity must stay — createUser already cleared any stale retry row.
+    } else {
+      try {
+        await deleteWorkosUser(env.WORKOS_API_KEY, user.id);
+        if (await getUserById(env.DB, user.id)) {
+          Sentry.captureException(
+            new Error(
+              `WorkOS identity ${user.id} was deleted after local re-registration during account erasure — manual recovery required`,
+            ),
+          );
+        } else {
+          workosDeleted = true;
+        }
+      } catch (err) {
+        workosFailed = true;
+        Sentry.captureException(err);
+        await enqueueWorkosRetry(env.DB, user.id);
+      }
     }
   } else {
     workosSkipped = true;
