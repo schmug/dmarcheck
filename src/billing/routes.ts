@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { requireAuth } from "../auth/middleware.js";
-import type { SessionPayload } from "../auth/session.js";
+import {
+  clearSessionAndRedirect,
+  type SessionPayload,
+} from "../auth/session.js";
 import {
   getSubscriptionByUserId,
   isStripeEventRecorded,
@@ -42,7 +45,7 @@ dashboardBillingRoutes.get("/subscribe", async (c) => {
   const db = env.DB;
   const user = await getUserById(db, session.sub);
   if (!user) {
-    return c.redirect("/auth/logout");
+    return clearSessionAndRedirect(c);
   }
 
   let customerId = user.stripe_customer_id;

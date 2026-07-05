@@ -1,7 +1,19 @@
+import type { Context } from "hono";
+import { deleteCookie } from "hono/cookie";
+
 export interface SessionPayload {
   sub: string;
   email: string;
   exp: number;
+}
+
+// Clears the session cookie and sends the user home. Used by the POST
+// /auth/logout handler and by call sites that need to force-log-out a
+// stale session directly (a c.redirect("/auth/logout") would hit that
+// route via a browser GET, which no longer clears cookies post-#621).
+export function clearSessionAndRedirect(c: Context) {
+  deleteCookie(c, "session", { path: "/" });
+  return c.redirect("/");
 }
 
 const ENCODER = new TextEncoder();

@@ -15,7 +15,10 @@ import {
   type NonceConsumer,
   validateReauthProof,
 } from "../auth/reauth.js";
-import type { SessionPayload } from "../auth/session.js";
+import {
+  clearSessionAndRedirect,
+  type SessionPayload,
+} from "../auth/session.js";
 import { dashboardBillingRoutes } from "../billing/routes.js";
 import { escapeCsvField } from "../csv.js";
 import {
@@ -1137,7 +1140,7 @@ dashboardRoutes.get("/account/delete", async (c) => {
   const user = await getUserById(env.DB, session.sub);
   if (!user) {
     // Valid session but the row is already gone — treat as logged out.
-    return c.redirect("/auth/logout");
+    return clearSessionAndRedirect(c);
   }
   return c.html(renderDeleteAccountPage({ email: user.email }));
 });
@@ -1165,7 +1168,7 @@ dashboardRoutes.post("/account/delete", async (c) => {
   if (!user) {
     // Already deleted (retained cookie) — clear the proof and log them out.
     deleteCookie(c, "delete_proof", { path: "/" });
-    return c.redirect("/auth/logout");
+    return clearSessionAndRedirect(c);
   }
 
   const body = await c.req.parseBody();
@@ -1217,7 +1220,7 @@ dashboardRoutes.get("/settings", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const user = await getUserById(db, session.sub);
   if (!user) {
-    return c.redirect("/auth/logout");
+    return clearSessionAndRedirect(c);
   }
   const webhook = await db
     .prepare("SELECT url, format FROM webhooks WHERE user_id = ?")
@@ -1296,7 +1299,7 @@ dashboardRoutes.get("/settings/api-keys", async (c) => {
   const db = (c.env as { DB: D1Database }).DB;
   const user = await getUserById(db, session.sub);
   if (!user) {
-    return c.redirect("/auth/logout");
+    return clearSessionAndRedirect(c);
   }
   const showRetirementBanner = user.api_key_retirement_acknowledged_at === null;
   // First visit dismisses the banner — the user has now seen the explanation

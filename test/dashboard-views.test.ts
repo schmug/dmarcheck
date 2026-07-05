@@ -90,6 +90,15 @@ describe("renderDashboardPage", () => {
     expect(html).toContain("Logout");
   });
 
+  it("submits logout as a POST form, not a GET link", () => {
+    const html = renderDashboardPage({
+      email: "test@example.com",
+      domains: [],
+    });
+    expect(html).toContain('<form method="POST" action="/auth/logout"');
+    expect(html).not.toContain('<a href="/auth/logout">');
+  });
+
   it("links to domain detail pages", () => {
     const html = renderDashboardPage({
       email: "user@example.com",

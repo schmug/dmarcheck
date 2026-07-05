@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import { csrf } from "hono/csrf";
 import { describe, expect, it } from "vitest";
 import { authRoutes } from "../src/auth/routes.js";
 
 function createTestApp() {
   const app = new Hono();
+  app.use("/auth/logout", csrf());
   app.route("/auth", authRoutes);
   return app;
 }
@@ -126,9 +128,22 @@ describe("auth/routes", () => {
   });
 
   describe("GET /auth/logout", () => {
-    it("clears the session cookie", async () => {
+    it("rejects with 405 and does not clear the session cookie", async () => {
       const app = createTestApp();
       const res = await app.request("/auth/logout", {}, ENV);
+      expect(res.status).toBe(405);
+      expect(res.headers.get("Set-Cookie")).toBeNull();
+    });
+  });
+
+  describe("POST /auth/logout", () => {
+    it("clears the session cookie on a same-origin request", async () => {
+      const app = createTestApp();
+      const req = new Request("http://localhost/auth/logout", {
+        method: "POST",
+        headers: { Origin: "http://localhost" },
+      });
+      const res = await app.request(req, ENV);
       const setCookieHeader = res.headers.get("Set-Cookie");
       expect(setCookieHeader).not.toBeNull();
       // Cookie should be cleared (Max-Age=0 or expires in the past)
@@ -136,11 +151,29 @@ describe("auth/routes", () => {
       expect(setCookieHeader).toMatch(/Max-Age=0/);
     });
 
-    it("redirects to /", async () => {
+    it("redirects to / on a same-origin request", async () => {
       const app = createTestApp();
-      const res = await app.request("/auth/logout", {}, ENV);
+      const req = new Request("http://localhost/auth/logout", {
+        method: "POST",
+        headers: { Origin: "http://localhost" },
+      });
+      const res = await app.request(req, ENV);
       expect(res.status).toBe(302);
       expect(res.headers.get("Location")).toBe("/");
+    });
+
+    it("rejects a cross-site form POST and does not clear the session", async () => {
+      const app = createTestApp();
+      const req = new Request("http://localhost/auth/logout", {
+        method: "POST",
+        headers: {
+          Origin: "https://evil.example",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+      const res = await app.request(req, ENV);
+      expect(res.status).toBe(403);
+      expect(res.headers.get("Set-Cookie")).toBeNull();
     });
   });
 });
