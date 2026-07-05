@@ -799,6 +799,7 @@ app.get("/api/check/email/stream", async (c) => {
     }
     await streamInboxResult(stream, kv, token, {
       renderCard: renderInboxVerdict,
+      rateLimiterNamespace: c.env?.RATE_LIMITER,
     });
   });
 });

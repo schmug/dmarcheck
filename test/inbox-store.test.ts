@@ -3,6 +3,7 @@ import {
   buildResultPayload,
   getRecord,
   handleInboundEmail,
+  MAX_CONCURRENT_STREAMS_PER_TOKEN,
   MAX_LIVE_TOKENS_PER_IDENTITY,
   parseVerdict,
   putPending,
@@ -12,6 +13,7 @@ import {
   TOKEN_TTL_SECONDS,
   type VerdictRecord,
 } from "../src/inbox/store.js";
+import type { RateLimiterDO } from "../src/rate-limit-do.js";
 import { renderInboxVerdict } from "../src/views/inbox.js";
 import { FakeKV } from "./helpers/fake-kv.js";
 
@@ -451,6 +453,131 @@ describe("inbox store — streamInboxResult", () => {
     });
     expect(stream.events.map((e) => e.event)).toEqual(["waiting", "closed"]);
     expect(JSON.parse(stream.events[1].data).status).toBe("expired");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamInboxResult — per-token concurrent-stream cap (issue #620)
+// ---------------------------------------------------------------------------
+// The atomic cap itself lives in RateLimiterDO and is exercised under real
+// concurrency in test/integration/inbox-stream-slots-do.test.ts (only workerd
+// has the DO binding). These tests verify streamInboxResult is wired to it
+// correctly: it asks for a slot before entering the poll loop, backs off
+// cleanly when denied, and always releases what it acquired.
+function fakeStreamSlotNamespace(acquireResult: boolean) {
+  const acquireStreamSlot = vi.fn().mockResolvedValue(acquireResult);
+  const releaseStreamSlot = vi.fn().mockResolvedValue(undefined);
+  const namespace = {
+    getByName: () => ({ acquireStreamSlot, releaseStreamSlot }),
+  } as unknown as DurableObjectNamespace<RateLimiterDO>;
+  return { namespace, acquireStreamSlot, releaseStreamSlot };
+}
+
+describe("inbox store — streamInboxResult concurrent-stream cap", () => {
+  it("emits 'closed:busy' without polling once the per-token slot cap is full", async () => {
+    const kv = new FakeKV();
+    await putPending(kv.asKv(), TOKEN);
+    const { namespace, acquireStreamSlot, releaseStreamSlot } =
+      fakeStreamSlotNamespace(false);
+    const stream = fakeStream();
+    await streamInboxResult(stream, kv.asKv(), TOKEN, {
+      renderCard,
+      rateLimiterNamespace: namespace,
+    });
+    expect(stream.events.map((e) => e.event)).toEqual(["closed"]);
+    expect(JSON.parse(stream.events[0].data).status).toBe("busy");
+    expect(acquireStreamSlot).toHaveBeenCalledWith(
+      expect.any(String),
+      MAX_CONCURRENT_STREAMS_PER_TOKEN,
+      TOKEN_TTL_SECONDS * 1000,
+    );
+    // Denied — never held a slot, so nothing to release.
+    expect(releaseStreamSlot).not.toHaveBeenCalled();
+  });
+
+  it("acquires and releases the same slot around a normal poll-to-result flow", async () => {
+    const kv = new FakeKV();
+    await putPending(kv.asKv(), TOKEN);
+    const { namespace, acquireStreamSlot, releaseStreamSlot } =
+      fakeStreamSlotNamespace(true);
+    const stream = fakeStream();
+    await streamInboxResult(stream, kv.asKv(), TOKEN, {
+      renderCard,
+      rateLimiterNamespace: namespace,
+      pollIntervalMs: 1,
+      maxWaitMs: 10_000,
+      sleep: async () => {
+        await putVerdict(kv.asKv(), TOKEN, {
+          status: "received",
+          spf: "pass",
+          dkim: "pass",
+          dmarc: "pass",
+          alignment: "pass",
+          from: "x@y.com",
+          dkim_selector: null,
+          dkim_domain: null,
+          auth_results: "mx; spf=pass",
+          size_bytes: 1,
+          received_at: "2026-06-28T00:00:00.000Z",
+        });
+      },
+    });
+    expect(stream.events.map((e) => e.event)).toEqual(["waiting", "result"]);
+    expect(acquireStreamSlot).toHaveBeenCalledTimes(1);
+    expect(releaseStreamSlot).toHaveBeenCalledTimes(1);
+    const slotId = acquireStreamSlot.mock.calls[0][0];
+    expect(releaseStreamSlot).toHaveBeenCalledWith(slotId);
+  });
+
+  it("still releases the held slot when the stream times out", async () => {
+    const kv = new FakeKV();
+    await putPending(kv.asKv(), TOKEN);
+    const { namespace, acquireStreamSlot, releaseStreamSlot } =
+      fakeStreamSlotNamespace(true);
+    const stream = fakeStream();
+    let clock = 0;
+    await streamInboxResult(stream, kv.asKv(), TOKEN, {
+      renderCard,
+      rateLimiterNamespace: namespace,
+      pollIntervalMs: 1,
+      maxWaitMs: 5,
+      sleep: async () => {
+        clock += 10;
+      },
+      nowMs: () => clock,
+    });
+    expect(stream.events.map((e) => e.event)).toEqual(["waiting", "closed"]);
+    expect(JSON.parse(stream.events[1].data).status).toBe("timeout");
+    expect(acquireStreamSlot).toHaveBeenCalledTimes(1);
+    expect(releaseStreamSlot).toHaveBeenCalledWith(
+      acquireStreamSlot.mock.calls[0][0],
+    );
+  });
+
+  it("never asks for a slot when the verdict is already stored (no poll loop entered)", async () => {
+    const kv = new FakeKV();
+    await putPending(kv.asKv(), TOKEN);
+    await putVerdict(kv.asKv(), TOKEN, {
+      status: "received",
+      spf: "pass",
+      dkim: "pass",
+      dmarc: "pass",
+      alignment: "pass",
+      from: "x@y.com",
+      dkim_selector: null,
+      dkim_domain: null,
+      auth_results: "mx; spf=pass",
+      size_bytes: 1,
+      received_at: "2026-06-28T00:00:00.000Z",
+    });
+    const { namespace, acquireStreamSlot } = fakeStreamSlotNamespace(true);
+    const stream = fakeStream();
+    await streamInboxResult(stream, kv.asKv(), TOKEN, {
+      renderCard,
+      rateLimiterNamespace: namespace,
+    });
+    expect(stream.events.map((e) => e.event)).toEqual(["result"]);
+    expect(acquireStreamSlot).not.toHaveBeenCalled();
   });
 });
 
