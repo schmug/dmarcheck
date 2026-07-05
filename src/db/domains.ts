@@ -24,23 +24,33 @@ export async function createDomain(
     .run();
 }
 
-export async function createDomains(
+// Atomic, cap-guarded insert (issue #617). The count check and the insert
+// happen inside a single SQL statement rather than as separate JS-level
+// read-then-write calls, so D1's per-database write serialization — not
+// application code — is what prevents a concurrent burst for one user from
+// inserting past `cap`. Returns whether the row was actually inserted.
+export async function createDomainUnderCap(
   db: D1Database,
-  inputs: { userId: string; domain: string; isFree: boolean }[],
-): Promise<void> {
-  if (inputs.length === 0) return;
-  const values = inputs.map(() => "(?, ?, ?, ?)").join(", ");
-  const binds: unknown[] = [];
-  for (const input of inputs) {
-    const frequency = input.isFree ? "monthly" : "weekly";
-    binds.push(input.userId, input.domain, input.isFree ? 1 : 0, frequency);
-  }
-  await db
+  input: { userId: string; domain: string; isFree: boolean },
+  cap: number,
+): Promise<boolean> {
+  const frequency = input.isFree ? "monthly" : "weekly";
+  const result = await db
     .prepare(
-      `INSERT INTO domains (user_id, domain, is_free, scan_frequency) VALUES ${values} ON CONFLICT DO NOTHING`,
+      `INSERT INTO domains (user_id, domain, is_free, scan_frequency)
+       SELECT ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM domains WHERE user_id = ?) < ?`,
     )
-    .bind(...binds)
+    .bind(
+      input.userId,
+      input.domain,
+      input.isFree ? 1 : 0,
+      frequency,
+      input.userId,
+      cap,
+    )
     .run();
+  return (result.meta?.changes ?? 0) > 0;
 }
 
 export async function getDomainsByUser(

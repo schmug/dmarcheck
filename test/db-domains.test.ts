@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createDomain,
+  createDomainUnderCap,
   type Domain,
   deleteDomain,
   getDomainByUserAndName,
@@ -22,6 +23,32 @@ function makeD1Mock(): D1Database {
         return {
           run: async () => {
             if (/^INSERT INTO domains/i.test(sql)) {
+              // Guarded insert (createDomainUnderCap, issue #617): the SQL
+              // itself carries the cap check, so the mock re-evaluates the
+              // count against the store synchronously (no intermediate
+              // await), mirroring D1's single-statement atomicity.
+              if (/WHERE \(SELECT COUNT/i.test(sql)) {
+                const [userId, domain, isFree, scanFrequency, capUserId, cap] =
+                  params as [string, string, number, string, string, number];
+                const currentCount = [...store.values()].filter(
+                  (row) => row.user_id === capUserId,
+                ).length;
+                if (currentCount >= cap) {
+                  return { success: true, meta: { changes: 0 } };
+                }
+                const id = nextId++;
+                store.set(id, {
+                  id,
+                  user_id: userId,
+                  domain,
+                  is_free: isFree,
+                  scan_frequency: scanFrequency,
+                  last_scanned_at: null,
+                  last_grade: null,
+                  created_at: Math.floor(Date.now() / 1000),
+                });
+                return { success: true, meta: { changes: 1 } };
+              }
               const [userId, domain, isFree, scanFrequency] = params as [
                 string,
                 string,
@@ -62,7 +89,7 @@ function makeD1Mock(): D1Database {
                 });
               }
             }
-            return { success: true };
+            return { success: true, meta: { changes: 1 } };
           },
           first: async <T>(): Promise<T | null> => {
             if (/WHERE user_id = \? AND domain = \?/i.test(sql)) {
@@ -202,6 +229,60 @@ describe("db/domains", () => {
       const user1Domains = await getDomainsByUser(db, "user-1");
       expect(user1Domains).toHaveLength(1);
       expect(user1Domains[0].domain).toBe("alice.com");
+    });
+  });
+
+  describe("createDomainUnderCap", () => {
+    it("inserts and returns true when under the cap", async () => {
+      const inserted = await createDomainUnderCap(
+        db,
+        { userId: "user-1", domain: "under-cap.com", isFree: false },
+        3,
+      );
+      expect(inserted).toBe(true);
+      expect(await getDomainsByUser(db, "user-1")).toHaveLength(1);
+    });
+
+    it("refuses to insert and returns false once the user is at the cap", async () => {
+      await createDomain(db, {
+        userId: "user-1",
+        domain: "a.com",
+        isFree: false,
+      });
+      await createDomain(db, {
+        userId: "user-1",
+        domain: "b.com",
+        isFree: false,
+      });
+
+      const inserted = await createDomainUnderCap(
+        db,
+        { userId: "user-1", domain: "c.com", isFree: false },
+        2,
+      );
+      expect(inserted).toBe(false);
+      expect(await getDomainsByUser(db, "user-1")).toHaveLength(2);
+    });
+
+    it("never lets a concurrent burst push a user's domain count past the cap (issue #617)", async () => {
+      // 10 simultaneous adds for one identity at a cap of 3. The cap check and
+      // the insert live in a single SQL statement (no separate JS-level
+      // count-then-insert), so — unlike the old two-step read-modify-write —
+      // a concurrent burst cannot all read the same pre-insert count and all
+      // succeed.
+      const cap = 3;
+      const results = await Promise.all(
+        Array.from({ length: 10 }, (_, i) =>
+          createDomainUnderCap(
+            db,
+            { userId: "user-1", domain: `burst${i}.com`, isFree: false },
+            cap,
+          ),
+        ),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(cap);
+      expect(await getDomainsByUser(db, "user-1")).toHaveLength(cap);
     });
   });
 

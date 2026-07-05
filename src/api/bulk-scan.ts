@@ -1,7 +1,6 @@
 import {
   countDomainsByUser,
-  createDomain,
-  createDomains,
+  createDomainUnderCap,
   findExistingDomainsForUser,
   getDomainByUserAndName,
   queueDomainsForRescan,
@@ -167,13 +166,21 @@ export async function processBulkScan(
   for (let i = 0; i < inBand.length; i += batchSize) {
     const batch = inBand.slice(i, i + batchSize);
     const outcomes = await Promise.allSettled(
-      batch.map((domain) => scanOne(input.db, input.userId, domain, scanFn)),
+      batch.map((domain) =>
+        scanOne(input.db, input.userId, domain, cap, scanFn),
+      ),
     );
     for (let j = 0; j < outcomes.length; j++) {
       const outcome = outcomes[j];
       const domain = batch[j];
       if (outcome.status === "fulfilled") {
         inBandResults.push(outcome.value);
+      } else if (outcome.reason instanceof WatchlistCapExceededError) {
+        inBandResults.push({
+          domain,
+          status: "error",
+          error: "Watchlist limit reached",
+        });
       } else {
         inBandResults.push({
           domain,
@@ -203,41 +210,34 @@ export async function processBulkScan(
       existingSet.has(domain),
     );
 
-    try {
-      if (queuedToInsert.length > 0) {
-        await createDomains(
+    // Inserted one at a time (not a single multi-row INSERT) so each row's
+    // cap check is atomic with its own insert (issue #617) — a concurrent
+    // add/bulk request for the same user can't push the total past `cap`.
+    for (const domain of queuedToInsert) {
+      try {
+        const inserted = await createDomainUnderCap(
           input.db,
-          queuedToInsert.map((domain) => ({
-            userId: input.userId,
-            domain,
-            isFree: false,
-          })),
+          { userId: input.userId, domain, isFree: false },
+          cap,
         );
+        queuedResults.push(
+          inserted
+            ? { domain, status: "queued" }
+            : { domain, status: "error", error: "Watchlist limit reached" },
+        );
+      } catch {
+        queuedResults.push({
+          domain,
+          status: "error",
+          error: "Could not queue domain",
+        });
       }
-      if (queuedExisting.length > 0) {
-        await queueDomainsForRescan(input.db, input.userId, queuedExisting);
-      }
+    }
 
-      for (const domain of uniqueQueued) {
+    if (queuedExisting.length > 0) {
+      await queueDomainsForRescan(input.db, input.userId, queuedExisting);
+      for (const domain of queuedExisting) {
         queuedResults.push({ domain, status: "queued" });
-      }
-    } catch {
-      // Fallback: If the bulk insert fails (e.g. D1 error), try inserting them one by one.
-      for (const domain of uniqueQueued) {
-        try {
-          // ensureDomainRow is idempotent and handles conflicts
-          await ensureDomainRow(input.db, input.userId, domain);
-          if (existingSet.has(domain)) {
-            await queueDomainsForRescan(input.db, input.userId, [domain]);
-          }
-          queuedResults.push({ domain, status: "queued" });
-        } catch {
-          queuedResults.push({
-            domain,
-            status: "error",
-            error: "Could not queue domain",
-          });
-        }
       }
     }
   }
@@ -258,13 +258,20 @@ export async function processBulkScan(
   return { accepted: acceptedCount, rejected: rejectedCount, results };
 }
 
+// Thrown by ensureDomainRow when the atomic cap-guarded insert reports the
+// user's watchlist is already full — distinguished from a generic scan/DB
+// failure so the caller can surface "Watchlist limit reached" instead of
+// "Scan failed" (issue #617).
+class WatchlistCapExceededError extends Error {}
+
 async function scanOne(
   db: D1Database,
   userId: string,
   domain: string,
+  cap: number,
   scanFn: (domain: string) => Promise<ScanLike>,
 ): Promise<BulkResultEntry> {
-  const owned = await ensureDomainRow(db, userId, domain);
+  const owned = await ensureDomainRow(db, userId, domain, cap);
   const result = await scanFn(domain);
   await recordScan(db, {
     domainId: owned.id,
@@ -275,18 +282,27 @@ async function scanOne(
   return { domain, status: "scanned", grade: result.grade };
 }
 
-// Idempotent watchlist insert: returns the existing row if present, otherwise
-// creates one (Pro plan, weekly cadence) and re-fetches to get the row id. We
-// look up after insert rather than relying on D1's last_row_id because the
-// helper is async and other concurrent inserts could race the cursor.
+// Idempotent, cap-guarded watchlist insert: returns the existing row if
+// present, otherwise atomically inserts one (Pro plan, weekly cadence) only if
+// the user is still under `cap`, and re-fetches to get the row id. We look up
+// after insert rather than relying on D1's last_row_id because the helper is
+// async and other concurrent inserts could race the cursor.
 async function ensureDomainRow(
   db: D1Database,
   userId: string,
   domain: string,
+  cap: number,
 ): Promise<{ id: number }> {
   const existing = await getDomainByUserAndName(db, userId, domain);
   if (existing) return { id: existing.id };
-  await createDomain(db, { userId, domain, isFree: false });
+  const inserted = await createDomainUnderCap(
+    db,
+    { userId, domain, isFree: false },
+    cap,
+  );
+  if (!inserted) {
+    throw new WatchlistCapExceededError();
+  }
   const created = await getDomainByUserAndName(db, userId, domain);
   if (!created) {
     throw new Error("Domain row missing after insert");
