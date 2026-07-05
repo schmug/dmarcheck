@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteAccount } from "../src/account/deletion.js";
+import * as users from "../src/db/users.js";
 import type { Env } from "../src/env.js";
 
 vi.mock("@sentry/cloudflare", () => ({
@@ -350,6 +351,36 @@ describe("account/deletion.deleteAccount", () => {
     expect(order.indexOf("delete-users")).toBeLessThan(
       order.indexOf("workos-delete"),
     );
+  });
+
+  it("skips WorkOS delete when the user re-registers before the outbound call", async () => {
+    const state = emptyState();
+    state.users.push({ ...USER });
+    const order: string[] = [];
+    const fetchMock = stubFetch(order);
+    const env = makeEnv(state, order, { WORKOS_API_KEY: "sk_workos" });
+
+    const reregistered = {
+      id: USER.id,
+      email: USER.email,
+      email_domain: "example.com",
+      stripe_customer_id: null,
+      email_alerts_enabled: 1,
+      notify_on_change_only: 0,
+      api_key_retirement_acknowledged_at: 1,
+      max_domains_override: null,
+      created_at: 2,
+    };
+    vi.spyOn(users, "getUserById")
+      .mockResolvedValueOnce(reregistered)
+      .mockResolvedValue(null);
+
+    const result = await deleteAccount(env, USER);
+
+    expect(result.workosDeleted).toBe(false);
+    expect(result.workosFailed).toBe(false);
+    expect(order).not.toContain("workos-delete");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("skips WorkOS gracefully when WORKOS_API_KEY is absent", async () => {
