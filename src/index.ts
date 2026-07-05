@@ -1358,7 +1358,8 @@ function persistBearerScanIfWatched(
 
 // Issue a one-time test-email address (issue #417). Rate-limited by the
 // middleware above; additionally capped per identity on simultaneously-live
-// tokens. ALL dynamic content is escaped by renderInboxScanPage.
+// tokens, enforced atomically via the RATE_LIMITER Durable Object (#618). ALL
+// dynamic content is escaped by renderInboxScanPage.
 app.get("/check/email", async (c) => {
   const kv = c.env?.INBOX_TOKENS;
   if (!kv) {
@@ -1377,7 +1378,13 @@ app.get("/check/email", async (c) => {
   const token = generateToken();
   let reserved = false;
   try {
-    reserved = await reserveLiveToken(kv, identity, token);
+    reserved = await reserveLiveToken(
+      kv,
+      identity,
+      token,
+      undefined,
+      c.env?.RATE_LIMITER,
+    );
     if (reserved) {
       await putPending(kv, token);
     }

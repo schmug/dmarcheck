@@ -18,6 +18,12 @@ import type { RateLimitResult } from "./rate-limit.js";
 //
 // A singleton instance routed as `getByName("__nonces__")` also hosts the
 // consumed-nonce store for account-deletion re-auth proofs (issue #553).
+//
+// Instances routed by the inbox identity (same `ip:<x>` / `user:<id>` name as
+// the rate-limit bucket for that identity) additionally host the per-identity
+// inbox live-token cap (`reserveLiveToken`, issue #618) in its own table —
+// the prior KV read-modify-write was a TOCTOU: a concurrent burst could each
+// read a pre-insert count below the cap and all reserve, exceeding it.
 export class RateLimiterDO extends DurableObject {
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
@@ -33,6 +39,12 @@ export class RateLimiterDO extends DurableObject {
         `CREATE TABLE IF NOT EXISTS nonces (
           jti TEXT PRIMARY KEY,
           exp_sec INTEGER NOT NULL
+        )`,
+      );
+      this.ctx.storage.sql.exec(
+        `CREATE TABLE IF NOT EXISTS live_tokens (
+          token TEXT PRIMARY KEY,
+          exp_ms INTEGER NOT NULL
         )`,
       );
     });
@@ -76,6 +88,33 @@ export class RateLimiterDO extends DurableObject {
       resetAt,
       count,
     };
+  }
+
+  // Atomically reserves a live-token slot for the inbox per-identity cap
+  // (issue #618). Prune-count-insert runs as one synchronous SQL sequence, so
+  // a concurrent burst under one identity can't all observe a stale count
+  // below `cap` and over-reserve — the same single-threaded-RPC guarantee
+  // `increment` relies on.
+  reserveLiveToken(
+    token: string,
+    ttlMs: number,
+    cap: number,
+    nowMs: number,
+  ): boolean {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM live_tokens WHERE exp_ms <= ?",
+      nowMs,
+    );
+    const { count } = this.ctx.storage.sql
+      .exec<{ count: number }>("SELECT COUNT(*) as count FROM live_tokens")
+      .toArray()[0];
+    if (count >= cap) return false;
+    this.ctx.storage.sql.exec(
+      "INSERT INTO live_tokens (token, exp_ms) VALUES (?, ?)",
+      token,
+      nowMs + ttlMs,
+    );
+    return true;
   }
 
   // Records a deletion-proof nonce on first presentation. Returns true if newly
