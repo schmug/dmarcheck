@@ -42,7 +42,10 @@ export class RateLimiterDO extends DurableObject {
   // returns the resulting decision. `limit`/`windowSec` are passed per call so
   // the same DO class serves both tiers (free 10/60, pro 60/3600) — the bucket
   // is keyed entirely by the DO instance (identity), not the window size.
-  increment(limit: number, windowSec: number): RateLimitResult {
+  // `weight` lets a single request charge more than one token (e.g. bulk-scan
+  // charging proportional to its in-band scan count, issue #619); defaults to
+  // 1 so every other caller is unaffected.
+  increment(limit: number, windowSec: number, weight = 1): RateLimitResult {
     const nowSec = Math.floor(Date.now() / 1000);
     const existing = this.ctx.storage.sql
       .exec<{ count: number; reset_at: number }>(
@@ -53,11 +56,11 @@ export class RateLimiterDO extends DurableObject {
     let count: number;
     let resetAt: number;
     if (existing && existing.reset_at > nowSec) {
-      count = existing.count + 1;
+      count = existing.count + weight;
       resetAt = existing.reset_at;
     } else {
       // Fresh window: no row yet, or the previous window has elapsed.
-      count = 1;
+      count = weight;
       resetAt = nowSec + windowSec;
     }
 

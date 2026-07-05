@@ -124,6 +124,38 @@ describe("RateLimiterDO (runs inside real workerd runtime)", () => {
     expect(otherIp.remaining).toBe(FREE.limit - 1);
   });
 
+  it("increment() accepts a weight, charging more than one token per call (issue #619)", async () => {
+    const stub = env.RATE_LIMITER.getByName("ip:weighted");
+    const first = await stub.increment(PRO.limit, PRO.windowSec, 30);
+    expect(first.count).toBe(30);
+    expect(first.allowed).toBe(true);
+    expect(first.remaining).toBe(PRO.limit - 30);
+
+    const second = await stub.increment(PRO.limit, PRO.windowSec, 30);
+    expect(second.count).toBe(60);
+    expect(second.allowed).toBe(true);
+    expect(second.remaining).toBe(0);
+
+    // A third weighted request pushes the count past the limit in one shot —
+    // it's correctly blocked, and the count still reflects the full charge
+    // rather than clamping, consistent with the unweighted (default) behavior.
+    const third = await stub.increment(PRO.limit, PRO.windowSec, 30);
+    expect(third.allowed).toBe(false);
+    expect(third.count).toBe(90);
+  });
+
+  it("checkRateLimit() routed through the DO threads the weight through", async () => {
+    const result = await checkRateLimit(
+      "ip:wired-weighted",
+      FREE,
+      env.RATE_LIMITER,
+      3,
+    );
+    expect(result.count).toBe(3);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(FREE.limit - 3);
+  });
+
   it("rolls the window: an expired bucket resets to count 1 on the next increment", async () => {
     // Time travel is not available inside workerd, so seed an already-expired
     // window directly via runInDurableObject and assert the reset branch.

@@ -428,15 +428,27 @@ type RateLimitBlockedResponder = (
   headers: Record<string, string>,
 ) => Response | Promise<Response>;
 
-export function rateLimitMiddleware(onBlocked: RateLimitBlockedResponder) {
+export function rateLimitMiddleware(
+  onBlocked: RateLimitBlockedResponder,
+  // Optional per-route weight resolver (issue #619). Omitted → every request
+  // costs 1 token, the historical behavior. Bulk-scan uses this to charge
+  // proportional to its in-band scan count instead of counting as one request.
+  weightFn?: (c: Context) => Promise<number>,
+) {
   return async (c: Context, next: () => Promise<void>) => {
     const { identity, config } = await resolveRateLimitScope(c);
+    const weight = weightFn ? await weightFn(c) : 1;
     // The Durable Object RPC is awaited end-to-end, so the counter is durably
     // updated before the decision is used — no deferred write to drain.
     // `c.env` is always present at runtime; the optional chain keeps the
     // limiter working in lightweight unit tests that call `app.request(path)`
     // without an env (falls back to the in-memory limiter).
-    const result = await checkRateLimit(identity, config, c.env?.RATE_LIMITER);
+    const result = await checkRateLimit(
+      identity,
+      config,
+      c.env?.RATE_LIMITER,
+      weight,
+    );
 
     const headers = rateLimitHeaders(result);
 
@@ -457,6 +469,34 @@ export function rateLimitMiddleware(onBlocked: RateLimitBlockedResponder) {
 function blockedMessage(result: RateLimitResult): string {
   const waitSec = Math.max(1, result.resetAt - Math.floor(Date.now() / 1000));
   return `Rate limit exceeded. Try again in ${waitSec} seconds.`;
+}
+
+// Rate-limit weight for /api/bulk-scan (issue #619): the number of distinct
+// valid domains in the request body, capped at BULK_IN_BAND_CAP — mirrors the
+// normalize+dedupe step `processBulkScan` runs before dispatching in-band
+// scans, without its DB-backed watchlist-cap lookup, so the charge is known
+// before the expensive work runs. `c.req.json()` is cached by Hono, so the
+// handler's own body parse below reuses this same parse rather than
+// re-reading the request stream. Malformed/absent bodies fall back to the
+// default weight of 1 — the handler's own validation still rejects them.
+async function bulkScanWeight(c: Context): Promise<number> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return 1;
+  }
+  const rawDomains = (body as { domains?: unknown })?.domains;
+  if (!Array.isArray(rawDomains)) return 1;
+  const distinct = new Set<string>();
+  for (const d of rawDomains) {
+    if (typeof d !== "string") continue;
+    const trimmed = d.trim();
+    if (!trimmed) continue;
+    const normalized = normalizeDomain(trimmed);
+    if (normalized) distinct.add(normalized);
+  }
+  return Math.min(Math.max(distinct.size, 1), BULK_IN_BAND_CAP);
 }
 
 // Rate limit scan endpoints (not the landing page)
@@ -516,14 +556,16 @@ app.use(
 );
 
 // Bulk scan also runs N analyzers in-band per request — same rate-limit
-// posture as /api/check (Pro bearer → user bucket; everyone else → IP).
-// TODO(phase-4-pr3-followup): once per-plan limits expose a "weight" knob,
-// charge bulk requests proportionally to the in-band scan count instead of
-// counting as a single request.
+// posture as /api/check (Pro bearer → user bucket; everyone else → IP), but
+// charged proportionally to the in-band scan count rather than 1 token per
+// request (issue #619), since a 30-domain request fans out ~30x the outbound
+// DNS/fetch of a single scan.
 app.use(
   "/api/bulk-scan",
-  rateLimitMiddleware((c, result, headers) =>
-    c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+  rateLimitMiddleware(
+    (c, result, headers) =>
+      c.json({ error: blockedMessage(result) }, { status: 429, headers }),
+    bulkScanWeight,
   ),
 );
 
