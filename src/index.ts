@@ -324,6 +324,9 @@ app.onError((err, c) => {
 app.use("/api/*", cors());
 
 // Auth routes (public) — login, WorkOS callback, logout
+// Logout is state-changing, so it gets the same Origin/CSRF check as
+// /dashboard/* even though it lives outside that path prefix.
+app.use("/auth/logout", csrf());
 app.route("/auth", authRoutes);
 
 // Dashboard routes (auth enforced inside dashboardRoutes via requireAuth)

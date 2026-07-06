@@ -1510,7 +1510,7 @@ describe("dashboard/routes", () => {
       expect(body).toContain("https://hooks.example.com/notify");
     });
 
-    it("redirects to logout when user record is missing", async () => {
+    it("clears the session and redirects home when user record is missing", async () => {
       const db = createMockDB({ users: [] });
       const app = createTestApp(db);
       const cookie = await makeSessionCookie("ghost_user", "ghost@example.com");
@@ -1518,7 +1518,8 @@ describe("dashboard/routes", () => {
         headers: { Cookie: cookie },
       });
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toBe("/auth/logout");
+      expect(res.headers.get("Location")).toBe("/");
+      expect(res.headers.get("Set-Cookie")).toMatch(/session=.*Max-Age=0/);
     });
   });
 

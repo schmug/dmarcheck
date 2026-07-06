@@ -3,7 +3,11 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createDomain } from "../db/domains.js";
 import { createUser, getUserByEmail } from "../db/users.js";
 import { createReauthProof } from "./reauth.js";
-import { createSessionToken, validateSessionToken } from "./session.js";
+import {
+  clearSessionAndRedirect,
+  createSessionToken,
+  validateSessionToken,
+} from "./session.js";
 
 export const authRoutes = new Hono();
 
@@ -146,7 +150,6 @@ authRoutes.get("/callback", async (c) => {
   return c.redirect("/dashboard");
 });
 
-authRoutes.get("/logout", (c) => {
-  deleteCookie(c, "session", { path: "/" });
-  return c.redirect("/");
-});
+authRoutes.get("/logout", (c) => c.text("Method Not Allowed", 405));
+
+authRoutes.post("/logout", (c) => clearSessionAndRedirect(c));

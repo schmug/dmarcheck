@@ -65,6 +65,20 @@ const DASHBOARD_CSS = `
 .dashboard-nav .nav-user a:hover {
   color: var(--clr-accent);
 }
+.dashboard-nav .nav-logout-form {
+  display: inline;
+}
+.dashboard-nav .nav-logout-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--clr-text-muted);
+}
+.dashboard-nav .nav-logout-btn:hover {
+  color: var(--clr-accent);
+}
 .dashboard-body {
   max-width: 900px;
   margin: 2rem auto;
@@ -1399,7 +1413,9 @@ function dashboardPage(title: string, body: string, email: string): string {
   </div>
   <div class="nav-user">
     <span>${esc(email)}</span>
-    <a href="/auth/logout">Logout</a>
+    <form method="POST" action="/auth/logout" class="nav-logout-form">
+      <button type="submit" class="nav-logout-btn">Logout</button>
+    </form>
     ${themeToggle()}
   </div>
 </nav>

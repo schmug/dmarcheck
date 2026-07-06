@@ -503,7 +503,7 @@ describe("account deletion — stale session after deletion", () => {
     expect(res.status).toBe(200);
   });
 
-  it("a retained valid cookie for a deleted user is bounced to logout on /dashboard/settings", async () => {
+  it("a retained valid cookie for a deleted user is logged out on /dashboard/settings", async () => {
     const writes: Array<{ sql: string; bindings: unknown[] }> = [];
     const db = makeDB({ users: [], writes });
     const app = makeApp(db);
@@ -511,6 +511,7 @@ describe("account deletion — stale session after deletion", () => {
       headers: { Cookie: await sessionCookie("ghost", "ghost@b.com") },
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/auth/logout");
+    expect(res.headers.get("Location")).toBe("/");
+    expect(res.headers.get("Set-Cookie")).toMatch(/session=.*Max-Age=0/);
   });
 });
