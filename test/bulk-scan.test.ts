@@ -41,32 +41,24 @@ function makeDb(): D1Database {
 
   const applyWrite = async (sql: string, params: unknown[]) => {
     if (/^INSERT INTO domains/i.test(sql)) {
-      // Check if it's the multiple row insert
-      if (sql.includes("VALUES (?, ?, ?, ?),")) {
-        // It's a batched insert
-        const CHUNK_SIZE = 4;
-        for (let i = 0; i < params.length; i += CHUNK_SIZE) {
-          const userId = params[i] as string;
-          const domain = params[i + 1] as string;
-          const isFree = params[i + 2] as number;
-          const frequency = params[i + 3] as string;
-          domainStore.push({
-            id: nextId++,
-            user_id: userId,
-            domain,
-            is_free: isFree,
-            scan_frequency: frequency,
-            last_scanned_at: null,
-            last_grade: null,
-          });
-        }
-      } else {
-        const [userId, domain, isFree, frequency] = params as [
+      // Guarded insert (createDomainUnderCap, issue #617): cap check and
+      // insert happen together, mirroring D1's single-statement atomicity —
+      // re-evaluate the count against the store synchronously here too.
+      if (/WHERE \(SELECT COUNT/i.test(sql)) {
+        const [userId, domain, isFree, frequency, capUserId, cap] = params as [
           string,
           string,
           number,
           string,
+          string,
+          number,
         ];
+        const currentCount = domainStore.filter(
+          (d) => d.user_id === capUserId,
+        ).length;
+        if (currentCount >= cap) {
+          return { success: true as const, meta: { changes: 0 } };
+        }
         domainStore.push({
           id: nextId++,
           user_id: userId,
@@ -76,7 +68,23 @@ function makeDb(): D1Database {
           last_scanned_at: null,
           last_grade: null,
         });
+        return { success: true as const, meta: { changes: 1 } };
       }
+      const [userId, domain, isFree, frequency] = params as [
+        string,
+        string,
+        number,
+        string,
+      ];
+      domainStore.push({
+        id: nextId++,
+        user_id: userId,
+        domain,
+        is_free: isFree,
+        scan_frequency: frequency,
+        last_scanned_at: null,
+        last_grade: null,
+      });
     } else if (/^INSERT INTO scan_history/i.test(sql)) {
       const [domainId, grade, , , scannedAt] = params as [
         number,

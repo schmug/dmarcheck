@@ -34,7 +34,7 @@ import {
 } from "../db/api-keys.js";
 import {
   countDomainsByUser,
-  createDomain,
+  createDomainUnderCap,
   type DomainSortColumn,
   type DomainSortDirection,
   deleteDomain,
@@ -819,7 +819,16 @@ dashboardRoutes.post("/domain/add", async (c) => {
     );
   }
 
-  if (currentCount >= cap) {
+  // Cap enforcement happens inside createDomainUnderCap's single guarded SQL
+  // statement, not via this pre-check — a concurrent add for the same user
+  // can't race past `cap` (issue #617). `currentCount` above is only used to
+  // word the error message below.
+  const inserted = await createDomainUnderCap(
+    db,
+    { userId: session.sub, domain: normalized, isFree: false },
+    cap,
+  );
+  if (!inserted) {
     const overCap = currentCount > cap;
     const error =
       override != null
@@ -837,11 +846,6 @@ dashboardRoutes.post("/domain/add", async (c) => {
     );
   }
 
-  await createDomain(db, {
-    userId: session.sub,
-    domain: normalized,
-    isFree: false,
-  });
   return c.redirect(`/dashboard/domain/${encodeURIComponent(normalized)}`, 303);
 });
 

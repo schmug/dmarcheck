@@ -353,6 +353,32 @@ function createMockDB(data: {
       // then re-fetch" pattern (avoids relying on last_row_id) finds the new
       // row when it does the SELECT lookup right after.
       if (/^INSERT INTO domains/i.test(sql)) {
+        // Guarded insert (createDomainUnderCap, issue #617): cap check and
+        // insert happen together, mirroring D1's single-statement atomicity.
+        if (/WHERE \(SELECT COUNT/i.test(sql)) {
+          const [userId, domain, isFree, frequency, capUserId, cap] =
+            bindings as [string, string, number, string, string, number];
+          const currentCount = domains.filter(
+            (d) => d.user_id === capUserId,
+          ).length;
+          if (currentCount >= cap) {
+            return { success: true, meta: { changes: 0 } };
+          }
+          domains.push({
+            id:
+              domains.length > 0
+                ? Math.max(...domains.map((d) => d.id)) + 1
+                : 1,
+            user_id: userId,
+            domain,
+            is_free: isFree,
+            scan_frequency: frequency,
+            last_scanned_at: null,
+            last_grade: null,
+            created_at: 1700000000,
+          });
+          return { success: true, meta: { changes: 1 } };
+        }
         const [userId, domain, isFree, frequency] = bindings as [
           string,
           string,
@@ -2000,11 +2026,15 @@ describe("dashboard/routes", () => {
         w.sql.includes("INSERT INTO domains"),
       );
       expect(inserted).toBeDefined();
+      // Guarded insert (issue #617): the trailing two bindings are the cap
+      // check's own [user_id, cap] pair, not row data.
       expect(inserted?.bindings).toEqual([
         "user_1",
         "example.com",
         0, // isFree=false → 0
         "weekly",
+        "user_1",
+        3, // FREE_WATCHLIST_CAP
       ]);
     });
 
@@ -2096,10 +2126,48 @@ describe("dashboard/routes", () => {
       const html = await res.text();
       expect(html).toMatch(/Free plan limit reached/);
       expect(html).toMatch(/Upgrade to Pro/);
-      const inserted = writes.find((w) =>
-        w.sql.includes("INSERT INTO domains"),
+      // The atomic guarded insert (issue #617) still issues an INSERT
+      // statement — the cap check lives inside it — but it must not add a
+      // row: the SQL itself guards the count, not a JS-level pre-check.
+      expect(seedDomains).toHaveLength(3);
+    });
+
+    it("never lets a concurrent burst of adds push one user past the cap (issue #617)", async () => {
+      const seedDomains: Array<{
+        id: number;
+        user_id: string;
+        domain: string;
+        is_free: number;
+        scan_frequency: string;
+        last_scanned_at: number | null;
+        last_grade: string | null;
+        created_at: number;
+      }> = [];
+      const db = createMockDB({ domains: seedDomains });
+      const app = createTestApp(db);
+      const cookie = await makeSessionCookie("user_1", "alice@example.com");
+
+      const responses = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => {
+          const body = new URLSearchParams({ domain: `burst${i}.example` });
+          return app.request("/dashboard/domain/add", {
+            method: "POST",
+            headers: {
+              Cookie: cookie,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: body.toString(),
+          });
+        }),
       );
-      expect(inserted).toBeUndefined();
+
+      // Free plan cap is 3 — exactly 3 requests should succeed (303) and the
+      // rest rejected (400), regardless of the 10-way concurrent burst.
+      const statuses = responses.map((r) => r.status).sort();
+      expect(statuses).toEqual([
+        303, 303, 303, 400, 400, 400, 400, 400, 400, 400,
+      ]);
+      expect(seedDomains).toHaveLength(3);
     });
 
     it("rejects net-new domain with 400 when a Pro user is at the cap", async () => {
@@ -2135,10 +2203,8 @@ describe("dashboard/routes", () => {
       const html = await res.text();
       expect(html).toMatch(/Pro plan limit of 25 domains/);
       expect(html).toContain("support@dmarc.mx");
-      const inserted = writes.find((w) =>
-        w.sql.includes("INSERT INTO domains"),
-      );
-      expect(inserted).toBeUndefined();
+      // Guarded insert (issue #617) still runs but must not add a row.
+      expect(seedDomains).toHaveLength(25);
     });
 
     it("still redirects to the existing domain detail page for a duplicate even when at cap", async () => {
@@ -2240,10 +2306,8 @@ describe("dashboard/routes", () => {
       expect(html).toMatch(/Pro plan includes 25 domains/);
       expect(html).toMatch(/already have 30/);
       expect(html).toMatch(/grandfathered/);
-      const inserted = writes.find((w) =>
-        w.sql.includes("INSERT INTO domains"),
-      );
-      expect(inserted).toBeUndefined();
+      // Guarded insert (issue #617) still runs but must not add a row.
+      expect(seedDomains).toHaveLength(30);
     });
 
     it("renders the add-domain form with usage hint for a free user under cap", async () => {

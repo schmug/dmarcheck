@@ -89,6 +89,34 @@ function makeDb(): D1Database {
 
   const applyWrite = async (sql: string, params: unknown[]) => {
     if (/^INSERT INTO domains/i.test(sql)) {
+      // Guarded insert (createDomainUnderCap, issue #617): cap check and
+      // insert happen together, mirroring D1's single-statement atomicity.
+      if (/WHERE \(SELECT COUNT/i.test(sql)) {
+        const [userId, domain, isFree, frequency, capUserId, cap] = params as [
+          string,
+          string,
+          number,
+          string,
+          string,
+          number,
+        ];
+        const currentCount = domainStore.filter(
+          (d) => d.user_id === capUserId,
+        ).length;
+        if (currentCount >= cap) {
+          return { success: true as const, meta: { changes: 0 } };
+        }
+        domainStore.push({
+          id: nextId++,
+          user_id: userId,
+          domain,
+          is_free: isFree,
+          scan_frequency: frequency,
+          last_scanned_at: null,
+          last_grade: null,
+        });
+        return { success: true as const, meta: { changes: 1 } };
+      }
       const [userId, domain, isFree, frequency] = params as [
         string,
         string,
