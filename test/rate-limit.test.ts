@@ -202,6 +202,38 @@ describe("rate-limit", () => {
     });
   });
 
+  describe("weighted charging (issue #619)", () => {
+    it("charges the given weight instead of 1 per call", async () => {
+      const result = await checkRateLimit("ip:1.2.3.4", FREE, undefined, 5);
+      expect(result.allowed).toBe(true);
+      expect(result.remaining).toBe(FREE.limit - 5);
+      expect(result.count).toBe(5);
+    });
+
+    it("accumulates weighted charges within the same window", async () => {
+      await checkRateLimit("ip:1.2.3.4", FREE, undefined, 4);
+      const second = await checkRateLimit("ip:1.2.3.4", FREE, undefined, 4);
+      expect(second.count).toBe(8);
+      expect(second.remaining).toBe(FREE.limit - 8);
+    });
+
+    it("blocks once a single weighted request exceeds the limit", async () => {
+      const result = await checkRateLimit(
+        "ip:1.2.3.4",
+        FREE,
+        undefined,
+        FREE.limit + 1,
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.remaining).toBe(0);
+    });
+
+    it("defaults to weight 1 when omitted, unchanged from prior behavior", async () => {
+      const result = await checkRateLimit("ip:1.2.3.4", FREE);
+      expect(result.count).toBe(1);
+    });
+  });
+
   describe("rateLimitHeaders", () => {
     it("returns all four headers including X-RateLimit-Reset", async () => {
       const result = await checkRateLimit("ip:1.2.3.4", FREE);

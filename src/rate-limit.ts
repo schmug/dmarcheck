@@ -40,6 +40,7 @@ export async function checkRateLimit(
   identity: string,
   config: RateLimitConfig,
   namespace?: DurableObjectNamespace<RateLimiterDO>,
+  weight = 1,
 ): Promise<RateLimitResult> {
   // Durable Object is the only atomic primitive on Workers: its single-threaded
   // RPC serializes the read-modify-write so a concurrent burst under one
@@ -48,7 +49,7 @@ export async function checkRateLimit(
   // ceiling.
   if (namespace) {
     try {
-      return await checkRateLimitDO(identity, config, namespace);
+      return await checkRateLimitDO(identity, config, namespace, weight);
     } catch {
       // DO unreachable (transient error, or no binding at runtime). Fall back
       // to the in-memory limiter so requests stay bounded rather than failing
@@ -58,24 +59,26 @@ export async function checkRateLimit(
   // Graceful fallback for environments without the DO binding (self-host
   // deploys that strip it, and the Node test pool). Atomic within a single
   // isolate; not shared across isolates/colos.
-  return checkRateLimitMemory(identity, config);
+  return checkRateLimitMemory(identity, config, weight);
 }
 
 async function checkRateLimitDO(
   identity: string,
   config: RateLimitConfig,
   namespace: DurableObjectNamespace<RateLimiterDO>,
+  weight: number,
 ): Promise<RateLimitResult> {
   // One DO instance per identity bucket (`ip:<x>` / `user:<id>`). `getByName`
   // maps the identity string to a stable instance; the RPC returns the
   // post-increment decision for the current window.
   const stub = namespace.getByName(identity);
-  return stub.increment(config.limit, config.windowSec);
+  return stub.increment(config.limit, config.windowSec, weight);
 }
 
 function checkRateLimitMemory(
   identity: string,
   config: RateLimitConfig,
+  weight = 1,
 ): RateLimitResult {
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
@@ -92,10 +95,10 @@ function checkRateLimitMemory(
   let count: number;
   let resetAt: number;
   if (entry && entry.expires > now) {
-    count = entry.count + 1;
+    count = entry.count + weight;
     resetAt = entry.resetAt;
   } else {
-    count = 1;
+    count = weight;
     resetAt = nowSec + config.windowSec;
   }
 

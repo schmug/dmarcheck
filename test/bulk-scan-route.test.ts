@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { _memoryStore, _resetCallCount } from "../src/rate-limit.js";
 
 // resolveBearer is stubbed before importing app to keep the route's bearer
 // signal independent of api-key cryptography in this test file.
@@ -195,6 +196,8 @@ beforeEach(() => {
   overrideStore = new Map();
   nextId = 1;
   bearerStub = null;
+  _memoryStore.clear();
+  _resetCallCount();
 });
 
 afterEach(() => {
@@ -313,5 +316,51 @@ describe("POST /api/bulk-scan", () => {
     expect(body.results).toEqual([
       { domain: "new26.example", status: "scanned", grade: "B" },
     ]);
+  });
+
+  describe("rate-limit weight (issue #619)", () => {
+    it("charges one token per distinct submitted domain, not one per request", async () => {
+      bearerStub = { userId: "user_pro", keyId: "k1" };
+      subStore.push({ user_id: "user_pro", status: "active" });
+
+      const first = await fetchBulk({
+        domains: ["a1.example", "a2.example", "a3.example"],
+      });
+      expect(first.status).toBe(200);
+      expect(first.headers.get("X-RateLimit-Remaining")).toBe("57"); // 60 - 3
+
+      const second = await fetchBulk({ domains: ["b1.example"] });
+      expect(second.headers.get("X-RateLimit-Remaining")).toBe("56"); // 60 - 3 - 1
+    });
+
+    it("caps the charged weight at BULK_IN_BAND_CAP for large requests", async () => {
+      bearerStub = { userId: "user_pro", keyId: "k1" };
+      subStore.push({ user_id: "user_pro", status: "active" });
+
+      const many = Array.from({ length: 35 }, (_, i) => `w${i}.example`);
+      const res = await fetchBulk({ domains: many });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-RateLimit-Remaining")).toBe("30"); // 60 - 30
+    });
+
+    it("deduplicates domains before charging weight", async () => {
+      bearerStub = { userId: "user_pro", keyId: "k1" };
+      subStore.push({ user_id: "user_pro", status: "active" });
+
+      const res = await fetchBulk({
+        domains: ["dupe.example", "dupe.example", "dupe.example"],
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-RateLimit-Remaining")).toBe("59"); // 60 - 1
+    });
+
+    it("charges the default 1-token weight when the body is malformed", async () => {
+      bearerStub = { userId: "user_pro", keyId: "k1" };
+      subStore.push({ user_id: "user_pro", status: "active" });
+
+      const res = await fetchBulk("not json", {});
+      expect(res.status).toBe(400);
+      expect(res.headers.get("X-RateLimit-Remaining")).toBe("59"); // 60 - 1
+    });
   });
 });
