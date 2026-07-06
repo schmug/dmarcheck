@@ -9,6 +9,7 @@
 // Cloudflare's upstream `Authentication-Results` for the verdict; cryptographic
 // DKIM re-verification and MIME body parsing are deferred to a follow-up.
 
+import type { RateLimiterDO } from "../rate-limit-do.js";
 import { isValidToken, tokenFromAddress } from "./tokens.js";
 
 // 30-minute lifetime for both the pending reservation and the stored verdict.
@@ -132,20 +133,42 @@ async function liveKey(identity: string): Promise<string> {
 
 /**
  * Reserve a slot in the identity's live-token index, returning false when the
- * identity is already at `MAX_LIVE_TOKENS_PER_IDENTITY`. The index is pruned of
- * expired entries on every read.
+ * identity is already at `MAX_LIVE_TOKENS_PER_IDENTITY`.
  *
- * This is a non-atomic read-modify-write; the per-identity issuance rate
- * limiter (free 10/60s) bounds concurrency, so this is an accumulation backstop
- * (don't let one caller hoard hundreds of open addresses), not a real-time
- * guarantee.
+ * When `doNamespace` is supplied (the `RATE_LIMITER` binding), the reservation
+ * is atomic: it's routed to the same Durable Object instance the rate limiter
+ * uses for this identity (`getByName(identity)`), whose single-threaded RPC
+ * serializes the prune-count-insert so a concurrent burst cannot all observe a
+ * stale sub-cap count and over-reserve (#618). Falls back to a non-atomic KV
+ * read-modify-write — pruned of expired entries on every read — when the DO is
+ * unreachable or the binding is absent (self-host deploys, the Node test
+ * pool); the per-identity issuance rate limiter (free 10/60s) still bounds
+ * concurrency there, so it remains an accumulation backstop rather than a
+ * real-time guarantee.
  */
 export async function reserveLiveToken(
   kv: KVNamespace,
   identity: string,
   token: string,
   nowMs: number = Date.now(),
+  doNamespace?: DurableObjectNamespace<RateLimiterDO>,
 ): Promise<boolean> {
+  if (doNamespace) {
+    try {
+      const stub = doNamespace.getByName(identity);
+      return await stub.reserveLiveToken(
+        token,
+        TOKEN_TTL_SECONDS * 1000,
+        MAX_LIVE_TOKENS_PER_IDENTITY,
+        nowMs,
+      );
+    } catch {
+      // DO unreachable (transient error, or no binding at runtime) — fall
+      // through to the KV-based accumulation backstop rather than failing
+      // open or throwing.
+    }
+  }
+
   const key = await liveKey(identity);
   let entries: LiveEntry[] = [];
   const raw = await kv.get(key);
