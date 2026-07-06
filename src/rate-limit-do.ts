@@ -47,6 +47,12 @@ export class RateLimiterDO extends DurableObject {
           exp_ms INTEGER NOT NULL
         )`,
       );
+      this.ctx.storage.sql.exec(
+        `CREATE TABLE IF NOT EXISTS stream_slots (
+          slot_id TEXT PRIMARY KEY,
+          opened_at INTEGER NOT NULL
+        )`,
+      );
     });
   }
 
@@ -133,5 +139,44 @@ export class RateLimiterDO extends DurableObject {
       expSec,
     );
     return result.rowsWritten === 1;
+  }
+
+  // Bounds concurrent SSE poll loops for one inbox token (issue #620). Callers
+  // route via `getByName(\`stream:<token>\`)`, so each DO instance's
+  // `stream_slots` table tracks exactly one token's open long-poll loops.
+  // `staleAfterMs` (the token's own TTL) reclaims slots left behind by a
+  // stream that never released one — a worker eviction or an unhandled
+  // exception — so an abandoned connection can't permanently wedge out future
+  // legitimate ones.
+  acquireStreamSlot(
+    slotId: string,
+    max: number,
+    staleAfterMs: number,
+  ): boolean {
+    const nowMs = Date.now();
+    this.ctx.storage.sql.exec(
+      "DELETE FROM stream_slots WHERE opened_at < ?",
+      nowMs - staleAfterMs,
+    );
+    const count =
+      this.ctx.storage.sql
+        .exec<{ n: number }>("SELECT COUNT(*) as n FROM stream_slots")
+        .toArray()[0]?.n ?? 0;
+    if (count >= max) return false;
+    this.ctx.storage.sql.exec(
+      "INSERT INTO stream_slots (slot_id, opened_at) VALUES (?, ?)",
+      slotId,
+      nowMs,
+    );
+    return true;
+  }
+
+  // Releases a slot acquired above. A stream calls this from a `finally` so
+  // its slot frees immediately rather than waiting for the stale-reclaim path.
+  releaseStreamSlot(slotId: string): void {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM stream_slots WHERE slot_id = ?",
+      slotId,
+    );
   }
 }

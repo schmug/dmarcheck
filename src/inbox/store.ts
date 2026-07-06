@@ -22,6 +22,13 @@ export const TOKEN_TTL_SECONDS = 30 * 60;
 // once — a backstop on top of the issuance rate limiter (free 10/60s).
 export const MAX_LIVE_TOKENS_PER_IDENTITY = 5;
 
+// Per-token ceiling on concurrently open SSE long-poll loops (issue #620).
+// Each loop holds a KV poll running for up to TOKEN_TTL_SECONDS, so without a
+// cap a client could fan out unboundedly many connections for one token and
+// amplify KV reads. A handful of legitimate simultaneous connections (a page
+// reload racing the old tab's stream) should still succeed.
+export const MAX_CONCURRENT_STREAMS_PER_TOKEN = 3;
+
 // We never read `message.raw` (headers only), so memory is bounded regardless
 // of message size. This is a defensive ceiling recorded for transparency; the
 // platform hard max is 25 MiB.
@@ -423,6 +430,48 @@ interface StreamOptions {
   maxWaitMs?: number;
   sleep?: (ms: number) => Promise<void>;
   nowMs?: () => number;
+  rateLimiterNamespace?: DurableObjectNamespace<RateLimiterDO>;
+}
+
+// ---------------------------------------------------------------------------
+// Per-token concurrent-stream cap
+// ---------------------------------------------------------------------------
+
+// Degrades open (never blocks a stream) when the DO binding is absent — same
+// graceful-fallback shape as checkRateLimit — so self-host deploys without the
+// binding and the Node test pool are unaffected.
+async function acquireStreamSlot(
+  token: string,
+  slotId: string,
+  namespace: DurableObjectNamespace<RateLimiterDO> | undefined,
+): Promise<boolean> {
+  if (!namespace) return true;
+  try {
+    const stub = namespace.getByName(`stream:${token}`);
+    return await stub.acquireStreamSlot(
+      slotId,
+      MAX_CONCURRENT_STREAMS_PER_TOKEN,
+      TOKEN_TTL_SECONDS * 1000,
+    );
+  } catch {
+    // DO unreachable (transient error) — fail open rather than dropping a
+    // legitimate stream.
+    return true;
+  }
+}
+
+async function releaseStreamSlot(
+  token: string,
+  slotId: string,
+  namespace: DurableObjectNamespace<RateLimiterDO> | undefined,
+): Promise<void> {
+  if (!namespace) return;
+  try {
+    const stub = namespace.getByName(`stream:${token}`);
+    await stub.releaseStreamSlot(slotId);
+  } catch {
+    // Best-effort; the stale-slot reclaim in acquireStreamSlot recovers this.
+  }
 }
 
 /**
@@ -462,20 +511,38 @@ export async function streamInboxResult(
     return;
   }
 
-  await emit("waiting", { status: "pending" });
-
-  const deadline = nowMs() + maxWaitMs;
-  while (nowMs() < deadline) {
-    await sleep(pollIntervalMs);
-    const rec = await getRecord(kv, token);
-    if (!rec) {
-      await emit("closed", { status: "expired" });
-      return;
-    }
-    if (rec.status === "received") {
-      await emit("result", buildResultPayload(rec, opts.renderCard));
-      return;
-    }
+  // Only the long poll loop below holds a slot — the immediate-response paths
+  // above never enter it, so a resolved/expired token is never blocked by the
+  // cap.
+  const slotId = crypto.randomUUID();
+  const acquired = await acquireStreamSlot(
+    token,
+    slotId,
+    opts.rateLimiterNamespace,
+  );
+  if (!acquired) {
+    await emit("closed", { status: "busy" });
+    return;
   }
-  await emit("closed", { status: "timeout" });
+
+  try {
+    await emit("waiting", { status: "pending" });
+
+    const deadline = nowMs() + maxWaitMs;
+    while (nowMs() < deadline) {
+      await sleep(pollIntervalMs);
+      const rec = await getRecord(kv, token);
+      if (!rec) {
+        await emit("closed", { status: "expired" });
+        return;
+      }
+      if (rec.status === "received") {
+        await emit("result", buildResultPayload(rec, opts.renderCard));
+        return;
+      }
+    }
+    await emit("closed", { status: "timeout" });
+  } finally {
+    await releaseStreamSlot(token, slotId, opts.rateLimiterNamespace);
+  }
 }
