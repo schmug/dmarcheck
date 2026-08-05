@@ -1,0 +1,75 @@
+name: Bug report
+description: Something in dmarc.mx behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The two fields marked **required for the factory** are what let the
+        autonomous fix loop pick this up — without them a fix has to be written and merged by hand.
+
+  - type: input
+    id: domain
+    attributes:
+      label: Domain or URL
+      description: The exact domain you scanned, or the page you were on. This is what makes the bug reproducible.
+      placeholder: example.com
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: example.com should grade A — it publishes p=reject with full alignment.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Paste the exact output, grade, or error text. Verbatim beats paraphrase.
+      placeholder: It graded B, with "policy not enforcing" in the DMARC row.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope — which files may a fix touch?
+      description: |
+        **Required for the factory.** One glob per line. The deterministic merge gate refuses any PR
+        that changes a file outside this list, so an over-broad scope is not more helpful — it is
+        less safe. If you do not know, leave the default and a maintainer will narrow it; a fix will
+        then need a human to merge it.
+
+        Paths that are code-owned (`src/index.ts`, `src/analyzers/**`, `src/db/**`, `src/auth/**`,
+        and friends — see `.factory/gate.json`) always require human review regardless of scope.
+      value: |
+        src/**
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: How wrong is it?
+      options:
+        - Cosmetic — looks off, result is correct
+        - Wrong result — a grade, policy, or record is reported incorrectly
+        - Broken — the scan fails or the page errors
+        - Security — please report privately instead, see SECURITY.md
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you file
+      options:
+        - label: I checked this reproduces on https://dmarc.mx (not a cached or older deployment).
+          required: true
+        - label: This is not a security vulnerability. (If it is, follow SECURITY.md instead — do not file it here.)
+          required: true
