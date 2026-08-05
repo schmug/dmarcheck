@@ -25,9 +25,12 @@
 /.claude/settings.json          @schmug
 
 # Input validation, redirect posture, rate limiting, and prod-mutating
-# DB migrations — the highest-blast-radius source paths.
+# DB migrations — the highest-blast-radius source paths. rate-limit-do.ts is
+# the Durable Object that backs rate-limit.ts's atomic counter — gating the
+# policy file while leaving its state store ungated was a gap (#659).
 /src/index.ts                   @schmug
 /src/rate-limit.ts              @schmug
+/src/rate-limit-do.ts           @schmug
 /src/db/                        @schmug
 
 # Analyzer modules, orchestration, and scoring — supply-chain / exfiltration risk.
@@ -45,3 +48,17 @@
 # deletion (#550, T1/T4/T12)"). Covered broadly so new files under the
 # directory are gated too. Surfaced by #599/#600.
 /src/account/                   @schmug
+
+# Auth, Stripe billing, and inbound webhook handlers (including payment
+# events) — identity and money-adjacent surfaces same-blast-radius as
+# account deletion above but not yet covered. Surfaced by #659.
+/src/auth/                       @schmug
+/src/billing/                    @schmug
+/src/webhooks/                   @schmug
+
+# A separately deployed Worker (its own package.json/wrangler.toml, outside
+# the main Worker's src/ tree) and the gate script autonomous routines run
+# against — both security-adjacent and missed by the entries above.
+# Surfaced by #659.
+/mta-sts-worker/                 @schmug
+/scripts/routine-gate/           @schmug
