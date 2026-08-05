@@ -1,6 +1,6 @@
 name: Bug report
 description: Something in dmarc.mx behaves incorrectly.
-labels: ["bug"]
+labels: ["bug", "factory", "needs-repro"]
 body:
   - type: markdown
     attributes:
@@ -47,8 +47,9 @@ body:
         Paths that are code-owned (`src/index.ts`, `src/analyzers/**`, `src/db/**`, `src/auth/**`,
         and friends — see `.factory/gate.json`) always require human review regardless of scope.
       value: |
+        ```scope
         src/**
-      render: text
+        ```
     validations:
       required: true
 
