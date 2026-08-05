@@ -211,6 +211,12 @@ jobs:
 
       # Exit 0 = merge, 2 = escalate, 1 = the gate itself broke. Three DISTINCT codes on purpose:
       # "the gate broke" must never be read as either answer. Only 0 reaches the merge step.
+      #
+      # ⚠️ `|| code=$?` IS LOAD-BEARING. GitHub runs `run:` blocks as `bash -e {0}`, and
+      # `set -uo pipefail` does NOT clear that inherited `-e`. Without the `||`, the normal
+      # ESCALATE path (exit 2) aborts this step before the code is captured, which then skips the
+      # comment and escalate steps via their implicit `success()` — so the gate would post no
+      # verdict and apply no label exactly when it says NO. Do not "simplify" this away.
       - name: Run the gate
         id: gate
         env:
@@ -220,13 +226,18 @@ jobs:
           CONFIG_ARG=""
           # `.factory/gate.json` here came from the BASE checkout above, not from the PR.
           [ -f .factory/gate.json ] && CONFIG_ARG="--config .factory/gate.json"
+          code=0
           node .factory-plugin/packages/factory-gate/bin/gate.mjs \
             --input gate-input.json $CONFIG_ARG \
             --config-source "${BASE_REF}@${GITHUB_SHA}" \
-            --verdict-out verdict.json --comment-out comment.md
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+            --verdict-out verdict.json --comment-out comment.md || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Gate exit: $code (0=merge, 2=escalate, 1=the gate itself broke)"
 
+      # `always()` so the audit comment is posted even if the gate step itself died — a PR must
+      # never be left with no explanation of why the factory did not land it.
       - name: Post the audit comment
+        if: always() && steps.gate.conclusion != 'skipped'
         env:
           GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -252,7 +263,7 @@ jobs:
           gh pr merge "$PR_NUMBER" --repo "$TARGET_REPO" --squash
 
       - name: Escalate
-        if: steps.gate.outputs.code != '0'
+        if: always() && steps.gate.conclusion != 'skipped' && steps.gate.outputs.code != '0'
         env:
           GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
