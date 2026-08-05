@@ -138,9 +138,11 @@ flowchart LR
 - **Webhook SSRF posture (T2):** Is the outbound-webhook feature intended to
   reach arbitrary user hosts, or should it enforce a public-IP/host allowlist
   and `redirect: "manual"`? Does the dispatch fetch currently follow redirects?
-- **Bot-identity split (T5):** Has #299 landed? Until the routine runs as a
-  non-admin identity, the CODEOWNERS gate is advisory (admin bypasses the
-  ruleset).
+- **Bot-identity split (T5):** Has #299 landed? The CODEOWNERS gate is already
+  enforcing (`main-protection` ruleset ID 14716629 has an empty
+  `bypass_actors` — no admin bypass); #299 closes a self-approval gap, not an
+  enforcement gap — GitHub forbids self-approval, so a gated PR authored as
+  @schmug still needs a genuinely different code owner to approve it.
 - **D1 token scope (T8):** Is `deploy-mta-sts.yml`'s broad `CLOUDFLARE_API_TOKEN`
   reducible to a Worker-scoped token like the D1 migration token?
 - **Session JWT `alg` (brittleness):** Should `session.ts` assert the header

@@ -25,12 +25,17 @@ dmarcheck is currently maintained by a single person in their spare time.
 
 Autonomous [Claude Code Routines](docs/routine-pipeline.md) open and merge
 routine PRs unattended. Today those commits are authored by **@schmug** because
-the routines run with the maintainer's credentials. Splitting them onto a
-dedicated non-admin `dmarcheck-bot` identity — which is what makes the
-[`CODEOWNERS`](.github/CODEOWNERS) human-review gate *enforcing* rather than
-advisory — is tracked in
-[#299](https://github.com/schmug/dmarcheck/issues/299). Until #299 lands, treat
-the CODEOWNERS gate on security-sensitive paths as advisory for automation. See
+the routines run with the maintainer's credentials. The
+[`CODEOWNERS`](.github/CODEOWNERS) human-review gate is already **enforcing**,
+not advisory: the `main-protection` ruleset (ID
+[14716629](https://github.com/schmug/dmarcheck/rulesets/14716629)) has
+`enforcement: active`, `require_code_owner_review: true`, and an empty
+`bypass_actors` list, so there is no admin bypass. What
+[#299](https://github.com/schmug/dmarcheck/issues/299) tracks is splitting
+routine commits onto a dedicated non-admin `dmarcheck-bot` identity to close a
+*self-approval* gap, not an enforcement gap: GitHub forbids self-approval, so
+a gated PR authored as **@schmug** still needs a genuinely different code
+owner to approve it by hand before it can merge. See
 [docs/OSPS-DEVIATIONS.md](docs/OSPS-DEVIATIONS.md) for the full rationale and
 compensating controls.
 

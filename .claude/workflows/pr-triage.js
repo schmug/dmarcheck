@@ -19,10 +19,15 @@ const REPO = opts.repo || 'schmug/dmarcheck'
 // --- Deterministic CODEOWNERS backstop ---------------------------------------
 // Paths gated by .github/CODEOWNERS (all require an @schmug code-owner review).
 // A PR whose diff touches ANY of these requires human approval and must NEVER be
-// auto-merged, regardless of a CLEAN mergeStateStatus. CLEAN is unreliable here:
-// the autonomous bot currently runs as admin and bypasses the ruleset until the
-// #299 bot-identity split lands (see CLAUDE.md). Hardcoded (not read from the PR
-// head) on purpose so a PR that edits CODEOWNERS itself can't widen its own gate.
+// auto-merged, regardless of a CLEAN mergeStateStatus. The `main-protection`
+// ruleset (ID 14716629) is already *enforcing* here — enforcement: active,
+// require_code_owner_review: true, bypass_actors: [] — so there is no admin
+// bypass (see CLAUDE.md). The real gap this hardcoded list guards against is
+// self-approval: routine PRs are authored as @schmug, and GitHub forbids
+// self-approval, so a gated PR still needs a genuinely different code owner to
+// approve it (tracked as the #299 bot-identity split) before mergeStateStatus
+// can go CLEAN. Hardcoded (not read from the PR head) on purpose so a PR that
+// edits CODEOWNERS itself can't widen its own gate.
 const GATED_PATHS = [
   '.github/',
   'package.json',
@@ -158,7 +163,7 @@ Siblings — before recommending merge or close, search for sibling branches tar
 
 Comments — never propose posting a duplicate "we're blocked" comment. If prior Claude-signed comments already converged on a blocker with no owner reply, that is action=escalate (awaiting human), not action=comment.
 
-CODEOWNERS — be aware these source/CI paths require a human code-owner review: .github/**, package.json, package-lock.json, wrangler.toml, SECURITY.md, CLAUDE.md, .claude/settings.json, src/index.ts, src/rate-limit.ts, src/db/**, src/analyzers/**, src/orchestrator.ts, src/shared/scoring.ts. If the diff touches any, the correct action is escalate and autoMergeEligible MUST be false even if mergeStateStatus is CLEAN (the bot currently bypasses the gate as admin; that bypass is not authorization). The orchestrator enforces this independently from changedFiles, so report changedFiles accurately.
+CODEOWNERS — be aware these source/CI paths require a human code-owner review: .github/**, package.json, package-lock.json, wrangler.toml, SECURITY.md, CLAUDE.md, .claude/settings.json, src/index.ts, src/rate-limit.ts, src/db/**, src/analyzers/**, src/orchestrator.ts, src/shared/scoring.ts. If the diff touches any, the correct action is escalate and autoMergeEligible MUST be false even if mergeStateStatus is CLEAN. The main-protection ruleset (ID 14716629) is already enforcing here — bypass_actors is empty, so there is no admin bypass; the reason a gated PR still needs a human is that GitHub forbids self-approval, and routine PRs are authored as @schmug, so a genuinely different code owner must approve. The orchestrator enforces this independently from changedFiles, so report changedFiles accurately.
 
 Decide action: merge | close | comment | escalate | hold.
 Set autoMergeEligible=true ONLY if ALL hold: every required check green; mergeStateOk; mergeable==MERGEABLE; no unresolved actionable comments; no superseding sibling; the diff touches NO CODEOWNERS-gated path; and you are highly confident the change is sane and useful to merge as-is. Otherwise false.

@@ -54,14 +54,26 @@ security-sensitive minority of changes.
 
 ### Residual risk and the path to closing it
 
-The CODEOWNERS gate is only *enforcing* once the autonomous routine runs as a
-distinct **non-admin** identity. Today the routines run with the maintainer's
-admin credentials, and the repo Admin role bypasses the ruleset — so for
-automation the CODEOWNERS gate is currently **advisory**. Closing this is
-tracked as the bot-identity split,
-[#299](https://github.com/schmug/dmarcheck/issues/299). The deterministic gate
-(control 2) and required CI (control 3) apply regardless of identity and are the
-active controls until #299 lands.
+The CODEOWNERS gate is already **enforcing**, not advisory: the
+`main-protection` ruleset (ID
+[14716629](https://github.com/schmug/dmarcheck/rulesets/14716629)) has
+`enforcement: active`, `require_code_owner_review: true`, and an empty
+`bypass_actors` list — there is no admin bypass, so a PR touching a
+CODEOWNERS-gated path cannot merge without a genuine code-owner approval
+regardless of who opened it. What
+[#299](https://github.com/schmug/dmarcheck/issues/299) (the bot-identity
+split) actually closes is a *self-approval* gap, not an enforcement gap:
+routine PRs are authored as **@schmug**, and GitHub forbids self-approval, so
+a gated PR the routine opens still needs a genuinely different code owner to
+approve it by hand before it can merge. The deterministic gate (control 2)
+and required CI (control 3) apply regardless of identity and remain the
+active controls for that human-approval step.
+
+Separately, note the one place `required_approving_review_count = 0` really
+does mean zero required reviews: a PR that touches **no** CODEOWNERS-gated
+path merges with no approving review at all. That is the intended autonomy
+carve-out declared as the QA-07.01 deviation above (control 1 only fires on
+gated paths) — it is not a residual gap in the CODEOWNERS gate itself.
 
 ## Related OSPS controls (passing)
 
