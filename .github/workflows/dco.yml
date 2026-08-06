@@ -79,8 +79,16 @@ jobs:
             # Skip automated commits that cannot run `git commit -s`.
             # Skip commits whose author name contains [bot], is github-actions,
             # or carries a known coding-agent author email (Cursor's cloud
-            # agent authors as "Cursor Agent" with no [bot] suffix, so the
-            # name heuristics miss it — see PR #494/#513).
+            # agent authors as "Cursor Agent" with no [bot] suffix, and Claude
+            # Code's routines author as "Claude", so the name heuristics miss
+            # both — see PR #494/#513 for Cursor, #663/#671/#672 for Claude).
+            #
+            # These are PROVENANCE exemptions, not a security control. Anyone can
+            # set their git author email to one of these strings; the guard that
+            # actually matters is that these identities can only push through a
+            # token this repo issued. Keep the list to no-reply addresses on
+            # vendor-controlled domains, which no human contributor would
+            # legitimately author from.
             if echo "$author_name" | grep -qF '[bot]'; then
               echo "SKIP $sha — bot name ($author_name)"
               continue
@@ -91,6 +99,10 @@ jobs:
             fi
             if [ "$author_email" = "cursoragent@cursor.com" ]; then
               echo "SKIP $sha — Cursor agent author"
+              continue
+            fi
+            if [ "$author_email" = "noreply@anthropic.com" ]; then
+              echo "SKIP $sha — Claude Code agent author"
               continue
             fi
 

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/schmug/dmarcheck/security/policy
+    about: Report privately via the security policy — never as a public issue.
