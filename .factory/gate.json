@@ -1,0 +1,42 @@
+{
+  "allowlistAuthors": ["schmug"],
+  "requiredLabels": ["fix-verified"],
+  "blockingLabels": [
+    "needs-you",
+    "pipeline-paused",
+    "impl-blocked",
+    "awaiting-human",
+    "needs-decision",
+    "routine-pause",
+    "wontfix",
+    "duplicate"
+  ],
+  "riskPathDenylist": [
+    ".github/**",
+    ".claude/settings.json",
+    "CLAUDE.md",
+    "SECURITY.md",
+    "package.json",
+    "package-lock.json",
+    "wrangler.toml",
+    "src/index.ts",
+    "src/rate-limit.ts",
+    "src/rate-limit-do.ts",
+    "src/db/**",
+    "src/auth/**",
+    "src/account/**",
+    "src/billing/**",
+    "src/webhooks/**",
+    "src/analyzers/**",
+    "src/orchestrator.ts",
+    "src/shared/scoring.ts",
+    "mta-sts-worker/**",
+    "scripts/routine-gate/**"
+  ],
+  "maxChangedLines": 250,
+  "maxChangedFiles": 8,
+  "requireScopeBlock": true,
+  "requireGreenCI": true,
+  "requireFixtureEvidence": false,
+  "gateFromRef": "main"
+}

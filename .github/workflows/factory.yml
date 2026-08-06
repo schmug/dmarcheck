@@ -1,0 +1,308 @@
+# Software factory — scheduler, driver, and gated landing.
+#
+# The autonomous loop that takes an issue labelled `factory`, reproduces it, diagnoses it,
+# independently verifies it is a real defect, fixes it behind a draft PR, and merges only when a
+# deterministic model-free gate says every safety condition holds. The engine is the
+# shipofclaudius plugin; this file is the scheduler (L4) and the gate runner (L1).
+#
+# ⚠️ NOT ARMED YET. `secrets.FACTORY_GH_TOKEN` does not exist, so both write jobs no-op with a
+# clear message rather than half-running. Before arming, read `.factory/README.md`: the token must
+# be a DISTINCT IDENTITY FROM @schmug (GitHub forbids self-approval, so a code-owner token can
+# never satisfy `require_code_owner_review` on the `main-protection` ruleset — this is #299), and
+# the repo still has no rollback lever.
+#
+# ⚠️ `pull_request_target` RUNS WITH REPOSITORY WRITE ACCESS. This workflow therefore NEVER checks
+# out, builds, or executes pull-request-authored code. The `land` job checks out the BASE ref only,
+# and the gate is a zero-dependency Node program run with no install step. Do NOT add `npm ci`, a
+# build, or `ref: github.event.pull_request.head.sha` to that job, and do NOT interpolate
+# attacker-controlled context (PR title/body/branch name) into any `run:` block: either would hand
+# repository write access to whoever opened the PR.
+
+name: Software factory
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_target:
+    types: [labeled] # the human-minted `fix-verified` trust token arrives here
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to advance (blank = oldest in the factory queue)"
+        required: false
+        type: string
+      stop_after:
+        description: "Advance at most this far: reproduce | diagnose | verify | fix"
+        required: false
+        default: reproduce
+        type: string
+
+# Never cancel mid-write: a cancelled `advance` can leave a half-pushed branch, and a cancelled
+# `land` can leave a merge in an unknown state.
+concurrency:
+  group: factory-${{ github.event.issue.number || github.event.pull_request.number || 'cron' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FACTORY_PLUGIN_REPO: schmug/shipofclaudius
+  FACTORY_PLUGIN_REF: main
+
+jobs:
+  # ── 1. KILL SWITCH — cheap, model-free, and first. Everything else needs: it. ────────────────
+  killswitch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: read
+    outputs:
+      paused: ${{ steps.check.outputs.paused }}
+      armed: ${{ steps.check.outputs.armed }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FACTORY_TOKEN_PRESENT: ${{ secrets.FACTORY_GH_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          n="$(gh issue list --label pipeline-paused --state open --limit 1 --json number --jq 'length')"
+          if [ "$n" != "0" ]; then
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Factory PAUSED — an open issue carries \`pipeline-paused\`. Remove it to resume."
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "armed=${FACTORY_TOKEN_PRESENT}" >> "$GITHUB_OUTPUT"
+          if [ "${FACTORY_TOKEN_PRESENT}" != "true" ]; then
+            echo "::notice::Factory is WIRED but NOT ARMED — secrets.FACTORY_GH_TOKEN is unset, so the write jobs will not run. See .factory/README.md."
+          fi
+
+  # ── 2. ADVANCE (L3 driver) — one run advances ONE issue by at most one phase. ────────────────
+  advance:
+    needs: killswitch
+    if: >-
+      needs.killswitch.outputs.paused == 'false' &&
+      needs.killswitch.outputs.armed == 'true' &&
+      (github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' &&
+        (github.event.label.name == 'factory' || github.event.label.name == 'needs-repro')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+
+      - name: Fetch the factory plugin
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.FACTORY_PLUGIN_REPO }}
+          ref: ${{ env.FACTORY_PLUGIN_REF }}
+          path: .factory-plugin
+          token: ${{ secrets.FACTORY_GH_TOKEN }}
+          persist-credentials: false
+
+      - name: Advance one issue
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/.factory-plugin
+          # Passed through the ENVIRONMENT, never interpolated into the script body — these are
+          # numbers today, but keeping untrusted context out of `run:` text is the rule that stops
+          # a future field from becoming shell.
+          FACTORY_ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          FACTORY_STOP_AFTER: ${{ inputs.stop_after || 'fix' }}
+          FACTORY_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Validate the dispatch inputs before they reach the model's prompt. Shell parameter
+          # expansion does not re-scan its result, so these cannot become shell — but they CAN
+          # become instructions to an agent, and an allowlist is cheaper than reasoning about that.
+          if [ -n "${FACTORY_ISSUE}" ]; then
+            case "${FACTORY_ISSUE}" in
+              ''|*[!0-9]*) echo "::error::issue must be a positive integer, got: ${FACTORY_ISSUE}"; exit 1 ;;
+            esac
+          fi
+          case "${FACTORY_STOP_AFTER}" in
+            reproduce|diagnose|verify|fix) ;;
+            *) echo "::error::stop_after must be one of reproduce|diagnose|verify|fix"; exit 1 ;;
+          esac
+
+          npm install -g @anthropic-ai/claude-code
+
+          # routine-anti-noise runs FIRST, as a mandatory gate: it is the purpose-built fix for the
+          # double-fire class of bug (one issue -> six duplicate PRs) and it honours human hold
+          # labels. The workflow's own idempotency preflight is the second line, not a substitute.
+          claude -p --permission-mode acceptEdits "
+          Run the routine-anti-noise skill on issue ${FACTORY_ISSUE:-(the oldest factory-queue issue)}
+          in ${FACTORY_REPO}. If it returns skip:true, STOP and report the reason — do nothing else.
+
+          Otherwise run the factory-issue-fix skill with:
+            issue: ${FACTORY_ISSUE:-(omit — let it self-bootstrap from the factory queue)}
+            repo: ${FACTORY_REPO}
+            stopAfter: ${FACTORY_STOP_AFTER}
+
+          Then apply the returned transition.labels with gh (add and remove exactly what it lists,
+          nothing else) and post transition.comment as an issue comment if it is non-empty. Commit
+          the returned report as report.md on the factory branch if that branch exists. Do NOT
+          merge anything, do NOT mark any PR ready, and do NOT push to main.
+          " 2>&1 | tee advance.log
+
+  # ── 3. LAND (L1 gate) — NO MODEL RUNS IN THIS JOB. It is `gh` plus a zero-dependency Node
+  # program, so an instruction injected into an issue or PR body has nothing to act on. ─────────
+  land:
+    needs: killswitch
+    if: >-
+      needs.killswitch.outputs.paused == 'false' &&
+      needs.killswitch.outputs.armed == 'true' &&
+      github.event_name == 'pull_request_target' &&
+      github.event.label.name == 'fix-verified'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      # THE GATE-FROM-MAIN INVARIANT. Check out the BASE ref, never the PR head: the rules a PR is
+      # judged by must not be editable by that PR. `.factory/**` and `.github/workflows/**` are on
+      # the gate's MANDATORY denylist too, so even a mis-wired checkout escalates rather than merges.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+
+      # The gate itself, versioned independently of the repo it judges. No `npm ci` — it has zero
+      # dependencies on purpose, so there is no install step to compromise.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ env.FACTORY_PLUGIN_REPO }}
+          ref: ${{ env.FACTORY_PLUGIN_REF }}
+          path: .factory-plugin
+          token: ${{ secrets.FACTORY_GH_TOKEN }}
+          persist-credentials: false
+
+      # THE DRAFT DEADLOCK. `factory-issue-fix` opens a DRAFT (its write ladder deliberately ends
+      # there), and a draft PR reports `mergeStateStatus: DRAFT`, which gate condition 8 rejects —
+      # so without this step the factory can NEVER land anything it produced. Readying is safe and
+      # reversible, and it happens only AFTER a human applied `fix-verified`, which IS the approval
+      # to land. If the gate then refuses, the PR is converted back to a draft below.
+      - name: Ready the draft (fix-verified is the human's approval to land)
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ github.repository }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_DRAFT" = "true" ]; then
+            gh pr ready "$PR_NUMBER" --repo "$TARGET_REPO"
+            echo "Converted #$PR_NUMBER from draft to ready so the gate can read a real merge state."
+          fi
+
+      # Condition 9 (`fixture_evidence`) is OPT-IN and currently has NO producer. Nothing in this
+      # workflow computes red-on-base / green-on-head from CI, and the value must NOT come from the
+      # fix agent's self-report — a model asserting its own work passed is exactly what §4 exists to
+      # prevent. Until a CI job writes `factory-evidence.json` (see the reproduction-harness issue),
+      # leave `requireFixtureEvidence: false`; flipping it today fails every PR at condition 9.
+      - name: Build the gate input
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node .factory-plugin/packages/factory-gate/bin/build-input.mjs \
+            --pr "$PR_NUMBER" --repo "$TARGET_REPO" --base "$BASE_REF" --out gate-input.json \
+            $( [ -f factory-evidence.json ] && echo "--evidence factory-evidence.json" )
+
+      # Exit 0 = merge, 2 = escalate, 1 = the gate itself broke. Three DISTINCT codes on purpose:
+      # "the gate broke" must never be read as either answer. Only 0 reaches the merge step.
+      #
+      # ⚠️ `|| code=$?` IS LOAD-BEARING. GitHub runs `run:` blocks as `bash -e {0}`, and
+      # `set -uo pipefail` does NOT clear that inherited `-e`. Without the `||`, the normal
+      # ESCALATE path (exit 2) aborts this step before the code is captured, which then skips the
+      # comment and escalate steps via their implicit `success()` — so the gate would post no
+      # verdict and apply no label exactly when it says NO. Do not "simplify" this away.
+      - name: Run the gate
+        id: gate
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+          CONFIG_ARG=""
+          # `.factory/gate.json` here came from the BASE checkout above, not from the PR.
+          [ -f .factory/gate.json ] && CONFIG_ARG="--config .factory/gate.json"
+          code=0
+          node .factory-plugin/packages/factory-gate/bin/gate.mjs \
+            --input gate-input.json $CONFIG_ARG \
+            --config-source "${BASE_REF}@${GITHUB_SHA}" \
+            --verdict-out verdict.json --comment-out comment.md || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Gate exit: $code (0=merge, 2=escalate, 1=the gate itself broke)"
+
+      # `always()` so the audit comment is posted even if the gate step itself died — a PR must
+      # never be left with no explanation of why the factory did not land it.
+      - name: Post the audit comment
+        if: always() && steps.gate.conclusion != 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ github.repository }}
+          GATE_CODE: ${{ steps.gate.outputs.code }}
+        run: |
+          set -euo pipefail
+          if [ ! -f comment.md ]; then
+            printf '### Factory gate — ⛔ escalate\n\nThe gate produced no verdict (exit %s). Merging nothing.\n' "$GATE_CODE" > comment.md
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body-file comment.md
+
+      - name: Squash-merge (only on a clean pass)
+        if: steps.gate.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # No --admin (it would bypass the very protections the gate mirrors) and no
+          # --delete-branch (a predecessor in a stack may still need the ref).
+          gh pr merge "$PR_NUMBER" --repo "$TARGET_REPO" --squash
+
+      - name: Escalate
+        if: always() && steps.gate.conclusion != 'skipped' && steps.gate.outputs.code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ github.repository }}
+          GATE_CODE: ${{ steps.gate.outputs.code }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --repo "$TARGET_REPO" --add-label needs-you || true
+          # Put it back in draft so the write ladder still ends at a draft when the gate says no.
+          if [ "${{ github.event.pull_request.draft }}" = "true" ]; then
+            gh pr ready "$PR_NUMBER" --repo "$TARGET_REPO" --undo || true
+          fi
+
+          if [ "$GATE_CODE" = "1" ]; then
+            echo "::error::The factory gate FAILED TO RUN (exit 1). That is not a verdict — investigate before re-running."
+            exit 1
+          fi
+          echo "::notice::Gate escalated (exit 2) — see the audit comment on the PR. Merged nothing."
