@@ -102,7 +102,7 @@ jobs:
             echo "::error::VERSION is empty — the release was skipped but this step ran anyway, which means a step below the guarded block is missing its skip guard."
             exit 1
           fi
-          SLUG="schmug/dmarcheck"
+          SLUG="${{ github.repository }}"
           # Download the auto-generated source archives GitHub creates for each release tag.
           # These may take a few seconds to appear; retry once if the first attempt fails.
           gh release download "$VERSION" --repo "$SLUG" --archive=tar.gz \
@@ -145,7 +145,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          SLUG="schmug/dmarcheck"
+          SLUG="${{ github.repository }}"
           # Download the just-uploaded files; retry once for asset-propagation lag.
           gh release download "$VERSION" --repo "$SLUG" \
             --pattern "SHA256SUMS" --output verify-SHA256SUMS || \
@@ -155,9 +155,18 @@ jobs:
             --pattern "SHA256SUMS.bundle" --output verify-SHA256SUMS.bundle || \
           gh release download "$VERSION" --repo "$SLUG" \
             --pattern "SHA256SUMS.bundle" --output verify-SHA256SUMS.bundle
+          # The SAN carries the repo name AT SIGNING TIME. schmug/dmarcheck was renamed to
+          # schmug/dmarc.mx, so a regex pinned to the old name rejects every new signature —
+          # this is what turned Release red on releasable commits (the missing skip guard,
+          # fixed in #678, covered the non-releasable ones). Both names are accepted so that
+          # re-verifying a pre-rename tag still passes. Deliberately a LITERAL alternation
+          # rather than ${{ github.repository }}: this asserts WHICH identities we trust, and
+          # sourcing that from the same context the workload runs in would let a rename
+          # silently redefine the trust anchor instead of failing loudly. Dots are escaped —
+          # unescaped, `dmarc.mx` also matches `dmarcXmx`.
           cosign verify-blob \
             --bundle verify-SHA256SUMS.bundle \
-            --certificate-identity-regexp "https://github.com/schmug/dmarcheck/.github/workflows/release.yml" \
+            --certificate-identity-regexp "https://github\.com/schmug/(dmarcheck|dmarc\.mx)/\.github/workflows/release\.yml" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             verify-SHA256SUMS
           # A valid signature over the WRONG file still verifies. Bind the attestation to THIS
