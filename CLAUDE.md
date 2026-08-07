@@ -14,7 +14,7 @@ Live at dmarc.mx | Repo: github.com/schmug/dmarcheck
 ## Commands
 
 - `npm run dev` — local dev on port 8790
-- `npm test` — vitest
+- `npm test` — vitest, followed by a coverage-gated re-run of the node project (`vitest run --project=node --coverage`). Per-file thresholds (v8 provider, `perFile: true`) on `src/analyzers/**` and `src/shared/scoring.ts` (#656) — floors start at measured-minus-2%, so the check fails if per-file coverage regresses on those paths. Scoped to the "node" project because the v8 provider imports `node:inspector/promises`, unavailable inside the "workers" project's workerd runtime
 - `npm run lint` — biome check (lint + format check)
 - `npm run lint:fix` — biome auto-fix
 - `npm run typecheck` — tsc --noEmit
@@ -108,6 +108,7 @@ Database migration rules: see [src/db/CLAUDE.md](src/db/CLAUDE.md)
 - Tests in `test/` directory
 - Mock DNS client for unit tests (`vi.mock`)
 - Test scoring boundaries and analyzer parsing
+- `src/analyzers/**` and `src/shared/scoring.ts` carry a per-file coverage floor (`vitest.config.ts`, #656) — dropping covered branches/lines in those paths fails `npm test`, not just a global average
 
 ## Releases
 
