@@ -188,7 +188,15 @@ drifts silently.
 
 ## Drill
 
-An untested rollback lever is not a rollback lever. The drill is:
+An untested rollback lever is not a rollback lever.
+
+> [!NOTE]
+> GitHub only offers the "Run workflow" button for `workflow_dispatch`
+> workflows that exist on the **default branch**. This workflow cannot be
+> dispatched — not even the read-only `inspect` action — until it has merged
+> to `main`. The drill necessarily happens after merge, not before it.
+
+The drill is:
 
 1. `action: inspect` — confirm credentials work and versions are listed.
    Read-only; safe to run any time.
